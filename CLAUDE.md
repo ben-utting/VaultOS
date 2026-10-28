@@ -289,8 +289,12 @@ read" block in `app.js`, and `public/kb-morning.js` (the card).
   per browser at startup, then removed.
 - **A damaged file is never replaced.** Reads see empty history, writes 500 with
   "`.vaultos/kb-reads.json` is damaged. Fix or delete it.", and the morning card stays away.
+  While damaged, the store re-reads the file on every use, so a fix (or deleting it) works at once,
+  with no restart. A single entry whose `read` isn't a number just reads as unread (`readAt`).
 - **The observer's first report never counts.** An article that fits on one screen has its end in
-  view at once; the timer counts it, so a peek stays a peek. Leaving KB mode pauses the count.
+  view at once; the timer counts it, so a peek stays a peek. Leaving KB mode pauses the count, and
+  `setMode` re-arms the end watch on the way back, so a return trip (or a phone scroll clamped to
+  the article's bottom) isn't a read either.
 - **The same-box read path** (`LOCAL_READ`, headless screenshots) sees the card and read states but
   writes nothing: no pick stored, no read sent.
 - **The card never opens over another overlay** (drawer, `DGV`, `DOCV`, Settings, login, a focused
