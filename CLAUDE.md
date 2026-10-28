@@ -482,6 +482,15 @@ including hidden sheets (hidden ones are left out of `sheets[]`, so it is not th
   rows/columns, sheet tabs, dropdown lists (▾), formula cells' cached results, and a *subset* of
   conditional formatting (`cellIs` with literals, and `REF op LITERAL` expressions such as
   `$F3="Open"`; the rest is skipped, counted, and announced by a muted note). A CSV has Grid | Source.
+- **The formula bar shows the whole active cell** (added 2026-10-28). Cells clip like Excel's, and a CSV
+  column is capped at 420px, so a long note used to be unreadable: the bar was one line with `white-space: pre`.
+  It now wraps (line breaks kept) and `fitBar()` grows it to fit, up to 6 lines (5 on a phone, its CSS
+  `max-height`), then it scrolls inside; a short cell puts it back to one line (28px / 32px). The grid gives up
+  that height: `fitBar` reveals the active cell, and the scroll box's ResizeObserver re-places the editor and
+  list button. **After a press in the grid the bar holds its height** until presses stop for `BAR_HOLD_MS`
+  (550ms, past Windows' 500ms double-click): growing between a double-click's two presses moved the grid, and
+  the second press opened *another* cell's editor (C6 instead of C8 in E10; a phone double-tap missed). Keys
+  and typing resize it at once.
 - **Edit** → **Save (N)** / **Done** (Ctrl+S too). Typed text is coerced like Excel, in UK dates
   (`dd/mm/yyyy`); a text cell stays text. Paste (≤ 20,000 cells), undo/redo, insert/delete rows from
   a right-click on the row number. A new row copies the formatting of the row clicked (the op's `like`).
@@ -696,8 +705,8 @@ docker run --rm -v "$PWD":/app -w /app node:22-bookworm-slim node --test 'test/*
 docker run --rm -v "$PWD":/app -v /opt/vault/vault:/vault:ro -w /app node:22-bookworm-slim \
   node scripts/sheet-corpus.js /vault [--ops-smoke]
 scripts/sheet-smoke.sh                      # HTTP smoke on the preview (135 checks)
-node scripts/sheet-e2e.js E1 E2 … E9        # browser scenarios on the preview (host puppeteer + Chrome, paths at the top)
-node scripts/sheet-e2e.js --matrix E1 … E9  # every scenario in desktop/phone × dark/sepia (~30 min)
+node scripts/sheet-e2e.js E1 E2 … E10       # browser scenarios on the preview (host puppeteer + Chrome, paths at the top)
+node scripts/sheet-e2e.js --matrix E1 … E10 # every scenario in desktop/phone × dark/sepia (~30 min)
 ```
 
 - **Corpus** (2026-10-07, real vault): xlsx 27 editable / 3 view-only (PersonalEmailTrace: column widths;
@@ -709,14 +718,22 @@ node scripts/sheet-e2e.js --matrix E1 … E9  # every scenario in desktop/phone 
   0 failed. Exit 1 on any failure. The names, links, extensions and tables gates changed no verdict there;
   without the two ignored `workbook.xml` extensions and the table-header fix, five editable files would
   have gone view-only.
-- **E1–E9**: viewing; editing; save lifecycle; refresh safety; conflicts; tabs and close; restore; CSV round
+- **E1–E10**: viewing; editing; save lifecycle; refresh safety; conflicts; tabs and close; restore; CSV round
   trip, banners and phone saves; a regression sweep over the rest of Files (.md, text, image, upload,
-  right-click menu, terminal dock, Board/KB). Last full matrix 901/901, 0 page errors; last desktop run 260/260. The e2e resets the
+  right-click menu, terminal dock, Board/KB); long text in the formula bar (E10 writes its own invented
+  `Long notes.csv` after the reset; its double-click aims at a fixed point, as a person's pointer stays put). Last full matrix 901/901, 0 page errors; last desktop run 260/260. The e2e resets the
   preview vault before each scenario, mints its own cookie, and writes screenshots to `/tmp/sheet-shots/`.
   Look at them. Several real bugs (a clipped banner button, a doubled heading) were visible only there.
 
 **The preview** (a separate container, so the live board and the real vault are untouched). It lived in
-`/opt/vault/sheet-preview/` during development and is deleted after a release, so recreate it like this:
+`/opt/vault/sheet-preview/` during development and is deleted after a release, so recreate it like this.
+**Since portable mode (2026-10-28 rebuild) the recipe below needs four changes**, or the server sits in setup
+and every call is a 409: use `image: vault-board:latest` (no build) with `DATA_DIR=/data`, `./data:/data` and
+`data/config.json` from `lib/password`'s `writePassword` (mint-cookie reads it there); put a
+`.vaultos/settings.json` (`setupDone: true`, one `Personal` board with `_tasks/Board.md`, `features.terminal:
+true` or E9's terminal checks fail) into `pristine/`; run `sheet-sandbox.js` *inside* the image
+(`-e NODE_PATH=/app/node_modules`), since the host's `node_modules` has no `exceljs`; and give the checkout a real
+`node_modules` (`npm ci --ignore-scripts` in `node:22-bookworm-slim`, as below), or E3/E7/E8's read-backs fail:
 
 - `compose.yml` (mode 0600): project `vault-sheet-preview`, `build:` the checkout, `image: vault-sheet-preview:dev`,
   container `vault-sheet-preview`, `user: "1000:1000"`, `init: true`, ports `127.0.0.1:7690:8080`, env

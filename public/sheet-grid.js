@@ -48,6 +48,9 @@
   const CELL_MAX = 32767;                // characters in one cell (Excel's limit, and the server's)
   const ROWOP_MAX = 1000;                // rows one insert / delete may add or remove (the server's limit)
   const DOUBLE_TAP_MS = 400;
+  // After a press in the grid the formula bar keeps its height until presses have stopped this long (past a
+  // double-click's second press: Windows allows 500ms), so the cells don't move between the two presses.
+  const BAR_HOLD_MS = 550;
   const TOUCH_MIN = 32;                  // px: the smallest target a finger gets (the ▾, a row number in edit mode)
   const SAY_MS = 250;                    // a screen reader hears where the selection stopped, not every step
   const SIDES = ['top', 'right', 'bottom', 'left'];
@@ -518,7 +521,7 @@
     el.dataset.grid = String(gid);
     el.innerHTML = '<div class="sg-fbar"><div class="sg-name" aria-label="Selected cell"></div>'
       + '<div class="sg-fx" aria-hidden="true">fx</div>'
-      + '<textarea class="sg-fval" rows="1" wrap="off" readonly aria-label="Cell contents" autocomplete="off"'
+      + '<textarea class="sg-fval" rows="1" wrap="soft" readonly aria-label="Cell contents" autocomplete="off"'
       + ' autocorrect="off" autocapitalize="off" spellcheck="false"></textarea></div>'
       + '<div class="sg-scroll"></div>'
       + '<div class="sg-tabs" role="tablist" aria-label="Sheets"></div>'
@@ -702,6 +705,7 @@
         measureQueued = false;
         measure();
         if (E && E.si === G.cur && document.activeElement === ed) reveal();   // a phone keyboard came up over it
+        fitBar();   // a new width rewraps the bar's text
         placeOverlays();
       });
     });
@@ -778,7 +782,7 @@
       for (const e of v.marked) e.classList.remove('sg-sel', 'sg-act', 'sg-hsel');
       v.marked = [];
       el.classList.toggle('sg-nogrid', !v.L);   // a sheet too big to draw: no formula bar (styles.css)
-      if (!v.L) { nameEl.textContent = ''; fval.value = ''; fval.readOnly = true; placeOverlays(); return; }
+      if (!v.L) { nameEl.textContent = ''; fval.value = ''; fval.readOnly = true; fitBar(); placeOverlays(); return; }
       const L = v.L;
       const rg = rangeOf(v);
       const one = single(v);
@@ -819,12 +823,35 @@
     function paintBar() {
       const v = view();
       if (!v || !v.L) return;
-      if (E) { fval.readOnly = false; return; }
+      if (E) { fval.readOnly = false; fitBar(); return; }
       const cell = (sheet().cells || {})[v.act.r + ',' + v.act.c];
       const full = !cell ? '' : cell.f || (cell.e !== undefined ? cell.e : cell.t || '');
       if (fval.value !== full) fval.value = full;
       fval.title = full;
       fval.readOnly = !G.editable || !!lockOf(G.cur, v.act.r, v.act.c);
+      fitBar();
+    }
+    // The bar is as tall as its text, up to its CSS max-height (then it scrolls inside), so a long or
+    // multi-line cell can be read in full. The grid below gives up that height: keep the active cell in
+    // view and the editor and list button over their cell.
+    // Growing it moves the grid down, so right after a press it waits (holdBar): otherwise the second press of a
+    // double-click on a long cell lands on whatever cell is now under the pointer, and edits that one.
+    let barHold = 0;
+    function holdBar() {
+      clearTimeout(barHold);
+      barHold = setTimeout(() => { barHold = 0; fitBar(); }, BAR_HOLD_MS);
+    }
+    function fitBar() {
+      if (barHold) return;
+      const was = fval.style.height;
+      fval.style.height = '';   // the one-line height from the stylesheet, to measure against
+      const one = fval.offsetHeight;
+      const max = parseFloat(getComputedStyle(fval).maxHeight) || one;
+      fval.style.height = fval.scrollHeight > one + 1 ? Math.min(fval.scrollHeight, max) + 'px' : '';
+      if (fval.style.height === was) return;
+      const v = view();
+      if (v && v.L) reveal();
+      placeOverlays();
     }
 
     // A cell's box in table coordinates (px from the table's top-left corner, as laid out, i.e. where it sits
@@ -1280,6 +1307,7 @@
         if (!E && !openEditor('edit', fval.value, { focus: false })) { paintBar(); return; }
         ed.value = fval.value;
       } else fval.value = ed.value;
+      fitBar();
       placeEditor();
       if (LP) renderList();
     }
@@ -1689,6 +1717,7 @@
     let drag = null;          // { kind } while a mouse button is held over the grid
     let lastPointer = 'mouse';
     let tap = null;           // the last tapped cell { r, c, t }: a second tap on it soon after edits it
+    scroll.addEventListener('pointerdown', holdBar, true);   // before the press selects anything (see fitBar)
     scroll.addEventListener('pointerdown', (e) => {
       lastPointer = e.pointerType || 'mouse';
       if (lastPointer !== 'mouse' || e.button !== 0) return;   // a finger selects on tap (click), and drags scroll

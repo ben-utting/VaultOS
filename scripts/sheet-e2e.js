@@ -2226,7 +2226,137 @@ async function E9(browser) {
   await s.context.close();
 }
 
-const ALL = { E1, E2, E3, E4, E5, E6, E7, E8, E9 };
+// ---------------------------------------------------------------------------------------------------------
+// E10 — long text: the formula bar wraps and grows to show the whole active cell (line breaks too), up to its
+// max-height, then scrolls inside; it shrinks back for a short cell. The grid keeps the active cell in view, a
+// double-click on a long cell still edits that cell (the bar waits for the clicks to stop before it resizes),
+// and typing grows the bar with the editor staying over its cell. Its CSV is written here, after the reset.
+// ---------------------------------------------------------------------------------------------------------
+const LONG_FILE = 'Long notes.csv';
+const LONG = 'The firewall change was approved on the condition that the old rule stays in place for two weeks, so traffic '
+  + 'can fall back if the new path fails. After that the old rule is removed, the change ticket is closed, and the '
+  + 'runbook is updated with the new subnet, the owner\'s name and the date the rollback window ends. If anything '
+  + 'breaks in those two weeks, ring the on-call engineer first, then raise a P2.';
+const MULTI = 'Step one: drain the node.\nStep two: patch and reboot.\nStep three: check the health page.\nStep four: put it back in the pool.';
+const VERY = [LONG, LONG, LONG].join(' ');
+function writeLongCsv() {
+  const q = (v) => (/[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v);
+  const rows = [['ID', 'Server', 'Notes', 'Owner', 'Status'], ['1', 'web01', LONG, 'Alex', 'Open'], ['2', 'db01', MULTI, 'Sam', 'Done'],
+    ['3', 'app01', 'Short note', 'Alex', 'Open'], ['4', 'files02', VERY, 'Priya', 'Blocked'],
+    // Two long cells two rows apart (C6, C8): growing the bar by a long cell's two-odd rows on the first press of
+    // a double-click on C8 would put C6, just as tall, under the pointer for the second press.
+    ['5', 'files03', LONG, 'Sam', 'Open'], ['6', 'files04', 'Short too', 'Sam', 'Open'], ['7', 'files05', LONG, 'Sam', 'Open']];
+  for (let i = 8; i <= 54; i++) rows.push([String(i), `srv${i}`, `Filler row ${i}`, 'Ops', 'Open']);
+  rows.push(['55', 'last01', LONG, 'Alex', 'Open']);   // model row 55, at the bottom
+  const f = path.join(PREVIEW, 'vault/Sandbox', LONG_FILE);
+  fs.writeFileSync(f, rows.map((r) => r.map(q).join(',')).join('\r\n') + '\r\n');
+  fs.chownSync(f, 1000, 1000);
+}
+// The formula bar's box and its text's extent; `one` is the bar's one-line height (28px, 32px on a phone).
+const bar = (page) => page.evaluate(() => {
+  const f = document.querySelector('#fx-view .sg-fval');
+  const cs = getComputedStyle(f);
+  return { value: f.value, h: f.clientHeight, sh: f.scrollHeight, w: f.clientWidth, sw: f.scrollWidth,
+    max: parseFloat(cs.maxHeight), lh: parseFloat(cs.lineHeight), oy: cs.overflowY, ws: cs.whiteSpace,
+    fbar: document.querySelector('#fx-view .sg-fbar').getBoundingClientRect().height };
+});
+// On screen top to bottom (a column can be wider than a phone, so only the vertical is the bar's doing).
+const rowInView = (b) => b.top >= b.headBottom - 0.5 && b.bottom <= b.viewBottom + 0.5;
+const shows = (b) => b.sw <= b.w + 1 && (b.sh <= b.h + 1 || (Number.isFinite(b.max) && b.h >= b.max - 3 && b.oy === 'auto'));
+
+async function E10(browser) {
+  writeLongCsv();
+  const s = await session(browser);
+  const { page } = s;
+  const one = s.phone ? 32 : 28;
+  const settle = () => sleep(800);   // past the bar's wait for clicks to stop
+  await part('E10 open', async () => {
+    await openFile(s, LONG_FILE);
+    check('E10 the bar starts one line high', Math.round((await bar(page)).fbar) === one, await bar(page));
+  });
+  await part('E10 a long cell shows in full', async () => {
+    await tapOrClick(s, cell(1, 2));
+    await settle();
+    const b = await bar(page);
+    check('E10 the bar holds the whole cell', b.value === LONG, b.value.length);
+    check('E10 it wraps, never scrolling sideways', b.ws === 'pre-wrap' && b.sw <= b.w + 1, b);
+    check('E10 it grew past one line', b.fbar > one + 10, b.fbar);
+    check('E10 every line can be read (all on show, or the bar at its limit and scrolling)', shows(b), b);
+    check('E10 the active cell is still in view', rowInView(await activeBox(page)), await activeBox(page));
+    await shot(page, 'E10-long-dark-desktop');
+  });
+  await part('E10 line breaks show as lines', async () => {
+    await page.keyboard.press('ArrowDown');
+    await sleep(150);
+    const b = await bar(page);
+    check('E10 the multi-line cell is in the bar', b.value === MULTI, b.value);
+    check('E10 all four lines are on show', b.sh <= b.h + 1 && b.h >= 4 * b.lh - 1, b);
+    await shot(page, 'E10-multi-dark-desktop');
+  });
+  await part('E10 a short cell shrinks it back', async () => {
+    await page.keyboard.press('ArrowDown');
+    await sleep(150);
+    check('E10 one line again', Math.round((await bar(page)).fbar) === one, await bar(page));
+  });
+  await part('E10 a very long cell stops at the limit and scrolls', async () => {
+    await page.keyboard.press('ArrowDown');
+    await sleep(150);
+    const b = await bar(page);
+    check('E10 the bar is at its max height', Number.isFinite(b.max) && b.h >= b.max - 3 && b.fbar > one + 10, b);
+    check('E10 the rest scrolls inside the bar', b.sh > b.h && b.oy === 'auto', b);
+    check('E10 the grid keeps most of the screen', b.fbar <= 140, b.fbar);
+  });
+  await part('E10 the cell at the bottom stays in view', async () => {
+    for (let i = 0; i < 51 && (await nameBox(page)) !== 'C56'; i++) await page.keyboard.press('ArrowDown');
+    await sleep(200);
+    check('E10 reached the last row', (await nameBox(page)) === 'C56', await nameBox(page));
+    check('E10 the bar grew for it', (await bar(page)).fbar > one + 10, await bar(page));
+    check('E10 and the cell is still on screen', rowInView(await activeBox(page)), await activeBox(page));
+  });
+  await part('E10 a double-click on a long cell edits that cell', async () => {
+    await scrollGrid(page, { top: 0, left: 0 });
+    await clickEdit(s);
+    await tapOrClick(s, cell(3, 2));   // the short cell: the bar is one line
+    await settle();
+    // Where the long cell C8 is now: a person's pointer stays there for both presses, even if the cell moves.
+    const at = await page.$eval(cell(7, 2), (el) => {
+      const b = el.getBoundingClientRect();
+      const rn = document.querySelector('#fx-view .sg-scroll thead th.sg-corner').getBoundingClientRect().right;
+      const left = Math.max(b.left, rn);   // the part of the cell on show, clear of the row numbers
+      return { x: Math.min(left + 30, (left + Math.min(b.right, innerWidth)) / 2), y: b.top + b.height / 2 };
+    });
+    if (s.phone) {
+      await page.touchscreen.tap(at.x, at.y);
+      await sleep(120);
+      await page.touchscreen.tap(at.x, at.y);
+    } else await page.mouse.click(at.x, at.y, { count: 2, delay: 40 });
+    await sleep(300);
+    const e = await editor(page);
+    check('E10 the editor opened', e.open, e);
+    check('E10 on the cell double-clicked', (await nameBox(page)) === 'C8' && e.value === LONG, { name: await nameBox(page), value: (e.value || '').slice(0, 30) });
+    await page.keyboard.press('Escape');
+    await sleep(100);
+  });
+  await part('E10 typing grows the bar, and the editor stays over its cell', async () => {
+    await tapOrClick(s, cell(3, 2));
+    await settle();
+    await page.keyboard.type('x');   // opens the editor on the short cell
+    await page.keyboard.type(' ' + LONG.slice(0, 260));
+    await sleep(250);
+    const b = await bar(page);
+    check('E10 the bar grew while typing', b.fbar > one + 10, b.fbar);
+    const e = await editor(page);
+    const td = await tdRect(page, 3, 2);
+    check('E10 the editor is still over the cell', e.open && Math.abs(e.top - td.top) <= 1 && Math.abs(e.left - td.left) <= 1, { e, td });
+    await page.keyboard.press('Escape');
+    await sleep(100);
+    check('E10 Escape put the cell back', (await bar(page)).value === 'Short note');
+  });
+  check('E10 no page errors', s.errors.length === 0, s.errors);
+  await s.context.close();
+}
+
+const ALL = { E1, E2, E3, E4, E5, E6, E7, E8, E9, E10 };
 
 (async () => {
   if (!SCENARIOS.length) { console.error('usage: node scripts/sheet-e2e.js [base-url] [--matrix | --viewport=desktop|phone --theme=dark|sepia] E1 [E2 …]'); process.exit(2); }
