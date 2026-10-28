@@ -152,7 +152,13 @@ const SCEN = {
     const p = await page();
     check('K1 KB dashboard loads', await toKB(p));
     check('K1 open the short draft', await openFromDash(p, DRAFT));
-    await sleep(3000);
+    await sleep(2000);
+    await tap(p, modeBtn('board'));
+    await sleep(1000);
+    await tap(p, modeBtn('kb'));
+    await sleep(2000);
+    check('K1 a trip to Board and back is still a peek', (await articleState(DRAFT)).lastRead === null, await articleState(DRAFT));
+    await sleep(1000);
     check('K1 back to the dashboard', await back(p));
     check('K1 a 3 s peek at a one-screen article is not a read', (await articleState(DRAFT)).lastRead === null, await articleState(DRAFT));
     check('K1 reopen the short draft', await openFromDash(p, DRAFT));

@@ -47,6 +47,23 @@ test('parallel updates all land, in memory and on disk', async (t) => {
   assert.equal(Object.keys(K.createReadStore(dir).get().articles.personal).length, 20);
 });
 
+test('fixing or deleting a damaged file takes effect without a restart', async (t) => {
+  for (const fix of ['repair', 'delete']) {
+    const dir = vault(t);
+    fs.mkdirSync(path.dirname(file(dir)), { recursive: true });
+    fs.writeFileSync(file(dir), '{not json');
+    const store = K.createReadStore(dir);
+    assert.equal(store.damaged(), K.DAMAGED_MSG);
+    if (fix === 'repair') fs.writeFileSync(file(dir), JSON.stringify({ version: 1, articles: { personal: { '01-a': { read: 7 } } }, morning: null }));
+    else fs.rmSync(file(dir));
+    assert.equal(store.damaged(), null, fix);
+    await store.update((s) => { s.articles.sucden = { '05-s': { read: 9 } }; return s; });
+    const disk = JSON.parse(fs.readFileSync(file(dir), 'utf8'));
+    assert.equal(disk.articles.sucden['05-s'].read, 9, fix);
+    if (fix === 'repair') assert.equal(disk.articles.personal['01-a'].read, 7);
+  }
+});
+
 for (const [name, text] of [['unparseable', '{not json'], ['another version', '{"version":2}'], ['articles not an object', '{"version":1,"articles":[]}']]) {
   test(`a damaged file (${name}) reads as empty and is never overwritten`, async (t) => {
     const dir = vault(t);

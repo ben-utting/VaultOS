@@ -112,6 +112,15 @@ test('a damaged kb-reads.json: reads still work, writes fail, the file is untouc
   assert.equal(fs.readFileSync(readsFile(s.vault), 'utf8'), '{bad');
 });
 
+test('a hand-edited entry whose read is not a time reads as unread, and the KB still loads', async (t) => {
+  const s = await readsServer(t, { '.vaultos/kb-reads.json': JSON.stringify({ version: 1, articles: { personal: { '01-a': { read: 'yesterday' } } }, morning: null }) });
+  const r = await call(s.srv.base, 'GET', '/api/kb?ws=personal', { cookie: s.cookie });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.articles[0].lastRead, null);
+  assert.equal(r.body.articles[0].readState, 'unread');
+  assert.equal((await call(s.srv.base, 'GET', `/api/kb/article?ws=personal&path=${encodeURIComponent(A)}`, { cookie: s.cookie })).status, 200);
+});
+
 test('Morning read is a feature switch, on by default', async (t) => {
   const s = await readsServer(t);
   const me = async () => (await call(s.srv.base, 'GET', '/api/me', { cookie: s.cookie })).body.features.morningRead;

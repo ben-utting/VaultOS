@@ -1117,6 +1117,10 @@ function setMode(mode) {
   if (mode === 'today' && !todayOn()) mode = 'board';   // Today is off: nothing to show (a Refresh's 'today' too)
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
   if (STATE.mode === 'files' && mode !== 'files' && window.SheetFiles) SheetFiles.beforeViewChange(null, null);
+  // Back in KB mode with an article still being read: watch its end afresh. Hidden, the
+  // observer saw it leave; shown again, a first report of "in view" is only where the page
+  // happens to be (a short article, or a phone scroll clamped to its bottom), not reading.
+  if (mode === 'kb' && STATE.mode !== 'kb' && KBREAD && !KBREAD.sent) watchReadEnd(KBREAD);
   STATE.mode = mode;
   $('mode-today').classList.toggle('active', mode === 'today');
   $('mode-board').classList.toggle('active', mode === 'board');
@@ -1472,7 +1476,8 @@ async function exportArticlePdf(p, btn) {
 // for half its reading time, never under READ_MIN_SECONDS. The observer's first
 // report, made as soon as it starts watching, doesn't count: an article that fits
 // on one screen has its end in view at once, and the timer counts that one, so a
-// peek is still a peek. Leaving KB mode pauses the count rather than ending it.
+// peek is still a peek. Leaving KB mode pauses the count rather than ending it, and
+// coming back re-arms the end watch (setMode), so the return trip isn't a read either.
 // One POST per opening; the same-box read path can't write, so it never sends.
 const READ_MIN_SECONDS = 20;
 let KBREAD = null;   // { path, needed, seconds, timer, observer, sent } for the open article

@@ -7,6 +7,7 @@ const { zoneAtHour } = require('./helpers/zone');
 const DAY = 86400000;
 const at = (iso) => Date.parse(iso);
 const words = (n, w = 'word') => Array(n).fill(w).join(' ');
+const art = (key, extra) => ({ path: `Personal/1. a/${key}/article.md`, title: key, status: 'published', updated: '', created: '', ...extra });
 
 test('constants', () => {
   assert.equal(K.READS_REL, '.vaultos/kb-reads.json');
@@ -42,6 +43,15 @@ test('readState: unread, read, or updated since the read (by date in the zone)',
   assert.equal(K.readState({ updated: '' }, { read: at('2026-10-01T10:00Z') }, tz), 'read');
 });
 
+test('readState: a hand-edited read that is not a time counts as unread, never throws', () => {
+  for (const read of ['yesterday', NaN, null, -5, {}]) {
+    assert.equal(K.readState({ updated: '2026-10-01' }, { read }, 'UTC'), 'unread', String(read));
+  }
+  const now = at('2026-10-29T08:00Z');
+  assert.deepEqual(K.morningCandidates([art('A', { updated: '2026-10-01' })], { A: { read: 'yesterday' } }, now, 'UTC')
+    .map((c) => c.reason), ['unread']);
+});
+
 test('inMorning: 05:00 up to, not including, 12:00 in the zone', () => {
   assert.equal(K.inMorning(at('2026-10-29T04:59Z'), 'UTC'), false);
   assert.equal(K.inMorning(at('2026-10-29T05:00Z'), 'UTC'), true);
@@ -57,8 +67,6 @@ test('zoneAtHour finds a zone at that local hour, at every UTC hour', () => {
     assert.equal(K.inMorning(now, zoneAtHour(15, now)), false, `15:00 zone at ${h}:30 UTC`);
   }
 });
-
-const art = (key, extra) => ({ path: `Personal/1. a/${key}/article.md`, title: key, status: 'published', updated: '', created: '', ...extra });
 
 test('morningCandidates: updated, then unread, then stale; drafts, skips and recent reads left out', () => {
   const now = at('2026-10-29T08:00Z');

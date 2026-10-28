@@ -40,7 +40,7 @@ const { zonedDate } = require('./lib/today-note');
 const { legacySettings } = require('./lib/migrate');
 const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup');
 const { PROFILES, KICKOFF_PROMPT, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
-const { createReadStore, readingMinutes, readState, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
+const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
 const SETTINGS = () => settingsStore.current();
@@ -1602,7 +1602,7 @@ function withReads(articles, wsKey) {
   const tz = kbZone();
   return articles.map((a) => {
     const entry = entries[articleKey(a.path)];
-    return { ...a, lastRead: (entry && entry.read) || null, readState: readState(a, entry, tz) };
+    return { ...a, lastRead: readAt(entry), readState: readState(a, entry, tz) };
   });
 }
 
