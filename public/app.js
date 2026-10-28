@@ -2374,7 +2374,7 @@ $('pw-form').addEventListener('submit', async (e) => {
   form.removeAttribute('aria-busy');
   if (res && res.ok) {
     resetPassword();
-    $('pw-ok').textContent = 'Password changed.';
+    $('pw-ok').textContent = data.signedOut ? 'Password changed. Every other browser is signed out.' : 'Password changed.';
     return;
   }
   if (res && res.status === 401 && data.error === 'Not authenticated') {

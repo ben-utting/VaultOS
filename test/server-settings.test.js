@@ -17,7 +17,8 @@ const call = async (base, method, url, { cookie, body } = {}) => {
   const text = await res.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* not json */ }
-  return { status: res.status, body: json, text };
+  const setCookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+  return { status: res.status, body: json, text, setCookie };
 };
 
 // Starts a server and runs setup through its routes (boards Work and Home, Today off).
@@ -162,10 +163,14 @@ test('password change', async (t) => {
   const post = (body) => call(s.base, 'POST', '/api/settings/password', { cookie: s.cookie, body });
   assert.equal((await post({ current: 'wrong wrong', next: 'a brand new one' })).status, 401);
   assert.equal((await post({ current: PASSWORD, next: 'short' })).status, 400);
-  assert.equal((await post({ current: PASSWORD, next: 'a brand new one' })).status, 200);
+  const changed = await post({ current: PASSWORD, next: 'a brand new one' });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.signedOut, true);
   assert.equal((await call(s.base, 'POST', '/api/login', { body: { password: PASSWORD } })).status, 401);
   assert.equal((await call(s.base, 'POST', '/api/login', { body: { password: 'a brand new one' } })).status, 200);
-  assert.equal((await call(s.base, 'GET', '/api/settings', { cookie: s.cookie })).status, 200);
+  // Every cookie from before the change is signed out; the browser that changed it gets a new one.
+  assert.equal((await call(s.base, 'GET', '/api/settings', { cookie: s.cookie })).status, 401);
+  assert.equal((await call(s.base, 'GET', '/api/settings', { cookie: changed.setCookie })).status, 200);
 });
 
 test('wrong current password does not count toward the lockout', async (t) => {

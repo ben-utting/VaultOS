@@ -91,6 +91,17 @@ function safeTaskPath(relPath, wsDir) {
   const full = path.resolve(VAULT_DIR, clean);
   if (!full.startsWith(wsDir + path.sep)) throw new Error('Path outside workspace');
   if (path.basename(full) !== 'task.md') throw new Error('Not a task file');
+  return realInWorkspace(full, wsDir);
+}
+// The checks above read the path as written; this one follows it. Where it really
+// leads must still be inside the workspace, so a symlinked file or folder can't walk
+// out of it (Files has the same rule in safeVaultPath). A missing file is left for
+// the caller's own read to report, as before.
+function realInWorkspace(full, wsDir) {
+  let real;
+  try { real = fs.realpathSync.native(full); }
+  catch (err) { if (err.code === 'ENOENT') return full; throw err; }
+  if (!real.startsWith(fs.realpathSync.native(wsDir) + path.sep)) throw new Error('Path outside workspace');
   return full;
 }
 function relOf(full) {
@@ -124,7 +135,7 @@ async function safeJobDocPath(relPath, wsDir) {
   const base = path.basename(full);
   if (base === 'task.md' || base === 'article.md') throw new Error('Use the dedicated view for this file');
   await fsp.access(path.join(path.dirname(full), 'task.md'));
-  return full;
+  return realInWorkspace(full, wsDir);
 }
 
 // ---------- Frontmatter ----------
@@ -483,7 +494,7 @@ function safeScreenshotPath(relPath, wsDir) {
   const contentType = SCREENSHOT_EXT.get(path.extname(full).toLowerCase());
   if (!contentType) throw new Error('Not an image file');
   if (path.basename(path.dirname(full)) !== 'screenshots') throw new Error('Not in a screenshots/ folder');
-  return { full, contentType };
+  return { full: realInWorkspace(full, wsDir), contentType };
 }
 
 // Same traversal rules as tasks, but the file must sit in a `diagrams/` folder.
@@ -495,7 +506,7 @@ function safeDiagramPath(relPath, wsDir) {
   if (!full.startsWith(wsDir + path.sep)) throw new Error('Path outside workspace');
   if (!DIAGRAM_EXT.has(path.extname(full).toLowerCase())) throw new Error('Not a diagram file');
   if (path.basename(path.dirname(full)) !== 'diagrams') throw new Error('Not in a diagrams/ folder');
-  return full;
+  return realInWorkspace(full, wsDir);
 }
 
 // A stable, collision-proof namespace for one diagram's ids, derived from its path.
@@ -951,9 +962,12 @@ app.use((err, req, res, next) => {
 // Kept as a named middleware so the terminal's websocket upgrade (which never
 // passes through Express) can read the same session. Configured once: before
 // setup there is no config yet, and setup saves PENDING_SECRET as the secret.
+// cookie-session reads SESSION_KEYS on every request, so a password change swaps
+// its one key in place and every cookie signed with the old key stops working.
+const SESSION_KEYS = [config ? config.sessionSecret : PENDING_SECRET];
 const sessionMw = cookieSession({
   name: 'board_sess',
-  secret: config ? config.sessionSecret : PENDING_SECRET,
+  keys: SESSION_KEYS,
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   httpOnly: true,
   sameSite: 'lax',
@@ -1487,6 +1501,10 @@ app.post('/api/settings/agent', settingsGuard, async (req, res) => {
 
 // A wrong current password is a 401 that does not count toward the login lockout:
 // the person is already signed in.
+// A new password signs out every other browser: the session secret is replaced, and
+// every open terminal socket (let in by an old cookie) is closed. This browser gets a
+// cookie under the new secret, so it stays in and its terminals reconnect at once; the
+// shells keep running either way.
 app.post('/api/settings/password', settingsGuard, (req, res) => {
   const { current, next } = req.body || {};
   if (typeof current !== 'string' || !config || !verifyPassword(config, current)) {
@@ -1496,13 +1514,15 @@ app.post('/api/settings/password', settingsGuard, (req, res) => {
     return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD} characters` });
   }
   try {
-    // The session secret is kept, so every signed-in browser stays signed in.
     config = writePassword(DATA_DIR, next);
-    res.json({ ok: true });
   } catch (err) {
     console.error('change password failed:', err.message);
-    res.status(500).json({ error: 'Could not save the password' });
+    return res.status(500).json({ error: 'Could not save the password' });
   }
+  SESSION_KEYS[0] = config.sessionSecret;
+  req.session = { authed: true };
+  res.json({ ok: true, signedOut: true });
+  for (const t of TERMS.values()) if (t.ws) try { t.ws.close(); } catch { /* already gone */ }
 });
 
 // ---------- Workspaces ----------
@@ -1615,6 +1635,7 @@ app.get('/api/kb/article', async (req, res) => {
     if (!full.startsWith(ws.dir + path.sep) || path.basename(full) !== 'article.md') {
       throw new Error('Not an article file');
     }
+    realInWorkspace(full, ws.dir);
     const articles = await scanKB(ws.dir);
     const rel = relOf(full);
     const article = articles.find((a) => a.path === rel);
@@ -1825,8 +1846,13 @@ async function buildArticlePdfHtml(article, ws) {
       @bottom-left { content: ${cssString(article.updated ? `Updated ${longDate(article.updated)}` : '')}; }
     }`;
 
+  // The CSP holds Chromium (which runs with --no-sandbox) to what this page is made of:
+  // inline styles and data: images. Article markdown can carry raw HTML, and without
+  // it a <script> would run and an <iframe src="file:///app/config.json"> would print
+  // the server's own files into a PDF meant for people outside the vault.
   return `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
 <title>${esc(article.title)}</title>
 <style>${css}${pageCss}</style>
 </head><body>
@@ -1895,6 +1921,7 @@ app.get('/api/kb/article.pdf', async (req, res) => {
     if (!full.startsWith(ws.dir + path.sep) || path.basename(full) !== 'article.md') {
       throw new Error('Not an article file');
     }
+    realInWorkspace(full, ws.dir);
     const article = await loadArticleRaw(full);
     const html = await buildArticlePdfHtml(article, ws);
     if (req.query.format === 'html') return res.type('html').send(html);   // for tuning pdf.css

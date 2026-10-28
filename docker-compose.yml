@@ -186,14 +186,12 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "8384:8384"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
-    # depends_on: obsidian removed 2026-07-20 (service retired). The Caddyfile
-    # is unchanged, so :80 still proxies to vault-obsidian and will 502;
-    # :8384 (Syncthing UI) is unaffected.
+    # depends_on: obsidian removed 2026-07-20 (service retired); :80 now proxies
+    # the board. "8384:8384" (Syncthing UI) removed 2026-10-28, Syncthing being retired.
 
 # Volume keys are pinned to their existing physical names so renaming the
 # compose project from 'obsidian' to 'vault' does NOT orphan the data.

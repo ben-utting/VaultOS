@@ -6,7 +6,8 @@ const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
-const { startServer, login } = require('./helpers/server');
+const { startServer, login, seedVault } = require('./helpers/server');
+const { writePassword } = require('../lib/password');
 
 const PASSWORD = 'correct horse';
 
@@ -179,4 +180,105 @@ test('before setup a bad Host cannot set the password', async (t) => {
   });
   assert.equal(status, 421);
   assert.ok(!fs.existsSync(path.join(d.data, 'config.json')));
+});
+
+// A signed-in server over a seeded vault with one board (Work), plus a folder
+// beside the vault for symlinks to point at.
+async function seeded(t, files = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-sec-'));
+  const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home'), outside: path.join(root, 'outside') };
+  for (const dir of [d.vault, d.home, d.outside]) fs.mkdirSync(dir);
+  seedVault(d.vault, {
+    '.vaultos/settings.json': JSON.stringify({
+      version: 1, setupDone: true, boards: [{ key: 'work', dir: 'Work', label: 'Work', hidden: false }],
+      features: { today: false }, today: { dir: 'Work/Today' },
+    }),
+    'Work/_tasks/Board.md': '---\n\nkanban-plugin: board\n\n---\n',
+    ...files,
+  });
+  writePassword(d.data, PASSWORD);
+  const srv = await startServer({ vault: d.vault, data: d.data, home: d.home });
+  t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  const get = async (url) => {
+    const res = await fetch(srv.base + url, { headers: { cookie } });
+    return { status: res.status, text: await res.text() };
+  };
+  const cookie = await login(srv.base, PASSWORD);
+  return { ...srv, ...d, get };
+}
+
+const taskMd = (title) => `---\ntitle: ${title}\nstatus: backlog\n---\n\n${title} body\n`;
+const q = encodeURIComponent;
+
+test('a symlink cannot lead a Board or KB read out of its workspace', async (t) => {
+  const s = await seeded(t, { 'Work/1. p/real/task.md': taskMd('Inside') });
+  fs.writeFileSync(path.join(s.outside, 'task.md'), taskMd('Outside'));
+  fs.writeFileSync(path.join(s.outside, 'notes.md'), 'Outside notes');
+  fs.writeFileSync(path.join(s.outside, 'article.md'), '---\ntype: article\ntitle: Outside\n---\n\nOutside\n');
+  fs.writeFileSync(path.join(s.outside, 'd.html'), '<svg viewBox="0 0 1 1"><title>Outside</title></svg>');
+  const link = (rel, target) => {
+    const f = path.join(s.vault, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.symlinkSync(target, f);
+  };
+  link('Work/1. p/file/task.md', path.join(s.outside, 'task.md'));
+  link('Work/1. p/dir', s.outside);
+  link('Work/1. p/real/notes.md', path.join(s.outside, 'notes.md'));
+  link('Work/1. p/real/diagrams/d.html', path.join(s.outside, 'd.html'));
+  link('Work/1. p/real/screenshots/x.png', path.join(s.data, 'config.json'));
+  link('Work/1. p/art/article.md', path.join(s.outside, 'article.md'));
+  link('Work/1. p/alias', path.join(s.vault, 'Work', '1. p', 'real'));
+  for (const url of [
+    `/api/task?ws=work&path=${q('Work/1. p/file/task.md')}`,
+    `/api/task?ws=work&path=${q('Work/1. p/dir/task.md')}`,
+    `/api/task/doc?ws=work&path=${q('Work/1. p/real/notes.md')}`,
+    `/api/diagram?ws=work&path=${q('Work/1. p/real/diagrams/d.html')}`,
+    `/api/screenshot?ws=work&path=${q('Work/1. p/real/screenshots/x.png')}`,
+    `/api/kb/article?ws=work&path=${q('Work/1. p/art/article.md')}`,
+    `/api/kb/article.pdf?ws=work&format=html&path=${q('Work/1. p/art/article.md')}`,
+  ]) {
+    const r = await s.get(url);
+    assert.equal(r.status, 400, url);
+    assert.doesNotMatch(r.text, /Outside|passwordHash/, url);
+  }
+  // One that stays inside the workspace still works.
+  const ok = await s.get(`/api/task?ws=work&path=${q('Work/1. p/alias/task.md')}`);
+  assert.equal(ok.status, 200);
+  assert.match(ok.text, /Inside/);
+});
+
+test('the PDF page lets Chromium run no script and load nothing but data: images', async (t) => {
+  const s = await seeded(t, {
+    'Work/1. p/a/article.md': '---\ntype: article\ntitle: A\n---\n\n## One\n\n<iframe src="file:///etc/hostname"></iframe><script>x()</script>\n',
+  });
+  const r = await s.get(`/api/kb/article.pdf?ws=work&format=html&path=${q('Work/1. p/a/article.md')}`);
+  assert.equal(r.status, 200);
+  const csp = r.text.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/);
+  assert.ok(csp, 'no CSP meta');
+  assert.equal(csp[1], "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
+  assert.ok(r.text.indexOf(csp[0]) < r.text.indexOf('<style>'), 'the CSP must come before any content');
+});
+
+test('a password change closes open terminal sockets, and only the new cookie opens one', { timeout: 15e3 }, async (t) => {
+  const WebSocket = require('ws');
+  const s = await ready(t, { TERMINAL: undefined });
+  const open = (cookie) => new Promise((resolve) => {
+    const ws = new WebSocket(`${s.base.replace('http', 'ws')}/api/term?id=abcdefgh2`, { headers: { cookie, origin: s.base } });
+    ws.once('open', () => resolve(ws));
+    ws.once('unexpected-response', (req, res) => { req.destroy(); resolve(res.statusCode); });
+    ws.on('error', () => {});
+  });
+  const ws = await open(s.cookie);
+  assert.ok(ws instanceof WebSocket);
+  const closed = new Promise((resolve) => ws.once('close', resolve));
+  const res = await fetch(`${s.base}/api/settings/password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', cookie: s.cookie },
+    body: JSON.stringify({ current: PASSWORD, next: 'a brand new one' }),
+  });
+  assert.equal(res.status, 200);
+  await closed;
+  assert.equal(await open(s.cookie), 401);
+  const again = await open(res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '));
+  assert.ok(again instanceof WebSocket);
+  again.close();
 });

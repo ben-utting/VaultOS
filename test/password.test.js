@@ -19,12 +19,13 @@ test('writePassword creates the dir and a verifiable config', () => {
   assert.equal(fs.statSync(path.join(dir, 'config.json')).mode & 0o777, 0o600);
 });
 
-test('keeps an existing sessionSecret', () => {
+test('a new password gets a new sessionSecret', () => {
   const dir = tmp();
   const first = pw.writePassword(dir, 'password one', { sessionSecret: 'abc' });
-  const second = pw.writePassword(dir, 'password two', { sessionSecret: 'zzz' });
-  assert.equal(second.sessionSecret, first.sessionSecret);
-  assert.equal(second.sessionSecret, 'abc');
+  const second = pw.writePassword(dir, 'password two');
+  assert.equal(first.sessionSecret, 'abc');
+  assert.match(second.sessionSecret, /^[0-9a-f]{64}$/);
+  assert.equal(pw.readConfig(dir).sessionSecret, second.sessionSecret);
   assert.equal(pw.verifyPassword(second, 'password two'), true);
 });
 

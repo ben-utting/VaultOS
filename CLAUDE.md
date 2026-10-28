@@ -266,6 +266,32 @@ feature that needs the image, not just the bind mounts).
   64MB /dev/shm). `TMPDIR` points at the per-render temp dir or Chromium leaves
   `org.chromium.*` dirs in /tmp forever.
 
+## Hardened after an outside audit (2026-10-28)
+
+A security audit of a fork, run at `c792a11`, led to these. Each has a test; don't undo them.
+
+- **A new password signs every other browser out.** `writePassword` always writes a fresh
+  `sessionSecret` (setup passes `PENDING_SECRET`, the one its middleware already holds).
+  `SESSION_KEYS` is the array cookie-session reads on every request, so `/api/settings/password`
+  swaps `SESSION_KEYS[0]` in place, re-issues the caller's cookie with `req.session = { authed: true }`
+  (setting `authed` again is no change, and no cookie would go out), and closes every open terminal
+  socket. The ptys live on, and the caller's panes reconnect on the new cookie. `set-password.js`
+  still takes effect at the next restart, and signs everyone out then.
+- **Board/KB path guards follow symlinks.** `safeTaskPath`, `safeJobDocPath`, `safeScreenshotPath`,
+  `safeDiagramPath` and the two article routes end in `realInWorkspace()`: where the path really
+  leads must be inside the workspace, as `safeVaultPath` already required for Files. The vault's CIFS
+  mount is `symlink=native`, so a symlink made on the NAS shows up here. There were none in the
+  vault on 2026-10-28, and a symlink that stays inside the workspace still works.
+- **The PDF page carries a CSP** (`default-src 'none'; style-src 'unsafe-inline'; img-src data:`).
+  Chromium runs `--no-sandbox` with JavaScript on over a `file://` page, and `marked` passes an
+  article's raw HTML through, so before this `<iframe src="file:///app/config.json">` in an article
+  printed the session secret into the PDF. Anything the PDF shows must be inline or a data: URI,
+  which the inlining above already guarantees; a real 8-page article with diagrams came out the
+  same, byte for byte bar the timestamp.
+- **Still open:** the app renders the same unsanitised HTML into `innerHTML` (`#d-body`,
+  `#docv-body`), so `<img onerror=…>` in any vault markdown runs on the board's own origin. It
+  needs a sanitiser or a page-wide CSP, and a browser pass over every mode.
+
 ## Workbench: Files mode + terminal dock (merged 2026-09-27, live on :7684)
 
 A third mode, **Files**, next to Board and Knowledge Base: the whole vault as a lazy tree, a

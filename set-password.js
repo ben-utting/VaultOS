@@ -1,7 +1,7 @@
 'use strict';
 // Usage: node set-password.js "your-password"
-// Hashes the password with scrypt and writes config.json in DATA_DIR (keeps existing
-// sessionSecret) and resets any lockout.
+// Hashes the password with scrypt and writes config.json in DATA_DIR with a new
+// sessionSecret (every browser signs in again once the server restarts) and resets any lockout.
 const { MIN_PASSWORD, dataDirFrom, writePassword } = require('./lib/password');
 
 const password = process.argv[2];

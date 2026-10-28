@@ -18,9 +18,5 @@
     reverse_proxy vault-board:8080
 }
 
-:8384 {
-    basic_auth {
-        benutting $2a$14$R6WLosv8KRMI1S6LKWbnXe0NiTwazobxooknox120OlcznqWddnEG
-    }
-    reverse_proxy vault-syncthing:8384
-}
+# :8384 proxied the Syncthing UI behind basic_auth. Syncthing was retired 2026-10-18,
+# and the site (with its committed bcrypt hash) and its published port went 2026-10-28.
