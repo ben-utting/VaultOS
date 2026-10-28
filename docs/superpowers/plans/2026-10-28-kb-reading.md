@@ -81,16 +81,16 @@
     - J: unread, `skipUntil` yesterday, updated 10-01
 
     Expected order by key: `I, A, D, C, J, F, E` with reasons `updated, updated, unread, unread, unread, stale, stale`. B, G and H are absent. `morningPick` gives I. `morningPick([], …)` gives null. Two unread articles with the same `updated` order by title.
-  - `mergeImport`, boards `personal → Personal` and `sucden → Sucden`. The state has `personal['38-x'].read = 5000`. The map is:
+  - `mergeImport`, boards `personal → Personal` and `work → Work`. The state has `personal['38-x'].read = 5000`. The map is:
     - `'Personal/1. apps/38-x/article.md': 4000` (older, ignored)
     - `'Personal/1. apps/_done/39-y/article.md': 6000`
-    - `'Sucden/2. ops/05-z/article.md': 7000`
-    - `'Lancashire/1. a/09-q/article.md': 8000` (no board)
+    - `'Work/2. ops/05-z/article.md': 7000`
+    - `'Archive/1. a/09-q/article.md': 8000` (no board)
     - `'Personal/a/../40-w/article.md': 1` (`..`)
     - `'Personal/1. apps/41-v/article.md': 'yesterday'`
     - `'Personal/1. apps/42-u/article.md': now + 2 days`
 
-    Expected: `imported === 2`. `personal['38-x'].read === 5000`, `personal['39-y'].read === 6000`, `sucden['05-z'].read === 7000`, and no other keys. The input state is unchanged.
+    Expected: `imported === 2`. `personal['38-x'].read === 5000`, `personal['39-y'].read === 6000`, `work['05-z'].read === 7000`, and no other keys. The input state is unchanged.
 - [ ] **Step 2:** Run `KT test/kb-reads.test.js`. Expected: FAIL, `Cannot find module '../lib/kb-reads'`.
 - [ ] **Step 3:** Implement `lib/kb-reads.js` and `test/helpers/zone.js` to those interfaces.
   - For the hour, use `Number(zonedTime(new Date(now), tz).slice(0, 2))`.
@@ -143,13 +143,13 @@
   - Module-level `const READS = createReadStore(VAULT_DIR)` and `const kbZone = () => SETTINGS().today.timezone`.
   - The write routes check `sessionAuthed(req)` themselves (401 otherwise), even though the `/api` gate already refuses non-GET local reads.
 
-- [ ] **Step 1: Write the failing tests.** Seed like `server-kb-search.test.js`, with boards `personal → Personal` and `sucden → Sucden`, articles `Personal/1. a/01-a/article.md` and `Sucden/1. b/05-s/article.md`, and a `task.md` beside 01-a.
+- [ ] **Step 1: Write the failing tests.** Seed like `server-kb-search.test.js`, with boards `personal → Personal` and `work → Work`, articles `Personal/1. a/01-a/article.md` and `Work/1. b/05-s/article.md`, and a `task.md` beside 01-a.
   - `GET /api/kb?ws=personal`: each article has `minutes >= 1`, `lastRead === null` and `readState === 'unread'`.
   - `POST /api/kb/read` without a cookie → 401.
   - With a cookie, it returns 200 with a numeric `lastRead` and `readState: 'read'`. `/api/kb` then shows the same `lastRead`, and the file holds `articles.personal['01-a'].read`.
-  - These return 400 and leave the file absent: the sibling `task.md`; the Sucden article under `ws=personal`; `Personal/../Sucden/1. b/05-s/article.md`.
+  - These return 400 and leave the file absent: the sibling `task.md`; the Work article under `ws=personal`; `Personal/../Work/1. b/05-s/article.md`.
   - `GET /api/kb/article` carries `minutes`, `lastRead` and `readState`.
-  - Import of `{ reads: { 'Personal/1. a/01-a/article.md': <now-1000>, 'Sucden/1. b/05-s/article.md': <now-2000> } }` → `{ imported: 2 }`, and `/api/kb?ws=sucden` shows that `lastRead`. `{ reads: [] }` and `{}` → 400.
+  - Import of `{ reads: { 'Personal/1. a/01-a/article.md': <now-1000>, 'Work/1. b/05-s/article.md': <now-2000> } }` → `{ imported: 2 }`, and `/api/kb?ws=work` shows that `lastRead`. `{ reads: [] }` and `{}` → 400.
   - With `{bad` in `.vaultos/kb-reads.json` before start: `/api/kb` is 200 with everything unread. `POST /api/kb/read` → 500 and the error contains `kb-reads.json is damaged`. The file is unchanged.
   - `/api/me` has `features.morningRead === true`. `POST /api/settings/features {morningRead:false}` → 200, then `/api/me` shows false. `{morningRead:'no'}` → 400.
   - In `test/settings.test.js`: `defaults().features.morningRead === true`. A settings file without the key loads as true. `"morningRead": "yes"` throws `features.morningRead must be true or false`.
@@ -175,11 +175,11 @@
   - `POST /api/kb/morning` `{ action: 'open' | 'later' | 'skip' }` → `{ ok: true }`. 400 for a bad action, 409 with no pending pick for today.
   - The stored pick is `morning: { date, ws, key, at, reason, done }`. It is found again by `key` in `ws`'s current `scanKB`, so a moved folder still resolves. "Read since the pick" means `entry.read > at`. A local-read GET computes the card but never calls `READS.update`.
 
-- [ ] **Step 1: Write the failing tests.** Boards: personal (articles `01-new` updated yesterday, `02-old` read 40 days ago), sucden (`05-s`), business (no articles). The time zone is `zoneAtHour(8)` unless a test says outside, where it is `zoneAtHour(15)`.
+- [ ] **Step 1: Write the failing tests.** Boards: personal (articles `01-new` updated yesterday, `02-old` read 40 days ago), work (`05-s`), business (no articles). The time zone is `zoneAtHour(8)` unless a test says outside, where it is `zoneAtHour(15)`.
   - Outside the window → `{ card: null }`, and no file.
   - `features.morningRead: false` → null.
   - Inside, `ws=personal`: the card is `01-new` with `ws: 'personal'`, `wsLabel: 'Personal'`, `reason: 'unread'`, `lastRead: null` and `minutes >= 1`. The file's `morning.date === zonedDate(new Date(), tz)` and `done === false`.
-  - `ws=sucden` the same day → the same card, still `ws: 'personal'`.
+  - `ws=work` the same day → the same card, still `ws: 'personal'`.
   - On a fresh server, `ws=business` first → null and `morning` still null. Then `ws=personal` → a card.
   - `later` → 200, then GET → null, then `later` again → 409.
   - `skip` → `articles.personal['01-new'].skipUntil` is within 60 s of `now + 90 days`. GET → null.
@@ -212,14 +212,14 @@
 
   `data/config.json` is made once, with `node -e "require('$WT/lib/password').writePassword('/opt/vault/kb-preview/data', 'kb-preview-only')"` and then chowned to 1000. `mint-cookie.js` is `today-preview/mint-cookie.js`, reading `data/config.json`. `reset.sh` wipes `vault/`, runs `node $WT/scripts/kb-sandbox.js vault --zone="$(node -e "console.log(require('$WT/test/helpers/zone').zoneAtHour(8))")"`, chowns, then `docker restart kb-preview`.
 - `scripts/kb-sandbox.js <outDir> --zone=<tz>` writes, with D = today in the zone:
-  - `.vaultos/settings.json`: boards `personal`/Personal, `sucden`/Sucden, `business`/Business (empty); `features { today: false, terminal: false, morningRead: true }`; `today { dir: 'Personal/Today', timezone: zone }`.
+  - `.vaultos/settings.json`: boards `personal`/Personal, `work`/Work, `business`/Business (empty); `features { today: false, terminal: false, morningRead: true }`; `today { dir: 'Personal/Today', timezone: zone }`.
   - A `_tasks/Board.md` per board.
   - Articles, each with a `> **TL;DR**` line:
     - `Personal/1. apps/01-long-read` "Long read", D-1, about 1,300 words in 8 `##` sections
     - `Personal/1. apps/02-short-note` "Short note", D-40, about 60 words
     - `Personal/1. apps/_done/03-moved-job` "Moved job", D-60
     - `Personal/2. platform/04-draft-idea` "Draft idea", `status: draft`, D-5
-    - `Sucden/1. ops/05-sucden-runbook` "Sucden runbook", D-2
+    - `Work/1. ops/05-work-runbook` "Work runbook", D-2
   - `.vaultos/kb-reads.json` with `02-short-note` read at noon UTC on D-50 and `03-moved-job` read on D-45.
 - `scripts/kb-reading-e2e.js [--phone] [--theme=sepia] K1 …`: the harness is `scripts/today-e2e.js`, adapted.
   - It allows only `http://127.0.0.1:7693` and refuses port 7684.
@@ -270,7 +270,7 @@
 
 - [ ] **Step 1: Write the failing e2e scenarios.** K3 and K4 run at all four of desktop/phone × dark/sepia.
   - **K3.** Load on personal. The card shows `Morning read · 1 min`, title `Short note`, `km-reason` `Updated since you read it`, and `km-meta` containing `Personal`. Its rect lies inside the viewport, and `document.activeElement.id === 'km-read'`. Take a screenshot. Click Not today: the card is hidden and `GET /api/kb/morning` → `card: null`. A new context, waited 3 s, shows no card.
-  - **K4.** Make the pick with a signed-in `GET /api/kb/morning?ws=personal`. A context opening on `sucden` shows the card with `Short note` and `Personal`. Read now → `STATE.workspace === 'personal'`, `STATE.mode === 'kb'`, the reader's `h1` is `Short note`, and the card is hidden. **K4b:** reset, POST `later` through the API, then click Read now in a page that still shows the card. It still opens the article, with no toast.
+  - **K4.** Make the pick with a signed-in `GET /api/kb/morning?ws=personal`. A context opening on `work` shows the card with `Short note` and `Personal`. Read now → `STATE.workspace === 'personal'`, `STATE.mode === 'kb'`, the reader's `h1` is `Short note`, and the card is hidden. **K4b:** reset, POST `later` through the API, then click Read now in a page that still shows the card. It still opens the article, with no toast.
   - **K5.** Skip this one → the card is hidden. `/opt/vault/kb-preview/vault/.vaultos/kb-reads.json` has `articles.personal['02-short-note'].skipUntil` within 60 s of `now + 90 days`.
   - **K7.** Open on `business` (nothing qualifies, so no card). Open Settings, then run `setWorkspace('personal')` in the page: no card while the sheet is open. Close the sheet and dispatch `visibilitychange`: the card shows. Escape → hidden, and the API says null.
 - [ ] **Step 2:** Run `node scripts/kb-reading-e2e.js K3 K4 K5 K7`. Expected: FAIL (no `#km-card`).

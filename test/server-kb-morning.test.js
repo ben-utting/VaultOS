@@ -27,17 +27,17 @@ async function morningServer(t, { hour = 8, morningRead = true, reads, env, cook
       version: 1, setupDone: true,
       boards: [
         { key: 'personal', dir: 'Personal', label: 'Personal', hidden: false },
-        { key: 'sucden', dir: 'Sucden', label: 'Sucden', hidden: false },
+        { key: 'work', dir: 'Work', label: 'Work', hidden: false },
         { key: 'business', dir: 'Business', label: 'Business', hidden: false },
       ],
       features: { today: false, morningRead }, today: { dir: 'Personal/Today', timezone: tz },
     }),
     'Personal/_tasks/Board.md': board,
-    'Sucden/_tasks/Board.md': board,
+    'Work/_tasks/Board.md': board,
     'Business/_tasks/Board.md': board,
     [NEW]: art('New one', '2026-10-27'),
     'Personal/1. a/02-old/article.md': art('Old one', '2026-01-01'),
-    'Sucden/1. b/05-s/article.md': art('Sierra', '2026-10-20'),
+    'Work/1. b/05-s/article.md': art('Sierra', '2026-10-20'),
     ...(reads ? { '.vaultos/kb-reads.json': JSON.stringify(reads) } : {}),
   });
   writePassword(d.data, PASSWORD);
@@ -90,7 +90,7 @@ test('in the window: the pick for the open workspace, kept for the day and shown
   assert.equal(m.ws, 'personal');
   assert.equal(m.key, '01-new');
   assert.equal(m.done, false);
-  assert.deepEqual(await card(s, 'sucden'), c);   // the phone open on another workspace sees the same card
+  assert.deepEqual(await card(s, 'work'), c);   // the phone open on another workspace sees the same card
 });
 
 test('a workspace with nothing to read stores nothing, so a later one can still pick', async (t) => {

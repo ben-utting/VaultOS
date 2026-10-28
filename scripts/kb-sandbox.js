@@ -8,7 +8,7 @@
 // there (D). What the e2e relies on:
 //   Personal: 01 Long read (D-1, unread, ~7 min), 02 Short note (D-40, read D-50: updated since),
 //             03 Moved job (in _done/, D-60, read D-45: stale), 04 Draft idea (draft, D-5, unread).
-//   Sucden:   05 Sucden runbook (D-2, unread).   Business: no articles.
+//   Work:   05 Work runbook (D-2, unread).   Business: no articles.
 // So the morning pick on Personal is Short note, for "Updated since you read it".
 const fs = require('fs');
 const path = require('path');
@@ -60,14 +60,14 @@ put('.vaultos/settings.json', JSON.stringify({
   version: 1, setupDone: true,
   boards: [
     { key: 'personal', dir: 'Personal', label: 'Personal', hidden: false },
-    { key: 'sucden', dir: 'Sucden', label: 'Sucden', hidden: false },
+    { key: 'work', dir: 'Work', label: 'Work', hidden: false },
     { key: 'business', dir: 'Business', label: 'Business', hidden: false },
   ],
   features: { today: false, terminal: false, morningRead: true },
   today: { dir: 'Personal/Today', timezone: ZONE },
   agent: { profile: 'none' },
 }, null, 2) + '\n');
-for (const b of ['Personal', 'Sucden', 'Business']) put(`${b}/_tasks/Board.md`, BOARD);
+for (const b of ['Personal', 'Work', 'Business']) put(`${b}/_tasks/Board.md`, BOARD);
 
 put('Personal/1. apps/01-long-read/article.md', article({
   title: 'Long read', updated: ago(1), tldr: 'A long article, so its end is several screens down.',
@@ -82,8 +82,8 @@ put('Personal/1. apps/_done/03-moved-job/article.md', article({
 put('Personal/2. platform/04-draft-idea/article.md', article({
   title: 'Draft idea', status: 'draft', updated: ago(5), tldr: 'Not published yet.', sections: [['Idea', 60]],
 }));
-put('Sucden/1. ops/05-sucden-runbook/article.md', article({
-  title: 'Sucden runbook', updated: ago(2), tldr: 'What to do when the overnight job fails.', sections: [['Steps', 120]],
+put('Work/1. ops/05-work-runbook/article.md', article({
+  title: 'Work runbook', updated: ago(2), tldr: 'What to do when the overnight job fails.', sections: [['Steps', 120]],
 }));
 
 put('.vaultos/kb-reads.json', JSON.stringify({

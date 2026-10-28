@@ -228,8 +228,8 @@ const SCEN = {
   // K4b: if another device answered first (409), Read now still opens the article, with no toast.
   async K4() {
     await api('GET', '/api/kb/morning?ws=personal');
-    const p = await page({ workspace: 'sucden' });
-    check('K4 the card shows on a Sucden page', await cardShown(p));
+    const p = await page({ workspace: 'work' });
+    check('K4 the card shows on a Work page', await cardShown(p));
     const c = await cardText(p);
     check('K4 it is the Personal pick', c.title === 'Short note' && c.meta === 'Personal · apps', c);
     await shot(p, 'K4-card');

@@ -113,14 +113,14 @@ test('morningCandidates: equal dates order by title; unread falls back to create
 
 test('mergeImport: newer wins, junk and unknown boards dropped, input untouched', () => {
   const now = at('2026-10-29T08:00Z');
-  const boards = [{ key: 'personal', dir: 'Personal' }, { key: 'sucden', dir: 'Sucden' }];
+  const boards = [{ key: 'personal', dir: 'Personal' }, { key: 'work', dir: 'Work' }];
   const state = { ...K.emptyState(), articles: { personal: { '38-x': { read: 5000 } } } };
   const before = JSON.stringify(state);
   const { state: next, imported } = K.mergeImport(state, boards, {
     'Personal/1. apps/38-x/article.md': 4000,
     'Personal/1. apps/_done/39-y/article.md': 6000,
-    'Sucden/2. ops/05-z/article.md': 7000,
-    'Lancashire/1. a/09-q/article.md': 8000,
+    'Work/2. ops/05-z/article.md': 7000,
+    'Archive/1. a/09-q/article.md': 8000,
     'Personal/a/../40-w/article.md': 1,
     'Personal/1. apps/41-v/article.md': 'yesterday',
     'Personal/1. apps/42-u/article.md': now + 2 * DAY,
@@ -129,7 +129,7 @@ test('mergeImport: newer wins, junk and unknown boards dropped, input untouched'
   assert.equal(imported, 2);
   assert.deepEqual(next.articles, {
     personal: { '38-x': { read: 5000 }, '39-y': { read: 6000 } },
-    sucden: { '05-z': { read: 7000 } },
+    work: { '05-z': { read: 7000 } },
   });
   assert.equal(JSON.stringify(state), before);
 });
