@@ -174,7 +174,7 @@
         </div>
       </div>
           </section>
-          <!-- Features: Today and the terminal for everyone on this VaultOS (settings.json).
+          <!-- Features: Today, the morning read and the terminal for everyone on this VaultOS (settings.json).
                Saving reloads the page, which is when a change takes effect. -->
           <section class="ss-pane ss-form" data-sec="features">
       <div class="su-row">
@@ -185,10 +185,15 @@
       <div class="su-field">
         <label for="ft-tz">Time zone</label>
         <input id="ft-tz" class="su-input" type="text" list="ft-tzs" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="ft-tz-hint ft-tz-err">
-        <p class="su-hint" id="ft-tz-hint">Today's days start at midnight here.</p>
+        <p class="su-hint" id="ft-tz-hint">Today's days start at midnight here, and the morning read comes between 05:00 and 12:00.</p>
         <p class="su-err" id="ft-tz-err" aria-live="polite"></p>
       </div>
       <datalist id="ft-tzs"></datalist>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-morning">Morning read</label>
+          <p class="su-hint" id="ft-morning-d">Once each morning, one Knowledge Base article you haven't read in a while.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-morning" role="switch" aria-describedby="ft-morning-d">
+      </div>
       <div class="su-row">
         <div class="su-row-t"><label class="su-label" for="ft-term">Terminal</label>
           <p class="su-hint" id="ft-term-d"></p></div>

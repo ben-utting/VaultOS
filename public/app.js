@@ -105,18 +105,18 @@ function ws(url) {
 }
 
 // ---------- What this VaultOS has on ----------
-// /api/me. Signed in (or a same-box read): { authed, localRead?, features: { today, terminal },
+// /api/me. Signed in (or a same-box read): { authed, localRead?, features: { today, terminal, morningRead },
 // agent: null | { profile, label, startCommand } }, where agent is null whenever the terminal is off.
 // Signed out: { authed: false, setup } (setup: the server wants the setup page). The UI offers only
 // what is on: no Today without Today, and no terminal or Start agent without the terminal.
-let ME = { authed: false, features: { today: false, terminal: false }, agent: null };
+let ME = { authed: false, features: { today: false, terminal: false, morningRead: false }, agent: null };
 const todayOn = () => !!ME.features.today;
 const termOn = () => !!ME.features.terminal;
 const homeMode = () => (todayOn() ? 'today' : 'board');   // the mode VaultOS opens on
 const agentLabel = () => (ME.agent ? ME.agent.label : null);   // null: no agent, or the terminal is off
 async function fetchMe() {
   const me = await fetch('/api/me').then((r) => r.json()).catch(() => ({ authed: false }));
-  return { ...me, features: me.features || { today: false, terminal: false }, agent: me.agent || null };
+  return { ...me, features: me.features || { today: false, terminal: false, morningRead: false }, agent: me.agent || null };
 }
 function applyMe() {
   const today = todayOn();
@@ -1207,20 +1207,10 @@ async function loadKB(q) {
 }
 
 // ---------- KB welcome dashboard ----------
-// Read history lives client-side only (this is a single-user app behind one
-// shared password, so there's no per-account server state to hang it off) —
-// a map of article path → the timestamp it was last opened.
-function kbReadMap() {
-  try { return JSON.parse(localStorage.getItem('vaultboard.kbReads') || '{}'); }
-  catch { return {}; }
-}
-function markArticleRead(p) {
-  const map = kbReadMap();
-  map[p] = Date.now();
-  try { localStorage.setItem('vaultboard.kbReads', JSON.stringify(map)); } catch {}
-}
-function readStaleness(p, reads) {
-  const last = reads[p];
+// Read history lives on the server (.vaultos/kb-reads.json, see lib/kb-reads.js),
+// one history for every browser: each article arrives with lastRead (ms or null)
+// and readState ('unread' | 'read' | 'updated' since you read it).
+function readStaleness(last) {
   if (!last) return 'Not read yet';
   const days = Math.floor((Date.now() - last) / 86400000);
   if (days <= 0) return 'Read today';
@@ -1231,13 +1221,18 @@ function readStaleness(p, reads) {
   const years = Math.floor(months / 12);
   return `Read ${years} year${years === 1 ? '' : 's'} ago`;
 }
-// Never-read articles first, then whichever read article has gone longest
-// without a revisit — ties among never-read broken toward the newest content.
-function recommendedArticles(arts, reads) {
-  return [...arts]
-    .map((a) => ({ a, last: reads[a.path] || 0 }))
-    .sort((x, y) => x.last - y.last || (y.a.updated || '').localeCompare(x.a.updated || ''))
-    .map((x) => x.a);
+// The morning read's order without its 30-day floor: changed since you read it,
+// then never read (newest first), then whatever has gone longest without a revisit.
+const READ_RANK = { updated: 0, unread: 1, read: 2 };
+function recommendedArticles(arts) {
+  return [...arts].sort((x, y) => READ_RANK[x.readState] - READ_RANK[y.readState]
+    || (x.readState === 'read' ? x.lastRead - y.lastRead : (y.updated || '').localeCompare(x.updated || '')));
+}
+// What a card or the reader says about your history with an article.
+function readLabel(a) {
+  if (a.readState === 'updated') return '<span class="kb-unread">Updated since you read it</span>';
+  if (a.readState === 'unread') return '<span class="kb-unread">Not read yet</span>';
+  return esc(readStaleness(a.lastRead));
 }
 
 async function paintSpotlightDiagram(pick) {
@@ -1259,6 +1254,7 @@ async function paintSpotlightDiagram(pick) {
 // Return to the KB dashboard from an open article — clears the open article,
 // restores the tab title, and repaints the welcome dashboard.
 function goToKBHome() {
+  stopReadTracker();
   STATE.kb.article = null;
   document.title = 'VaultOS';
   renderKB();
@@ -1274,11 +1270,10 @@ function renderKBWelcome() {
   if (STATE.kb.article) return;
   const arts = STATE.kb.articles;
   const collections = STATE.kb.collections;
-  const reads = kbReadMap();
   // While searching, the server's order is the ranking: show it as Best matches
   // instead of re-sorting by date, and drop the reading picks.
   const searching = !!STATE.kb.query;
-  const picks = searching ? [] : recommendedArticles(arts, reads).slice(0, 3);
+  const picks = searching ? [] : recommendedArticles(arts).slice(0, 3);
   const withDiagrams = arts.flatMap((a) => (a.diagrams || []).map((d) => ({ ...d, article: a })));
   const diagramPick = withDiagrams.length ? withDiagrams[Math.floor(Math.random() * withDiagrams.length)] : null;
 
@@ -1294,7 +1289,7 @@ function renderKBWelcome() {
   // the order and the colours are stable.
   const hueOf = new Map(collections.map((c, i) => [c.key, `var(--kb-c${(i % 6) + 1})`]));
   const hue = (a) => hueOf.get(a.collection) || 'var(--brand)';
-  const unread = arts.filter((a) => !reads[a.path]).length;
+  const unread = arts.filter((a) => a.readState === 'unread').length;
   const pickPaths = new Set(picks.map((a) => a.path));
   const latest = searching ? arts.slice(0, 8) : [...arts]
     .filter((a) => !pickPaths.has(a.path))
@@ -1328,7 +1323,7 @@ function renderKBWelcome() {
       <h3>${esc(a.title)}</h3>
       ${a.excerpt ? `<p class="kb-card-ex">${esc(a.excerpt.replace(/^TL;DR\s*/i, ''))}</p>` : ''}
       ${i === 0 && a.stack.length ? `<div class="row kb-card-tags">${a.stack.slice(0, 4).map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>` : ''}
-      ${metaRow(a, reads[a.path] ? esc(readStaleness(a.path, reads)) : '<span class="kb-unread">Not read yet</span>')}
+      ${metaRow(a, readLabel(a))}
     </button>`;
   const col = (title, n, body, extra = '') => `
     <section class="col kb-col ${extra}">
@@ -1471,6 +1466,59 @@ async function exportArticlePdf(p, btn) {
   }
 }
 
+// ---------- Counting a read ----------
+// Opening an article isn't reading it. A read counts once its end scrolls into
+// view, or once it has been on screen (tab visible, KB mode, this article open)
+// for half its reading time, never under READ_MIN_SECONDS. The observer's first
+// report, made as soon as it starts watching, doesn't count: an article that fits
+// on one screen has its end in view at once, and the timer counts that one, so a
+// peek is still a peek. Leaving KB mode pauses the count rather than ending it.
+// One POST per opening; the same-box read path can't write, so it never sends.
+const READ_MIN_SECONDS = 20;
+let KBREAD = null;   // { path, needed, seconds, timer, observer, sent } for the open article
+function stopReadTracker() {
+  if (!KBREAD) return;
+  clearInterval(KBREAD.timer);
+  if (KBREAD.observer) KBREAD.observer.disconnect();
+  KBREAD = null;
+}
+const readOnScreen = (t) => document.visibilityState === 'visible' && STATE.mode === 'kb' && STATE.kb.article === t.path;
+// (Re)watches the end of the article now in the reader: a Refresh repaints it, so the old sentinel is gone.
+function watchReadEnd(t) {
+  if (t.observer) t.observer.disconnect();
+  const end = $('kb-reader').querySelector('.kb-read-end');
+  if (!end || t.sent) return;
+  let first = true;
+  t.observer = new IntersectionObserver((entries) => {
+    if (first) { first = false; return; }
+    if (entries.some((e) => e.isIntersecting) && readOnScreen(t)) sendRead(t);
+  });
+  t.observer.observe(end);
+}
+function startReadTracker(a) {
+  stopReadTracker();
+  const t = { path: a.path, needed: Math.max(READ_MIN_SECONDS, a.minutes * 30), seconds: 0, timer: null, observer: null, sent: false };
+  KBREAD = t;
+  t.timer = setInterval(() => { if (readOnScreen(t) && ++t.seconds >= t.needed) sendRead(t); }, 1000);
+  watchReadEnd(t);
+}
+async function sendRead(t) {
+  if (t.sent) return;
+  t.sent = true;
+  clearInterval(t.timer);
+  if (t.observer) t.observer.disconnect();
+  if (ME.localRead) return;
+  try {
+    const r = await api(ws('/api/kb/read'), { method: 'POST', body: JSON.stringify({ path: t.path }) });
+    const a = STATE.kb.articles.find((x) => x.path === t.path);
+    if (a) Object.assign(a, r);
+    const line = $('kb-readline');
+    if (line && STATE.kb.article === t.path) line.textContent = `${line.dataset.minutes} min read · Read today`;
+  } catch (err) {
+    toast("Couldn't save that you read this: " + err.message);
+  }
+}
+
 // keepScroll repaints the article you're already reading (the Refresh button
 // re-reads it from disk) without sending you back to its first line.
 async function openArticle(p, { keepScroll = false } = {}) {
@@ -1480,7 +1528,6 @@ async function openArticle(p, { keepScroll = false } = {}) {
   const restore = keepScroll ? holdScroll($('kb-reader')) : null;
   STATE.kb.article = a.path;
   setKbSidebar(false); // picking an article retracts the hover panel
-  markArticleRead(a.path);
 
   const chips = a.stack.length ? `<div class="kb-chips">${a.stack.map((s) => `<span class="chip-stack">${esc(s)}</span>`).join('')}</div>` : '';
   const metaBits = [
@@ -1510,7 +1557,9 @@ async function openArticle(p, { keepScroll = false } = {}) {
         <h1>${esc(a.title)}</h1>
         ${chips}
         ${metaBits ? `<div class="d-meta">${metaBits}</div>` : ''}
+        <p class="kb-readline" id="kb-readline" data-minutes="${a.minutes}">${a.minutes} min read · ${readLabel(a)}</p>
         ${a.html}
+        <div class="kb-read-end" aria-hidden="true"></div>
         ${related}
       </article>
       ${toc}
@@ -1547,6 +1596,8 @@ async function openArticle(p, { keepScroll = false } = {}) {
   const diagrams = hydrateDiagrams($('kb-reader'));
 
   renderKB();
+  if (keepScroll && KBREAD && KBREAD.path === a.path) watchReadEnd(KBREAD);
+  else startReadTracker(a);
   if (restore) { restore(); diagrams.then(restore, restore); }
   else $('kb-reader').scrollTop = 0;
 }
@@ -2031,6 +2082,7 @@ function setWorkspace(key) {
   renderWorkspaceSwitcher();
 
   // Fresh start in the new workspace: drop cached tasks/KB state and any open drawer/article.
+  stopReadTracker();
   STATE.hiddenColumns = loadHiddenColumns(key); // this board's own remembered column set
   STATE.hideSubtasks = loadHideSubtasks(key);   // …and its own answer on collapsing batches
   STATE.projectFilter = new Set();
@@ -2226,6 +2278,7 @@ async function loadFeatures() {
     const d = await api('/api/settings');
     TERMINAL_ALLOWED = d.terminalAllowed;
     $('ft-today').checked = d.settings.features.today;
+    $('ft-morning').checked = d.settings.features.morningRead;
     $('ft-tz').value = d.settings.today.timezone;
     $('ft-term').checked = d.terminalAllowed && d.settings.features.terminal;
     $('ft-term').disabled = !d.terminalAllowed;
@@ -2239,7 +2292,7 @@ $('ft-save').addEventListener('click', async () => {
   const timezone = $('ft-tz').value.trim();
   if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return $('ft-tz').focus(); }
   $('ft-err').textContent = '';
-  const body = { today: $('ft-today').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked } : {}) };
+  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked } : {}) };
   $('ft-save').disabled = true;
   try {
     await api('/api/settings/features', { method: 'POST', body: JSON.stringify(body) });
@@ -2392,9 +2445,28 @@ $('pw-form').addEventListener('submit', async (e) => {
 
 // Signed in: what is on, the boards, the board itself, then the first mode. At startup a Refresh's
 // mode (and article) wins over the home mode; after a sign-in it's always the home mode.
+// Reads from before the history moved to the server lived in this browser's
+// localStorage (path → ms). Each browser sends them once; the server keeps the
+// newer of two reads, so a retry after a failed send is harmless.
+async function importLocalReads() {
+  if (ME.localRead) return;
+  let raw = null;
+  try { raw = localStorage.getItem('vaultboard.kbReads'); } catch { return; }
+  if (!raw) return;
+  let reads = null;
+  try { reads = JSON.parse(raw); } catch { /* unreadable: nothing worth sending */ }
+  try {
+    if (reads && typeof reads === 'object' && !Array.isArray(reads)) {
+      await api('/api/kb/reads/import', { method: 'POST', body: JSON.stringify({ reads }) });
+    }
+    localStorage.removeItem('vaultboard.kbReads');
+  } catch { /* kept for the next load */ }
+}
+
 async function start({ restore = false } = {}) {
   applyMe();
   await loadWorkspaces();
+  await importLocalReads();   // before the first KB load, so it shows the imported history
   await load();
   if (todayOn()) Today.init();
   if (!(restore && restoreAfterReload())) setMode(homeMode());

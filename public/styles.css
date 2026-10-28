@@ -1162,6 +1162,9 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .kb-meta-coll .dot { width: 7px; height: 7px; }
 .kb-meta-right { flex: none; }
 .kb-unread { color: var(--brand); font-weight: 600; }
+/* The reader's "4 min read · Read 3 days ago" line, and the sentinel whose arrival on screen counts a read. */
+.kb-article .kb-readline { font-family: var(--ui-font); color: var(--muted); font-size: 13px; margin: 4px 0 18px; }
+.kb-read-end { height: 1px; }
 
 /* The lead pick reads a size up, like a card you've opened halfway. */
 .kb-card-lead { padding: 14px 15px; }
