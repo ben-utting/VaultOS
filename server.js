@@ -40,7 +40,7 @@ const { zonedDate } = require('./lib/today-note');
 const { legacySettings } = require('./lib/migrate');
 const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup');
 const { PROFILES, KICKOFF_PROMPT, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
-const { createReadStore, readingMinutes, readState, mergeImport, articleKey } = require('./lib/kb-reads');
+const { createReadStore, readingMinutes, readState, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
 const SETTINGS = () => settingsStore.current();
@@ -1723,6 +1723,89 @@ app.post('/api/kb/reads/import', async (req, res) => {
       return out.state;
     });
     res.json({ imported });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: String(err.message || err) });
+  }
+});
+
+// ---------- The morning read ----------
+// Once a day, between 05:00 and noon in the Today zone, one article to pick back up.
+// The first ask of the day picks from the workspace it names (lib/kb-reads.js has the
+// order) and stores the pick, so every device shows the same card until one of them
+// answers it. The pick is stored by folder key, so a job moved after it still resolves.
+// The same-box read path sees the card but stores nothing.
+function morningCard(article, ws, reason) {
+  const [a] = withReads([article], ws.key);
+  return {
+    ws: ws.key, wsLabel: ws.label, path: a.path, title: a.title, excerpt: a.excerpt,
+    collectionName: a.collectionName, minutes: a.minutes, lastRead: a.lastRead, reason,
+  };
+}
+const endMorning = (today) => READS.update((s) => {
+  if (s.morning && s.morning.date === today) s.morning.done = true;
+  return s;
+});
+// Today's stored pick as a card, or null once it's answered, gone, or read since.
+async function storedMorning(m, today, canWrite) {
+  if (m.done) return null;
+  const ws = boards().some((b) => b.key === m.ws) ? resolveWorkspace(m.ws) : null;
+  const article = ws && (await scanKB(ws.dir)).find((a) => articleKey(a.path) === m.key);
+  const entry = ws && (READS.get().articles[ws.key] || {})[m.key];
+  if (!article || (entry && entry.read > m.at)) {
+    if (canWrite) await endMorning(today);
+    return null;
+  }
+  return morningCard(article, ws, m.reason);
+}
+
+app.get('/api/kb/morning', async (req, res) => {
+  try {
+    const now = Date.now();
+    const tz = kbZone();
+    // A damaged history can't remember the day's answer, so no card until it's fixed.
+    if (!SETTINGS().features.morningRead || !inMorning(now, tz) || READS.damaged()) return res.json({ card: null });
+    const today = zonedDate(new Date(now), tz);
+    const canWrite = sessionAuthed(req);
+    const m = READS.get().morning;
+    if (m && m.date === today) return res.json({ card: await storedMorning(m, today, canWrite) });
+
+    const ws = resolveWorkspace(req.query.ws);
+    const pick = morningPick(await scanKB(ws.dir), READS.get().articles[ws.key] || {}, now, tz);
+    if (!pick) return res.json({ card: null });
+    if (!canWrite) return res.json({ card: morningCard(pick.article, ws, pick.reason) });
+    const mine = { date: today, ws: ws.key, key: articleKey(pick.article.path), at: now, reason: pick.reason, done: false };
+    const saved = await READS.update((s) => {
+      if (!(s.morning && s.morning.date === today)) s.morning = mine;   // another device may have picked first
+      return s;
+    });
+    const won = saved.morning.ws === mine.ws && saved.morning.key === mine.key;
+    res.json({ card: won ? morningCard(pick.article, ws, pick.reason) : await storedMorning(saved.morning, today, canWrite) });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: String(err.message || err) });
+  }
+});
+
+// open (Read now), later (Not today) or skip (Skip this one): each ends the day's card on
+// every device. It answers today's pick whatever the hour, so a card shown at 11:59 still
+// takes a click at 12:01. Read now doesn't count as a read; the reader decides that.
+app.post('/api/kb/morning', async (req, res) => {
+  if (!sessionAuthed(req)) return res.status(401).json({ error: 'Not authenticated' });
+  const { action } = req.body || {};
+  if (!['open', 'later', 'skip'].includes(action)) return res.status(400).json({ error: 'action must be open, later or skip' });
+  try {
+    const now = Date.now();
+    const today = zonedDate(new Date(now), kbZone());
+    const m = READS.get().morning;
+    if (!m || m.date !== today || m.done) return res.status(409).json({ error: 'Already answered' });
+    await READS.update((s) => {
+      s.morning.done = true;
+      if (action === 'skip') {
+        const mine = s.articles[m.ws] || (s.articles[m.ws] = {});
+        mine[m.key] = { ...mine[m.key], skipUntil: now + SKIP_DAYS * 86400000 };
+      }
+      return s;
+    });
+    res.json({ ok: true });
   } catch (err) {
     res.status(err.status || 500).json({ error: String(err.message || err) });
   }
