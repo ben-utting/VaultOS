@@ -266,6 +266,46 @@ feature that needs the image, not just the bind mounts).
   64MB /dev/shm). `TMPDIR` points at the per-render temp dir or Chromium leaves
   `org.chromium.*` dirs in /tmp forever.
 
+## KB reading and the morning read (added 2026-10-28)
+
+Read history lives on the server and counts real reads; once each morning a card offers one article
+to pick back up. Spec: `docs/superpowers/specs/2026-10-28-kb-reading-design.md`. Code: `lib/kb-reads.js`
+(rules + store), the "Knowledge Base API" and "The morning read" parts of `server.js`, the "Counting a
+read" block in `app.js`, and `public/kb-morning.js` (the card).
+
+| Rule | Value |
+|---|---|
+| Morning window | 05:00 to 12:00 in `settings.today.timezone` |
+| Cards per day | One per VaultOS, across every workspace and device |
+| Stale | Last read 30+ days ago |
+| Skip this one | Out of the morning read for 90 days |
+| A read counts | The end (`.kb-read-end`) scrolls into view, or `max(20, minutes × 30)` s on screen |
+| Reading time | Body words ÷ 200, rounded, at least 1 (code fences and comments left out) |
+| Updated since read | `updated:` later than the day (in the zone) of the last read |
+
+- **The history is `.vaultos/kb-reads.json`**, per workspace, keyed by the **job folder name**, so a
+  job moved into `_done/` keeps its reads. The day's pick is stored the same way (`morning.key`).
+  The old per-browser `vaultboard.kbReads` localStorage map is sent to `/api/kb/reads/import` once
+  per browser at startup, then removed.
+- **A damaged file is never replaced.** Reads see empty history, writes 500 with
+  "`.vaultos/kb-reads.json` is damaged. Fix or delete it.", and the morning card stays away.
+- **The observer's first report never counts.** An article that fits on one screen has its end in
+  view at once; the timer counts it, so a peek stays a peek. Leaving KB mode pauses the count.
+- **The same-box read path** (`LOCAL_READ`, headless screenshots) sees the card and read states but
+  writes nothing: no pick stored, no read sent.
+- **The card never opens over another overlay** (drawer, `DGV`, `DOCV`, Settings, login, a focused
+  terminal). That check is skipped; the next (`visibilitychange` to visible, a workspace switch)
+  asks again. Its Escape handler sits on `window` in the capture phase, ahead of the
+  document-level ones. A 409 on its POST means another device answered first: no toast.
+- **Switch:** Settings → Features → Morning read (`features.morningRead`, default on).
+- **Preview:** `kb-preview` on `127.0.0.1:7693`, files in `/opt/vault/kb-preview/`. `reset.sh`
+  regenerates the synthetic vault (`scripts/kb-sandbox.js`) with Today's zone set to wherever it is
+  08:00 now, so the window is always open; `mint-cookie.js` makes a session from its `data/config.json`.
+  Server tests use the same trick (`test/helpers/zone.js`) instead of faking the clock.
+- **E2E:** `node scripts/kb-reading-e2e.js [--phone] [--theme=sepia] K1 … K7`. K1 the read rule
+  (takes ~45 s), K2 the dashboard, K3 the card + Not today, K4 Read now across workspaces (+K4b, a 409),
+  K5 Skip, K6 the import, K7 waiting behind Settings + Escape. Screenshots to `/tmp/kb-shots/`.
+
 ## Hardened after an outside audit (2026-10-28)
 
 A security audit of a fork, run at `c792a11`, led to these. Each has a test; don't undo them.
