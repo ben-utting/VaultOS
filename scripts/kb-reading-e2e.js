@@ -120,6 +120,11 @@ async function back(p) {
   return waitFor(p, () => document.querySelectorAll('#kb-reader .kb-col-picks .kb-card').length > 0, 5000);
 }
 
+const cardShown = (p) => waitFor(p, () => { const c = document.getElementById('km-card'); return !!c && !c.classList.contains('hidden'); }, 8000);
+const cardHidden = (p) => waitFor(p, () => { const c = document.getElementById('km-card'); return !!c && c.classList.contains('hidden'); }, 3000);
+const cardText = (p) => ev(p, () => Object.fromEntries(['eyebrow', 'title', 'excerpt', 'meta', 'reason']
+  .map((k) => [k, document.getElementById(`km-${k}`).textContent.trim()])));
+
 const reset = () => execFileSync(path.join(PREVIEW, 'reset.sh'), { stdio: 'inherit' });
 const startedAt = () => {
   try { return execFileSync('docker', ['inspect', '-f', '{{.State.StartedAt}}', CONTAINER], { encoding: 'utf8' }).trim(); }
@@ -184,6 +189,88 @@ const SCEN = {
     check('K2 open the moved job', await openFromDash(p, MOVED));
     check('K2 its history survived the move', (await text(p, '#kb-readline')) === '1 min read · Read 1 month ago', await text(p, '#kb-readline'));
     await shot(p, 'K2-reader');
+    await p.close();
+  },
+
+  // K3: the card shows once, on load, laid out inside the screen; Not today ends it on every device.
+  async K3() {
+    const p = await page();
+    check('K3 the morning card shows on load', await cardShown(p));
+    const c = await cardText(p);
+    check('K3 eyebrow', c.eyebrow === 'Morning read · 1 min', c.eyebrow);
+    check('K3 title', c.title === 'Short note', c.title);
+    check('K3 reason', c.reason === 'Updated since you read it', c.reason);
+    check('K3 workspace and collection', c.meta === 'Personal · apps', c.meta);
+    check('K3 excerpt without its TL;DR label', c.excerpt === 'A note short enough to fit on one screen.', c.excerpt);
+    check('K3 inside the viewport', await ev(p, () => {
+      const r = document.getElementById('km-card').getBoundingClientRect();
+      return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+    }));
+    check('K3 focus on Read now', (await ev(p, () => document.activeElement && document.activeElement.id)) === 'km-read');
+    await shot(p, 'K3-card');
+    await tap(p, '#km-later');
+    check('K3 Not today closes it', await cardHidden(p));
+    check('K3 the server has no card for today now', (await api('GET', '/api/kb/morning?ws=personal')).body.card === null);
+    await p.close();
+    const q = await page();
+    await sleep(3000);
+    check('K3 another browser gets no card', (await ev(q, () => document.getElementById('km-card').classList.contains('hidden'))) === true);
+    await q.close();
+  },
+
+  // K4: the day's pick follows you to a device open on another workspace; Read now switches and opens it.
+  // K4b: if another device answered first (409), Read now still opens the article, with no toast.
+  async K4() {
+    await api('GET', '/api/kb/morning?ws=personal');
+    const p = await page({ workspace: 'sucden' });
+    check('K4 the card shows on a Sucden page', await cardShown(p));
+    const c = await cardText(p);
+    check('K4 it is the Personal pick', c.title === 'Short note' && c.meta === 'Personal · apps', c);
+    await shot(p, 'K4-card');
+    await tap(p, '#km-read');
+    check('K4 Read now switches workspace and opens the article', await waitFor(p, () => STATE.workspace === 'personal' && STATE.mode === 'kb'
+      && (document.querySelector('#kb-reader .kb-article h1') || {}).textContent === 'Short note', 8000));
+    check('K4 the card is gone', await cardHidden(p));
+    await p.close();
+
+    reset();
+    check('K4b preview back after reset', (await previewReady()).ok);
+    const q = await page();
+    check('K4b the card shows', await cardShown(q));
+    check('K4b another device answers first', (await api('POST', '/api/kb/morning', { action: 'later' })).status === 200);
+    await tap(q, '#km-read');
+    check('K4b Read now still opens the article', await waitFor(q, () => STATE.mode === 'kb'
+      && (document.querySelector('#kb-reader .kb-article h1') || {}).textContent === 'Short note', 8000));
+    check('K4b no toast for the 409', (await ev(q, () => document.getElementById('toast').classList.contains('hidden'))) === true);
+    await q.close();
+  },
+
+  // K5: Skip this one keeps the article out of the morning read for 90 days.
+  async K5() {
+    const p = await page();
+    check('K5 the card shows', await cardShown(p));
+    await tap(p, '#km-skip');
+    check('K5 Skip this one closes it', await cardHidden(p));
+    await sleep(300);
+    const entry = readsOnDisk().articles.personal['02-short-note'];
+    check('K5 skipped for 90 days', Math.abs(entry.skipUntil - (Date.now() + 90 * DAY)) < 60000, entry);
+    await p.close();
+  },
+
+  // K7: the card waits behind Settings (or any overlay) and comes up at the next check; Escape is Not today.
+  async K7() {
+    const p = await page({ workspace: 'business' });
+    await sleep(3000);
+    check('K7 nothing to read on Business: no card', (await ev(p, () => document.getElementById('km-card').classList.contains('hidden'))) === true);
+    await ev(p, () => openSheet());
+    await ev(p, () => setWorkspace('personal'));
+    await sleep(3000);
+    check('K7 no card while Settings is open', (await ev(p, () => document.getElementById('km-card').classList.contains('hidden'))) === true);
+    await ev(p, () => { closeSheet(); document.dispatchEvent(new Event('visibilitychange')); });
+    check('K7 the card shows at the next check', await cardShown(p));
+    await p.keyboard.press('Escape');
+    check('K7 Escape closes it', await cardHidden(p));
+    check('K7 Escape counted as Not today', (await api('GET', '/api/kb/morning?ws=personal')).body.card === null);
     await p.close();
   },
 

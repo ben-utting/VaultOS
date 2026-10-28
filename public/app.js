@@ -2110,6 +2110,7 @@ function setWorkspace(key) {
   window.scrollTo(0, 0);
 
   if (STATE.mode === 'kb') loadKB(); else load();
+  KbMorning.check();   // a workspace with nothing to read earlier may have one
 }
 
 // ========================================================================
@@ -2470,6 +2471,7 @@ async function start({ restore = false } = {}) {
   await load();
   if (todayOn()) Today.init();
   if (!(restore && restoreAfterReload())) setMode(homeMode());
+  KbMorning.init();   // checks ME.features.morningRead itself
 }
 
 // Once every script has run: start() uses today.js (Today) and workbench.js (renderDrawerAgent), which load

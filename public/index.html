@@ -420,6 +420,20 @@
 
   <div id="scrim" class="scrim hidden"></div>
   <div id="toast" class="toast hidden"></div>
+  <!-- The morning read (kb-morning.js): once a day, one Knowledge Base article to pick back up. -->
+  <div id="km-scrim" class="km-scrim hidden"></div>
+  <section id="km-card" class="km-card hidden" role="dialog" aria-modal="true" aria-labelledby="km-title" aria-describedby="km-reason">
+    <div class="km-eyebrow" id="km-eyebrow"></div>
+    <h2 class="km-title" id="km-title"></h2>
+    <p class="km-excerpt" id="km-excerpt"></p>
+    <p class="km-meta" id="km-meta"></p>
+    <p class="km-reason" id="km-reason"></p>
+    <div class="km-actions">
+      <button type="button" class="su-btn primary" id="km-read">Read now</button>
+      <button type="button" class="su-btn" id="km-later">Not today</button>
+      <button type="button" class="km-skip" id="km-skip">Skip this one</button>
+    </div>
+  </section>
 
   <script src="/vendor/xterm.js"></script>
   <script src="/vendor/addon-fit.js"></script>
@@ -437,6 +451,7 @@
   <script src="termui.js"></script>
   <script src="app.js"></script>
   <script src="today.js"></script>
+  <script src="kb-morning.js"></script>
   <script src="sheet-core.js"></script>
   <script src="sheet-grid.js"></script>
   <script src="sheet-files.js"></script>
