@@ -12,11 +12,18 @@ const withBoards = (...boards) => ({ ...S.defaults(), boards });
 test('defaults validate', () => {
   assert.deepEqual(S.defaults(), {
     version: 1, setupDone: false, boards: [],
-    features: { today: false, terminal: true },
+    features: { today: false, terminal: true, morningRead: true },
     today: { dir: 'Today', timezone: 'UTC' }, agent: { profile: 'none' },
   });
   assert.deepEqual(S.validate(S.defaults()), S.defaults());
   assert.equal(S.SETTINGS_REL, '.vaultos/settings.json');
+});
+
+test('morningRead defaults on, and must be true or false', () => {
+  assert.equal(S.defaults().features.morningRead, true);
+  assert.equal(S.validate({ version: 1, features: { today: true } }).features.morningRead, true);
+  assert.equal(S.validate({ version: 1, features: { morningRead: false } }).features.morningRead, false);
+  assert.throws(() => S.validate({ version: 1, features: { morningRead: 'yes' } }), /features\.morningRead must be true or false/);
 });
 
 test('validate fills missing sections', () => {

@@ -40,6 +40,7 @@ const { zonedDate } = require('./lib/today-note');
 const { legacySettings } = require('./lib/migrate');
 const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup');
 const { PROFILES, KICKOFF_PROMPT, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
+const { createReadStore, readingMinutes, readState, mergeImport, articleKey } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
 const SETTINGS = () => settingsStore.current();
@@ -397,6 +398,7 @@ async function loadArticleRaw(full) {
     created: meta.created || '',
     updated: meta.updated || '',
     mtime: stat.mtimeMs,
+    minutes: readingMinutes(body),
     excerpt: articleExcerpt(body),
     diagrams: articleDiagrams(body, rel),
     body,
@@ -1022,7 +1024,7 @@ app.get('/api/me', (req, res) => {
   res.json({
     authed: true,
     ...(localRead ? { localRead: true } : {}),
-    features: { today: !!(s && s.features.today), terminal: terminalOn() },
+    features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead) },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, KICKOFF_PROMPT) } : null,
   });
 });
@@ -1394,9 +1396,9 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
 app.post('/api/settings/features', settingsGuard, (req, res) => withSettingsLock(() => setFeatures(req, res)));
 async function setFeatures(req, res) {
   try {
-    const { today: wantToday, terminal, timezone } = req.body || {};
-    if ((wantToday !== undefined && typeof wantToday !== 'boolean') || (terminal !== undefined && typeof terminal !== 'boolean')) {
-      return res.status(400).json({ error: 'today and terminal must be true or false' });
+    const { today: wantToday, terminal, morningRead, timezone } = req.body || {};
+    if ([wantToday, terminal, morningRead].some((v) => v !== undefined && typeof v !== 'boolean')) {
+      return res.status(400).json({ error: 'today, terminal and morningRead must be true or false' });
     }
     if (timezone !== undefined && !validTimeZone(timezone)) return res.status(400).json({ error: 'Unknown time zone' });
     // Read inside the queue slot, after any earlier change has saved.
@@ -1407,6 +1409,7 @@ async function setFeatures(req, res) {
         ...s.features,
         ...(wantToday !== undefined ? { today: wantToday } : {}),
         ...(terminal !== undefined ? { terminal } : {}),
+        ...(morningRead !== undefined ? { morningRead } : {}),
       },
       today: { ...s.today, ...(timezone !== undefined ? { timezone } : {}) },
     };
@@ -1590,6 +1593,35 @@ app.get('/api/task', async (req, res) => {
 });
 
 // ---------- Knowledge Base API ----------
+// Reading history (lib/kb-reads.js): .vaultos/kb-reads.json, one file for every browser.
+// Dates in it are judged in the Today time zone, the one zone VaultOS has.
+const READS = createReadStore(VAULT_DIR);
+const kbZone = () => SETTINGS().today.timezone;
+function withReads(articles, wsKey) {
+  const entries = READS.get().articles[wsKey] || {};
+  const tz = kbZone();
+  return articles.map((a) => {
+    const entry = entries[articleKey(a.path)];
+    return { ...a, lastRead: (entry && entry.read) || null, readState: readState(a, entry, tz) };
+  });
+}
+
+// The checks every route that takes an article path makes: inside this workspace,
+// named article.md, where it really leads still inside, and a live article.
+async function articleFrom(wsKey, relPath) {
+  const ws = resolveWorkspace(wsKey);
+  const clean = path.normalize(String(relPath || '')).replace(/^(\.\.(\/|\\|$))+/, '');
+  const full = path.resolve(VAULT_DIR, clean);
+  if (!full.startsWith(ws.dir + path.sep) || path.basename(full) !== 'article.md') {
+    throw new Error('Not an article file');
+  }
+  realInWorkspace(full, ws.dir);
+  const articles = await scanKB(ws.dir);
+  const article = articles.find((a) => a.path === relOf(full));
+  if (!article) throw new Error('Article not found');
+  return { ws, article, articles };
+}
+
 // List: collections + article metas (bodies stripped). Optional ?q= full-text filter.
 // Articles matching q, best first. The box searches as you type, so the last word
 // matches as a prefix; when ranking finds nothing (a fragment from mid-word like
@@ -1620,7 +1652,7 @@ app.get('/api/kb', async (req, res) => {
       seen.get(a.collection).count++;
     }
     const collections = [...seen.values()].sort((x, y) => x.key.localeCompare(y.key));
-    res.json({ collections, articles: articles.map(({ body, ...rest }) => rest) });
+    res.json({ collections, articles: withReads(articles.map(({ body, ...rest }) => rest), ws.key) });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -1629,17 +1661,8 @@ app.get('/api/kb', async (req, res) => {
 // One article: rendered HTML, table of contents, and related (outgoing + backlinks).
 app.get('/api/kb/article', async (req, res) => {
   try {
-    const ws = resolveWorkspace(req.query.ws);
-    const clean = path.normalize(req.query.path || '').replace(/^(\.\.(\/|\\|$))+/, '');
-    const full = path.resolve(VAULT_DIR, clean);
-    if (!full.startsWith(ws.dir + path.sep) || path.basename(full) !== 'article.md') {
-      throw new Error('Not an article file');
-    }
-    realInWorkspace(full, ws.dir);
-    const articles = await scanKB(ws.dir);
-    const rel = relOf(full);
-    const article = articles.find((a) => a.path === rel);
-    if (!article) throw new Error('Article not found');
+    const { ws, article, articles } = await articleFrom(req.query.ws, req.query.path);
+    const rel = article.path;
 
     const resolve = buildResolver(articles);
     const md = renderWikilinks(article.body, resolve);
@@ -1656,9 +1679,52 @@ app.get('/api/kb/article', async (req, res) => {
       }
     }
     const { body, ...meta } = article;
-    res.json({ ...meta, html, toc, related: [...relatedMap.values()] });
+    const [withRead] = withReads([meta], ws.key);
+    res.json({ ...withRead, html, toc, related: [...relatedMap.values()] });
   } catch (err) {
     res.status(400).json({ error: String(err.message || err) });
+  }
+});
+
+// A read, sent by the reader once an article has really been read (see app.js's read
+// tracker). Signed-in only: the same-box read path never writes.
+app.post('/api/kb/read', async (req, res) => {
+  if (!sessionAuthed(req)) return res.status(401).json({ error: 'Not authenticated' });
+  let found;
+  try { found = await articleFrom(req.query.ws, (req.body || {}).path); }
+  catch (err) { return res.status(400).json({ error: String(err.message || err) }); }
+  try {
+    const { ws, article } = found;
+    const key = articleKey(article.path);
+    const now = Date.now();
+    await READS.update((s) => {
+      const mine = s.articles[ws.key] || (s.articles[ws.key] = {});
+      mine[key] = { ...mine[key], read: now };
+      return s;
+    });
+    const [a] = withReads([article], ws.key);
+    res.json({ lastRead: a.lastRead, readState: a.readState });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: String(err.message || err) });
+  }
+});
+
+// One browser's history from before reads lived here ({ path: ms } from localStorage).
+// Each browser sends it once, then drops its copy.
+app.post('/api/kb/reads/import', async (req, res) => {
+  if (!sessionAuthed(req)) return res.status(401).json({ error: 'Not authenticated' });
+  const { reads } = req.body || {};
+  if (!reads || typeof reads !== 'object' || Array.isArray(reads)) return res.status(400).json({ error: 'reads must be an object of path → time' });
+  try {
+    let imported = 0;
+    await READS.update((s) => {
+      const out = mergeImport(s, boards(), reads, Date.now());
+      imported = out.imported;
+      return out.state;
+    });
+    res.json({ imported });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: String(err.message || err) });
   }
 });
 

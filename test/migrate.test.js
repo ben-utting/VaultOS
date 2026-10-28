@@ -57,7 +57,7 @@ test('legacySettings maps the vault', async () => {
       { key: 'alpha', dir: 'alpha', label: 'alpha', hidden: false },
       { key: 'beta', dir: 'Beta', label: 'Beta', hidden: false },
     ],
-    features: { today: true, terminal: true },
+    features: { today: true, terminal: true, morningRead: true },
     today: { dir: 'Beta/Today', timezone: 'Europe/London' },
     agent: { profile: 'claude' },
   });
