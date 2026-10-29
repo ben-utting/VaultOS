@@ -396,3 +396,43 @@ test('a throwing renew or authorization answers an error status and never marks 
   assert.ok((await relay2.call('POST', msg('tools/list', 1))).status >= 500);
   assert.equal(target.marked + t2.marked, 0);
 });
+
+// A target that is connected with no credential at all (Microsoft Learn).
+test("'' sends no Authorization upstream and forwards normally", async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const target = stubTarget(fake, { authorization: async () => '', url: fake.base + '/api/mcp' });
+  const r = await startRelay(t, { target });
+  const res = await r.call('POST', msg('tools/list', 1));
+  assert.equal(res.status, 200);
+  assert.ok((await res.text()).includes('get_me'));
+  assert.ok(fake.state.seen.length > 0);
+  for (const s of fake.state.seen) assert.equal(s.headers.authorization, undefined);
+});
+
+test("'' is never treated as not connected", async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const target = stubTarget(fake, { authorization: async () => '' });
+  const r = await startRelay(t, { target });
+  const res = await r.call('POST', msg('initialize', 1, { protocolVersion: '2025-06-18' }));
+  assert.equal(res.status, 200);
+  assert.ok(fake.state.seen.some((s) => s.method === 'POST'));
+  assert.ok(!(await res.text()).includes('VaultOS"'), 'not answered locally');
+});
+
+test("a 401 with '' answers the expired sentence without calling renew", async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const target = stubTarget(fake, { authorization: async () => '' });
+  const r = await startRelay(t, { target, fetch: async () => new Response('no', { status: 401 }) });
+  const res = await r.call('POST', msg('tools/call', 5, { name: 'x' }));
+  assert.equal(res.status, 200);
+  assert.equal((await res.json()).error.message, RUN_OUT);
+  assert.equal(target.renews, 0);
+});
+
+test("mcpProbe with '' lists the tools of a noAuth fake", async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const p = await R.mcpProbe(fake.base + '/api/mcp', '');
+  assert.equal(p.ok, true);
+  assert.ok(p.tools.includes('get_me'));
+  for (const s of fake.state.seen) assert.equal(s.headers.authorization, undefined);
+});
