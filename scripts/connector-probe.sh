@@ -34,14 +34,34 @@ case "$mode" in
       s=$(date +%s); curl https://cursor.com/install -fsS | bash >/tmp/install.log 2>&1; echo "install: $(( $(date +%s) - s ))s"
       command -v agent || { tail -5 /tmp/install.log; exit 0; }
       mkdir -p ~/.cursor /tmp/a /tmp/b
+      # fake stdio MCP server: initialize and tools/list
+      cat > /tmp/stdio.js <<JS
+let b="";process.stdin.on("data",d=>{b+=d;let i;while((i=b.indexOf("\\n"))>=0){const l=b.slice(0,i);b=b.slice(i+1);if(!l.trim())continue;const m=JSON.parse(l);
+const out=r=>process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:m.id,result:r})+"\\n");
+if(m.method==="initialize")out({protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:"fake",version:"1"}});
+else if(m.method==="tools/list")out({tools:[{name:"ping",description:"p",inputSchema:{type:"object",properties:{}}}]});}});
+JS
+      # fake HTTP MCP server on :9999: logs the X-VaultOS-Key header of every POST
+      cat > /tmp/http.js <<JS
+require("http").createServer((q,r)=>{let b="";q.on("data",d=>b+=d);q.on("end",()=>{console.error("HTTP",q.method,"x-vaultos-key="+JSON.stringify(q.headers["x-vaultos-key"]));let m={};try{m=JSON.parse(b)}catch{}
+r.writeHead(200,{"content-type":"application/json"});
+if(m.method==="initialize")r.end(JSON.stringify({jsonrpc:"2.0",id:m.id,result:{protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:"fakehttp",version:"1"}}}));
+else if(m.method==="tools/list")r.end(JSON.stringify({jsonrpc:"2.0",id:m.id,result:{tools:[{name:"hping",description:"p",inputSchema:{type:"object",properties:{}}}]}}));
+else r.end("{}")})}).listen(9999,"127.0.0.1");
+JS
+      node /tmp/http.js 2>/tmp/http.log & sleep 1
       cat > ~/.cursor/mcp.json <<JSON
 { "mcpServers": {
   "probe-http": { "url": "http://127.0.0.1:9999/mcp/x", "headers": { "X-VaultOS-Key": "k" } },
-  "probe-cmd": { "command": "true", "args": [] } } }
+  "probe-cmd": { "command": "node", "args": ["/tmp/stdio.js"] } } }
 JSON
       echo "== agent mcp --help"; agent mcp --help 2>&1
+      echo "== agent --help (approval flags)"; agent --help 2>&1 | grep -iE "approve|trust|force"
       for d in /tmp/a /tmp/b; do echo "== agent mcp list ($d)"; ( cd $d && timeout 60 agent mcp list 2>&1 </dev/null ); echo "exit=$?"; done
-      echo "== mcp.json after"; cat ~/.cursor/mcp.json; ls -la ~/.cursor' ;;
+      echo "== list-tools"; ( cd /tmp/a && timeout 60 agent mcp list-tools probe-cmd 2>&1 </dev/null; timeout 60 agent mcp list-tools probe-http 2>&1 </dev/null )
+      echo "== header seen by the fake HTTP server"; sort /tmp/http.log | uniq -c
+      echo "== files under ~/.cursor"; find ~/.cursor -type f | grep -v statsig
+      echo "== with nothing listening on :9999"; kill %1; sleep 1; ( cd /tmp/a && timeout 60 agent mcp list 2>&1 </dev/null )' ;;
   claude|claude-rpc-error)
     docker run --rm -e "MODE=$mode" --entrypoint bash $IMG -lc '
       s=$(date +%s); curl -fsSL https://claude.ai/install.sh | bash >/tmp/install.log 2>&1; echo "install: $(( $(date +%s) - s ))s"
