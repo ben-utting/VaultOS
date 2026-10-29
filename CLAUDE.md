@@ -331,7 +331,9 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   or an API token. Pending sign-ins live 10 minutes; the token refreshes 60 s before `expires_at`.
   `POST /api/connectors/atlassian/cancel` drops this session's pending sign-ins (the pane's Cancel).
 - **Azure is local.** An `azure` entry runs `azmcp server start`, read-only (`--read-only`) unless the
-  person allows changes. Install is about 900 MB (`@azure/mcp` plus a venv with `azure-cli`): check
+  person allows changes. That switch only governs Azure's own tools for agents: `az` is on PATH with one
+  shared full-rights login, so an agent that can run shell commands can still use `az` (R21; the pane says
+  so). The server is pinned (`@azure/mcp@4.0.0-beta.3`, the version whose `--read-only` was checked). Install is about 900 MB (`@azure/mcp` plus a venv with `azure-cli`): check
   `df -h /` first. Sign-in is `az login --use-device-code`; the device page is `login.microsoft.com/device`.
 - **Relay rules.**
   - **Loopback only, key required.** Wrong or missing key, or a peer that isn't loopback: `403`,
@@ -348,10 +350,15 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   - **Concurrent calls share one refresh** (`serialised`), and a stale access token is renewed once
     then retried.
   - **SSE passes through as it arrives**, and a hang-up from the agent aborts the upstream request.
-- **Transient vs refused refresh (R16).** Only a refused refresh (the server says `invalid_grant`, or the
-  record has no refresh token) marks the connector `needsSignIn` ("Sign in again", `attention: true`).
-  A network error or 5xx during refresh throws: the relay answers with an HTTP error, no sentence, and
-  nothing is marked. A blip must not log anyone out.
+- **Transient vs refused refresh (R16).** Only a refused refresh (a 400 or 401 from the token endpoint, not
+  one that names a temporary fault, or a record with no refresh token once the access token has run out)
+  marks the connector `needsSignIn` ("Sign in again", `attention: true`). A network error, a timeout (20 s),
+  408, 429 or 5xx during refresh throws: the relay answers with an HTTP error, no sentence, and nothing is
+  marked. A blip must not log anyone out. A failed refresh inside the last 60 s still serves the access
+  token while it is valid. A renewal that worked and is still answered 401 does not lock the sign-in.
+- **Credentials are kept out of agent configs, which is not isolation.** An agent with a shell runs as the
+  same user and can read `~/.vaultos/connectors.json`. The relay keeps tokens out of the agent's config
+  and context, nothing more.
 - **VaultOS never overwrites an agent's own entry.** If the agent already has an `atlassian` entry, or
   `~/.cursor/mcp.json` isn't valid JSON (or its `mcpServers` isn't an object), nothing is written to that
   agent, the file stays byte-for-byte, and the row says why ("Has its own entry").

@@ -57,7 +57,7 @@ Optional: the habits you choose to track, with streaks, a focus timer and a shor
 
 ### Connectors
 
-Settings → Connectors signs in to a service once and adds it to every agent VaultOS can set up, so it works in every folder. Atlassian (Jira and Confluence) signs in with a browser or an API token, and Azure runs the Azure CLI with your own sign-in and is read-only unless you allow changes. Your agents never see your passwords or tokens.
+Settings → Connectors signs in to a service once and adds it to every agent VaultOS can set up, so it works in every folder. Atlassian (Jira and Confluence) signs in with a browser or an API token, and Azure runs the Azure CLI with your own sign-in. Azure's tools for agents are read-only unless you allow changes, but agents that can run shell commands can still use `az` with that sign-in. Your agents never see your passwords or tokens.
 
 ## Install on Windows
 

@@ -444,5 +444,9 @@ the `vaultos` user, with `scripts/connector-probe.sh`. Home is `/home/vaultos`.
   JSON: nothing written, file untouched, the row says why.
 - **R16, transient failures throw.** A network error or 5xx during refresh throws (the relay answers with
   an HTTP error, no sentence, nothing marked); only a refused refresh marks "Sign in again".
+- **R21, "read-only" is about Azure's tools only.** The install puts `az` on PATH with one shared
+  full-rights login, so an agent with a shell can run `az group delete` whatever the switch says. The
+  switch note reads: "Azure's tools for agents are read-only unless you allow changes. Agents that can run
+  shell commands can still use `az` with this sign-in." The README and CLAUDE.md say the same.
 - **R18, a cancel route.** `POST /api/connectors/atlassian/cancel` drops the session's pending sign-ins
   and their in-memory new client, so the pane's Cancel is server-side.
