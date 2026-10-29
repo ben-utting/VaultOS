@@ -99,3 +99,77 @@ test('the 10-minute give-up clears the waiting panel', async (t) => {
   await new Promise((r) => setImmediate(r));
   assert.doesNotMatch(el.innerHTML, /Waiting for you to approve/);
 });
+
+// A switch or a list the person touched must not keep a value the server never applied.
+function azurePane(api) {
+  let renders = 0, html = '';
+  const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false;  },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; renders++; } };
+  const view = { connectors: [{ id: 'azure', label: 'Azure', by: 'x', state: 'connected', allowChanges: false, subscription: 's1',
+    subscriptions: [{ id: 's1', name: 'One' }, { id: 's2', name: 'Two' }], agents: [] }], planned: [] };
+  const m = C.mountConnectors(el, { api: (method, url, body) => api(method, url, body, view), openTerm() {}, openTab() {} });
+  return { el, handlers, m, renders: () => renders, html: () => html };
+}
+const tick = () => new Promise((r) => setImmediate(r));
+
+test('a failed Allow-changes request puts the switch back and says why', async () => {
+  const p = azurePane(async (method, url, body, view) => { if (url.endsWith('/azure/settings')) throw new Error('Azure said no'); return view; });
+  await p.m.refresh();
+  p.handlers.change({ target: { id: 'cx-allow', checked: true } });
+  await tick(); await tick();
+  assert.doesNotMatch(p.html(), /id="cx-allow"[^>]*checked/);
+  assert.match(p.html(), /Azure said no/);
+  // The same error again must still redraw, or the old state would show.
+  const before = p.renders();
+  p.handlers.change({ target: { id: 'cx-allow', checked: true } });
+  await tick(); await tick();
+  assert.ok(p.renders() > before);
+  assert.doesNotMatch(p.html(), /id="cx-allow"[^>]*checked/);
+});
+
+test('a change made while another request runs is redrawn from the server state', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const p = azurePane(async (method, url, body, view) => { if (url.endsWith('/azure/settings')) { await gate; return {}; } return view; });
+  await p.m.refresh();
+  p.handlers.change({ target: { id: 'cx-sub', value: 's2' } });
+  await tick();
+  const before = p.renders();
+  p.handlers.change({ target: { id: 'cx-allow', checked: true } }); // busy: the request is never sent
+  await tick(); await tick();
+  assert.ok(p.renders() > before, 'forced redraw');
+  assert.doesNotMatch(p.html(), /id="cx-allow"[^>]*checked/);
+  release(); await tick();
+});
+
+test('the approve address is opened only when it is https, or http on this machine', () => {
+  assert.equal(C.signInUrl('https://auth.example.com/authorize?x=1'), 'https://auth.example.com/authorize?x=1');
+  assert.ok(C.signInUrl('http://127.0.0.1:5555/v1/authorize'));
+  assert.ok(C.signInUrl('http://localhost:5555/a'));
+  for (const bad of ['http://auth.example.com/a', 'javascript:alert(1)', 'data:text/html,x', 'not a url', '', undefined]) assert.equal(C.signInUrl(bad), null, String(bad));
+});
+
+test('the switch note says what read-only does and does not cover', () => {
+  const html = C.paneHtml({ view: { connectors: [{ id: 'azure', label: 'Azure', by: 'x', state: 'connected', subscriptions: [], agents: [] }], planned: [] }, picked: 'azure' });
+  assert.match(html, /Azure&#39;s tools for agents are read-only unless you allow changes\. Agents that can run shell commands can still use az with this sign-in\./);
+});
+
+test('a poll tick is skipped while the last poll is still in flight', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  let gets = 0; const waiters = [];
+  const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; }, innerHTML: '' };
+  const connecting = { connectors: [{ id: 'atlassian', label: 'Atlassian', by: 'x', state: 'connecting', agents: [] }], planned: [] };
+  const m = C.mountConnectors(el, { api: (method, url) => { gets++; return new Promise((r) => waiters.push(() => r(connecting))); }, openTerm() {}, openTab() {} });
+  const first = m.refresh();
+  waiters.shift()(); await first;
+  const base = gets;
+  t.mock.timers.tick(2000); // poll 1: never answers yet
+  t.mock.timers.tick(2000); t.mock.timers.tick(2000); // slow server: these ticks must not stack requests
+  assert.equal(gets - base, 1);
+  waiters.shift()(); await tick(); await tick();
+  t.mock.timers.tick(2000);
+  assert.equal(gets - base, 2);
+  m.stop();
+});

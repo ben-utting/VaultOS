@@ -7,7 +7,7 @@
 //   ui.api(method, url, body?)  → Promise<object>; rejects (or answers { error }) with a message for the person
 //   ui.openTerm(cmd)            run a command in a terminal (Azure's install)
 //   ui.openTab(url)             → Window | null; a new tab of this browser (Atlassian's approve page, which
-//                               sends the person back and tells this page through postMessage)
+//                               sends the person back and tells this page over a BroadcastChannel)
 //   ui.onView(view)             optional; every GET /api/connectors answer, for the Settings dot
 //   ui.active()                 optional; false once Settings is closed or on another section: polling stops
 //   ui.copy(text)               optional; → Promise<boolean>
@@ -49,6 +49,18 @@
   // Only https links from the server become links. "login.microsoft.com/device" for the Open button.
   const httpsUrl = (u) => { try { const x = new URL(u); return x.protocol === 'https:' ? x : null; } catch { return null; } };
   const hostPath = (u) => { const x = httpsUrl(u); return x ? x.host + (x.pathname === '/' ? '' : x.pathname) : ''; };
+
+  // The switch only governs Azure's own tools for agents; `az` itself is signed in for every agent that has a shell.
+  const ALLOW_NOTE = "Azure's tools for agents are read-only unless you allow changes. Agents that can run shell commands can still use az with this sign-in. Applies to agents you start after changing it.";
+
+  // The sign-in page VaultOS opens: https, or http only on this machine (the preview's stand-in server).
+  const signInUrl = (u) => {
+    try {
+      const x = new URL(u);
+      if (x.protocol === 'https:') return x.href;
+      return x.protocol === 'http:' && (x.hostname === '127.0.0.1' || x.hostname === 'localhost') ? x.href : null;
+    } catch { return null; }
+  };
 
   const chipHtml = (c, extra = '') => `<span class="ap-chip${c.tone === 'ok' ? ' ok' : c.tone === 'warn' ? ' warn' : ''}${extra}">${esc(c.text)}</span>`;
   const mark = (id, cls = '') => `<span class="ap-mark${cls}">${Marks ? Marks.connector(id) : ''}</span>`;
@@ -178,7 +190,7 @@
         + (c.error && c.state !== 'needs-sign-in' ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
         + subHtml
         + '<div class="su-row cx-switchrow"><div class="su-row-t"><label for="cx-allow" class="su-label">Allow changes</label>'
-        + '<span class="su-hint">Applies to agents you start after changing it.</span></div>'
+        + `<span class="su-hint">${esc(ALLOW_NOTE)}</span></div>`
         + `<input type="checkbox" id="cx-allow" class="su-switch" role="switch"${c.allowChanges ? ' checked' : ''}></div>`
         + agentRowsHtml(c)
         + `<div class="ap-btns">${btn('test', 'Test again')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${errP(st, 'azure')}`;
@@ -284,13 +296,22 @@
       render();
     }
 
+    // A tick is skipped while the last poll is still in flight: a slow server would otherwise have every answer discarded
+    // by the newer request's sequence number.
+    let polling = false;
+    function pollRefresh() {
+      if (polling) return;
+      polling = true;
+      refresh().finally(() => { polling = false; });
+    }
+
     // Atlassian: poll the list every 2 s until connected, Cancel, 10 minutes, or Settings closes.
     function startAtlPoll() {
       stopAtlPoll();
       atlUntil = Date.now() + GIVE_UP_MS;
       atlTimer = setInterval(() => {
         if (!active() || Date.now() > atlUntil) { stopAtlPoll(); if (Date.now() > atlUntil) { st.waiting = false; st.dismissed = true; render(); } return; }
-        refresh();
+        pollRefresh();
       }, ATLASSIAN_POLL_MS);
     }
     function stopAtlPoll() { if (atlTimer) { clearInterval(atlTimer); atlTimer = null; } }
@@ -313,24 +334,27 @@
     function startInstPoll() {
       stopInstPoll();
       const until = Date.now() + GIVE_UP_MS;
-      instTimer = setInterval(() => { if (!active() || Date.now() > until) stopInstPoll(); else refresh(); }, AZURE_POLL_MS);
+      instTimer = setInterval(() => { if (!active() || Date.now() > until) stopInstPoll(); else pollRefresh(); }, AZURE_POLL_MS);
     }
     function stopInstPoll() { if (instTimer) { clearInterval(instTimer); instTimer = null; } }
     function stop() { stopAtlPoll(); stopAzPoll(); stopInstPoll(); }
 
-    if (typeof window !== 'undefined' && window.addEventListener) {
-      window.addEventListener('message', (e) => {
-        if (e.origin === window.location.origin && e.data === 'vaultos-connectors') refresh();
-      });
+    // The approve tab says it is done over a same-origin channel (it has no opener); polling is the fallback.
+    if (typeof BroadcastChannel !== 'undefined') {
+      try { const bc = new BroadcastChannel('vaultos-connectors'); bc.onmessage = () => { refresh(); }; if (bc.unref) bc.unref(); } catch { /* polling covers it */ }
     }
 
     // A click that talks to the server: one at a time, an error lands under the button that caused it.
+    // Answers true when it did the work. When it didn't (busy, or it failed) the pane is redrawn from its own state, so a
+    // switch or a list the person just touched can't keep showing a value the server never applied.
     async function run(region, f) {
-      if (busy) return;
+      if (busy) return false;
       busy = true;
       st.err[region] = '';
-      try { await f(); } catch (e) { st.err[region] = (e && e.message) || 'Something went wrong.'; } finally { busy = false; }
-      render();
+      let ok = true;
+      try { await f(); } catch (e) { ok = false; st.err[region] = (e && e.message) || 'Something went wrong.'; } finally { busy = false; }
+      render(!ok);
+      return ok;
     }
 
     async function startAtlassian(reuse) {
@@ -344,9 +368,11 @@
       }
       try {
         const r = await call('POST', '/api/connectors/atlassian/start');
-        st.url = r.url;
+        const href = signInUrl(r.url);
+        if (!href) throw new Error('Atlassian sent a sign-in address VaultOS does not trust. Try again, or use an API token.');
+        st.url = href;
         if (!w) throw new Error('Your browser blocked the new tab. Allow pop-ups for VaultOS, then try again.');
-        w.location.href = r.url;
+        w.location.href = href;
       } catch (e) {
         if (w && w.close) try { w.close(); } catch { /* gone */ }
         throw e;
@@ -415,9 +441,12 @@
     el.addEventListener('change', (e) => {
       if (e.target.id === 'cx-allow') {
         const on = e.target.checked;
-        run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { allowChanges: on }); await refresh(); });
+        run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { allowChanges: on }); await refresh(); })
+          .then((ok) => { if (!ok) { render(true); } });
       } else if (e.target.id === 'cx-sub') {
-        run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { subscription: e.target.value }); await refresh(); });
+        const pick = e.target.value;
+        run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { subscription: pick }); await refresh(); })
+          .then((ok) => { if (!ok) { render(true); } });
       }
     });
     el.addEventListener('keydown', (e) => {
@@ -440,5 +469,5 @@
     return { refresh, stop };
   }
 
-  return { esc, stateChip, agentChip, minutesLeft, hostPath, atlassianStep, paneHtml, mountConnectors };
+  return { esc, stateChip, agentChip, minutesLeft, hostPath, signInUrl, atlassianStep, paneHtml, mountConnectors };
 });

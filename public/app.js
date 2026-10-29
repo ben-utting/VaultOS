@@ -373,7 +373,7 @@ function cxOpen() {
     CX.pane = Connectors.mountConnectors($('cx-pane'), {
       api: async (method, url, body) => api(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }),
       openTerm: (cmd) => { if (termOn()) { termOpen({ cwd: '', run: cmd }); if (dockVisible()) closeSheet(); } },
-      openTab: (url) => window.open(url, '_blank'),
+      openTab: (url) => { const w = window.open(url, '_blank'); if (w) { try { w.opener = null; } catch { /* cross-origin */ } } return w; },
       onView: cxSawView,
       active: () => secOpen('connectors'),
       copy: (t) => copyText(t),

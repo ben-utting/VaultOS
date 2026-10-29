@@ -102,7 +102,8 @@ test('the whole Atlassian sign-in over HTTP', async (t) => {
   const cb = await call(s.base, 'GET', u.pathname + u.search, { cookie: s.cookie });
   assert.equal(cb.status, 200);
   assert.match(cb.text, /Atlassian is connected, you can close this tab\./);
-  assert.match(cb.text, /postMessage\('vaultos-connectors'/);
+  assert.match(cb.text, /new BroadcastChannel\('vaultos-connectors'\)/);
+  assert.doesNotMatch(cb.text, /opener/);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'connected');
   assert.ok(!r.text.includes(storeKey(s)));
@@ -173,4 +174,24 @@ test('POST /api/connectors/atlassian/cancel needs a session and ends the pending
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/cancel', { cookie: s.cookie })).status, 200);
   const after = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(after.body.connectors[0].state, 'not-connected');
+});
+
+test('the callback without a session answers the browser with a page, not JSON', async (t) => {
+  const s = await ready(t);
+  const r = await call(s.base, 'GET', '/api/connectors/atlassian/callback?code=x&state=y');
+  assert.equal(r.status, 401);
+  assert.match(r.headers.get('content-type'), /text\/html/);
+  assert.match(r.text, /Sign in to VaultOS in this browser, then start again from Settings → Connectors\./);
+  assert.equal(r.body, null);
+});
+
+test('a prototype key as a connector id is a 400 with a sentence, and runs nothing', async (t) => {
+  const s = await ready(t);
+  for (const id of ['constructor', '__proto__']) {
+    for (const verb of ['disconnect', 'test']) {
+      const r = await call(s.base, 'POST', `/api/connectors/${id}/${verb}`, { cookie: s.cookie });
+      assert.equal(r.status, 400, `${id} ${verb}`);
+      assert.match(r.body.error, /Unknown connector/);
+    }
+  }
 });

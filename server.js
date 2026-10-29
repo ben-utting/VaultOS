@@ -1231,10 +1231,17 @@ if (TERMINAL_ENV) app.post('/api/term/search', async (req, res) => {
   }
 });
 
+// The connector callback is a browser navigation (Atlassian sends the person back to it): with no session it gets a page.
+const cxEsc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const cxPage = (text, script = '') => `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VaultOS</title>` +
+  `<body style="font:16px system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><p>${cxEsc(text)}</p>${script}</body></html>`;
+const cxSignInPage = (res) => res.status(401).set('Cache-Control', 'no-store').type('html')
+  .send(cxPage('Sign in to VaultOS in this browser, then start again from Settings → Connectors.'));
 // Gate everything below.
 app.use('/api', (req, res, next) => {
   if (req.session && req.session.authed) return next();
   if (isLocalRead(req)) return next();
+  if (req.method === 'GET' && req.path === '/connectors/atlassian/callback') return cxSignInPage(res);
   res.status(401).json({ error: 'Not authenticated' });
 });
 
@@ -1522,8 +1529,8 @@ app.post('/api/connectors/atlassian/start', settingsGuard, connectorRoute('start
 app.post('/api/connectors/atlassian/cancel', settingsGuard, connectorRoute('cancel the Atlassian sign-in', (req) =>
   connectors.atlassianCancel({ nonce: cxNonce(req) })));
 // The page Atlassian sends the person back to. The server sets no Content-Security-Policy on HTML, so the one
-// inline line (tell the opener, which also polls) needs no nonce. Nothing on the page names a token.
-app.get('/api/connectors/atlassian/callback', settingsGuard, async (req, res) => {
+// inline line (tell the Settings tab over a same-origin BroadcastChannel; it also polls) needs no nonce. Nothing on the page names a token.
+app.get('/api/connectors/atlassian/callback', (req, res, next) => (sessionAuthed(req) ? next() : cxSignInPage(res)), async (req, res) => {
   let text = 'Atlassian is connected, you can close this tab.';
   let ok = true;
   try {
@@ -1535,12 +1542,8 @@ app.get('/api/connectors/atlassian/callback', settingsGuard, async (req, res) =>
     if (err instanceof ConnectorError) text = err.message;
     else { console.error('Atlassian callback failed:', err && err.message); text = 'Something went wrong. Start again from VaultOS.'; }
   }
-  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  res.set('Cache-Control', 'no-store').type('html').send(
-    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VaultOS</title>` +
-    `<body style="font:16px system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><p>${esc(text)}</p>` +
-    (ok ? `<script>window.opener&&window.opener.postMessage('vaultos-connectors',location.origin)</script>` : '') +
-    `</body></html>`);
+  res.set('Cache-Control', 'no-store').type('html').send(cxPage(text,
+    ok ? `<script>try{var c=new BroadcastChannel('vaultos-connectors');c.postMessage('done');c.close()}catch(e){}</script>` : ''));
 });
 app.post('/api/connectors/atlassian/token', settingsGuard, connectorRoute('save the Atlassian sign-in', (req) =>
   connectors.atlassianToken(req.body || {})));
