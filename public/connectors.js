@@ -64,8 +64,10 @@
     const into = connected && !(prev && prev.state === 'connected' && prev.method === atl.method);
     let waiting = !!st.waiting, dismissed = !!st.dismissed;
     if (waiting) {
-      const done = connected && (st.waitFrom == null || atl.method !== st.waitFrom);
-      if (done) waiting = false;
+      // Only `connecting` keeps a wait going, except over a connected sign-in being switched: there the old method still
+      // reads `connected` until the new one lands. A change of method ends it; so does any other state (failed, expired).
+      const same = connected && st.waitFrom != null && atl.method === st.waitFrom;
+      if (!(atl.state === 'connecting' || same)) waiting = false;
     } else if (atl.state === 'connecting' && !dismissed) waiting = true;
     if (atl.state !== 'connecting' && !waiting) dismissed = false;
     return { waiting, dismissed, clear: into, poll: waiting };

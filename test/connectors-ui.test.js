@@ -62,3 +62,40 @@ test('the waiting panel shows while this pane waits, even over a connected sign-
   const html = C.paneHtml({ view, picked: 'atlassian', waiting: true, options: { atlassian: true } });
   assert.match(html, /Waiting for you to approve in the Atlassian tab…/);
 });
+
+test('atlassianStep: a wait ends on any state but connecting (or the old method while switching)', () => {
+  const first = { waiting: true, waitFrom: null };
+  assert.equal(C.atlassianStep(first, { state: 'connecting' }, { state: 'connecting' }).waiting, true);
+  assert.equal(C.atlassianStep(first, { state: 'connecting' }, { state: 'not-connected' }).waiting, false);
+  const sw = { waiting: true, waitFrom: 'token' };
+  const old = { state: 'connected', method: 'token' };
+  assert.equal(C.atlassianStep(sw, old, old).waiting, true);
+  assert.equal(C.atlassianStep(sw, old, { state: 'needs-sign-in', method: 'token' }).waiting, false);
+  assert.equal(C.atlassianStep(sw, old, { state: 'error', method: 'token' }).waiting, false);
+  assert.equal(C.atlassianStep(sw, old, { state: 'not-connected' }).waiting, false);
+});
+
+test('the 10-minute give-up clears the waiting panel', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const el = { addEventListener() {}, querySelector() { return null; }, contains() { return false; }, innerHTML: '' };
+  const view = { connectors: [{ id: 'atlassian', label: 'Atlassian', by: 'x', state: 'not-connected', agents: [] }], planned: [] };
+  const w = { open: () => ({ location: {}, close() {} }) };
+  let startView = view;
+  const ui = {
+    api: async (m, u) => (u === '/api/connectors/atlassian/start' ? { url: 'https://example.atlassian.net/x' } : startView),
+    openTerm() {}, openTab: w.open,
+  };
+  const handlers = {};
+  el.addEventListener = (n, f) => { handlers[n] = f; };
+  const m = C.mountConnectors(el, ui);
+  await m.refresh();
+  const pane = { closest: (sel) => (sel === '[data-act]' ? { dataset: { act: 'oauth' } } : null) };
+  handlers.click({ target: pane });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.match(el.innerHTML, /Waiting for you to approve/);
+  startView = { connectors: [{ ...view.connectors[0], state: 'connecting' }], planned: [] };
+  t.mock.timers.tick(11 * 60 * 1000);
+  await new Promise((r) => setImmediate(r));
+  assert.doesNotMatch(el.innerHTML, /Waiting for you to approve/);
+});
