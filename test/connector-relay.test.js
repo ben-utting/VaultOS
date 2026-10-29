@@ -245,7 +245,8 @@ test('upstream that answers 401 even after renew never yields 401', async (t) =>
     await r.text();
   }
   assert.equal(target.renews >= 1, true);
-  assert.equal(target.marked >= 1, true);
+  // A renewal that worked and was still refused is not a lost sign-in: nothing is marked.
+  assert.equal(target.marked, 0);
 });
 
 test('serialised: concurrent calls share one run, the next starts afresh', async () => {

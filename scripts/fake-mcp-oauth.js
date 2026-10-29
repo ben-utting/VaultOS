@@ -12,7 +12,7 @@ const TOOLS = [
 
 function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
   const state = {
-    seen: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
+    seen: [], resources: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
     clients: {}, codes: {}, access: new Set(), refresh: {}, current: null,
   };
   let n = 0;
@@ -62,6 +62,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
       return send(res, 200, {});
     }
     const grant = p.get('grant_type');
+    if (grant === 'authorization_code' || grant === 'refresh_token') state.resources.push({ at: grant, resource: p.get('resource') }); // RFC 8707
     if (grant === 'authorization_code') {
       const c = state.codes[p.get('code')];
       delete state.codes[p.get('code')];
@@ -147,6 +148,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
         if (!reg) return send(res, 400, { error: 'invalid_client' });
         if (!uri || !reg.includes(uri)) return send(res, 400, { error: 'invalid_redirect_uri' });
         if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge')) return send(res, 400, { error: 'invalid_request' });
+        state.resources.push({ at: 'authorize', resource: q.get('resource') });
         const code = rand('code');
         state.codes[code] = { challenge: q.get('code_challenge'), clientId: q.get('client_id'), redirectUri: uri };
         const to = new URL(uri); to.searchParams.set('code', code);

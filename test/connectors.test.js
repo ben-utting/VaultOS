@@ -33,3 +33,7 @@ test('entryFor azure is read-only unless allowChanges', () => {
   assert.deepEqual(entryFor('azure', { home: '/h' }), { kind: 'stdio', command: '/h/.local/bin/azmcp', args: ['server', 'start', '--read-only'] });
   assert.deepEqual(entryFor('azure', { home: '/h', allowChanges: true }), { kind: 'stdio', command: '/h/.local/bin/azmcp', args: ['server', 'start'] });
 });
+
+test('the Azure server is pinned to the version whose --read-only flag was checked', () => {
+  assert.match(CONNECTORS.azure.install, /@azure\/mcp@4\.0\.0-beta\.3 /);
+});
