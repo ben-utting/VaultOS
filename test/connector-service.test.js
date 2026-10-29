@@ -134,15 +134,15 @@ test('a refused redirect gives the sentence', async (t) => {
 test('token method: bad token keeps the previous method; good token connects', async (t) => {
   const { svc, home } = await setup(t);
   await signIn(svc);
-  await assert.rejects(svc.atlassianToken({ email: 'alex@example.com', token: 'wrong' }), /401/);
+  await assert.rejects(svc.saveToken('atlassian', { email: 'alex@example.com', token: 'wrong' }), /401/);
   assert.strictEqual(store(home).connectors.atlassian.method, 'oauth');
-  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
   const a = await row(svc, 'atlassian');
   assert.strictEqual(a.state, 'connected');
   assert.strictEqual(a.method, 'token');
   assert.strictEqual(a.account, 'alex@example.com');
   assert.strictEqual(store(home).connectors.atlassian.tokens, undefined);
-  await svc.atlassianToken({ key: 'svc-key' });
+  await svc.saveToken('atlassian', { key: 'svc-key' });
   assert.strictEqual((await row(svc, 'atlassian')).state, 'connected');
   const target = svc.relayTarget('atlassian');
   assert.strictEqual(await target.authorization(), 'Bearer svc-key');
@@ -150,7 +150,7 @@ test('token method: bad token keeps the previous method; good token connects', a
 
 test('token method authorization is Basic base64(email:token)', async (t) => {
   const { svc } = await setup(t);
-  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
   const auth = await svc.relayTarget('atlassian').authorization();
   assert.strictEqual(auth, `Basic ${Buffer.from('alex@example.com:tok').toString('base64')}`);
 });
@@ -284,7 +284,7 @@ test('view never contains a secret', async (t) => {
   const walk = (v) => { if (typeof v === 'string') strings.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
   walk(await svc.view());
   for (const x of secrets) assert.ok(x && !strings.some((y) => y.includes(x)), 'secret leaked');
-  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
   strings.length = 0; walk(await svc.view());
   assert.ok(!strings.some((y) => y === 'tok' || y.includes(':tok')));
   assert.ok(fake);
@@ -299,7 +299,7 @@ test('a failed revoke note shows only while not connected and clears on sign-in'
   const gone = await row(svc, 'atlassian');
   assert.strictEqual(gone.state, 'not-connected');
   assert.match(gone.error, /didn't confirm the sign-out/);
-  await svc.atlassianToken({ key: 'svc-key' });
+  await svc.saveToken('atlassian', { key: 'svc-key' });
   assert.strictEqual((await row(svc, 'atlassian')).error, undefined);
   await svc.disconnect('atlassian'); // token method: nothing to revoke
   assert.strictEqual((await row(svc, 'atlassian')).error, undefined);
@@ -322,7 +322,7 @@ test('test(): oauth 401 renews first and only then marks needs-sign-in', async (
 
 test('token method: needs-sign-in is shown but the token still goes out, and a good test clears it', async (t) => {
   const { svc } = await setup(t);
-  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
   const target = svc.relayTarget('atlassian');
   target.markNeedsSignIn();
   await new Promise((r) => setTimeout(r, 50));
@@ -357,7 +357,7 @@ test('a refresh that finishes after a token switch is dropped', async (t) => {
     late = svc.relayTarget('atlassian').authorization(); // in flight, will be refused
     await new Promise((r) => setTimeout(r, 20));
     globalThis.fetch = realFetch;
-    await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+    await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
     release();
     await late;
   } finally { globalThis.fetch = realFetch; release(); }
@@ -369,14 +369,14 @@ test('switching OAuth to token revokes the old refresh token; view holds no key,
   const { svc, fake, home } = await setup(t, { agents: ['cursor', 'pi'] });
   await signIn(svc);
   const rt = store(home).connectors.atlassian.tokens.refresh_token;
-  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  await svc.saveToken('atlassian', { email: 'alex@example.com', token: 'tok' });
   assert.ok(fake.state.revoked.includes(rt));
   const basicVal = Buffer.from('alex@example.com:tok').toString('base64');
   const relayKey = store(home).relayKey;
   const strings = [];
   const walk = (v) => { if (typeof v === 'string') strings.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
   walk(await svc.view());
-  await svc.atlassianToken({ key: 'svc-key' });
+  await svc.saveToken('atlassian', { key: 'svc-key' });
   walk(await svc.view());
   for (const x of ['svc-key', basicVal, relayKey]) assert.ok(!strings.some((y) => y.includes(x)), `leaked ${x}`);
   assert.ok(!strings.includes('tok'));

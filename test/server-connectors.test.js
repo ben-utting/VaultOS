@@ -195,3 +195,48 @@ test('a prototype key as a connector id is a 400 with a sentence, and runs nothi
     }
   }
 });
+
+async function readyWithFakes(t) {
+  const gh = await startFake({ noAuth: true });
+  const ms = await startFake({ noAuth: true });
+  t.after(() => Promise.all([gh.stop(), ms.stop()]));
+  const s = await ready(t, { env: { CONNECTOR_UPSTREAM_GITHUB: gh.base, CONNECTOR_UPSTREAM_MSLEARN: ms.base } });
+  return s;
+}
+
+test('token route saves a github token (200) and refuses mslearn and azure (400)', async (t) => {
+  const s = await readyWithFakes(t);
+  const ok = await call(s.base, 'POST', '/api/connectors/github/token', { cookie: s.cookie, body: { token: ' ghp_secret123\n' } });
+  assert.equal(ok.status, 200);
+  assert.ok(!ok.text.includes('ghp_secret123'));
+  for (const id of ['mslearn', 'azure', 'nope', 'constructor', '__proto__']) {
+    const r = await call(s.base, 'POST', `/api/connectors/${id}/token`, { cookie: s.cookie, body: { token: 'x' } });
+    assert.equal(r.status, 400, id);
+    assert.equal(typeof r.body.error, 'string', id);
+  }
+});
+
+test('enable route turns on mslearn (200) and refuses github (400)', async (t) => {
+  const s = await readyWithFakes(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/mslearn/enable', { cookie: s.cookie })).status, 200);
+  for (const id of ['github', 'atlassian', 'azure', 'nope', 'constructor', '__proto__']) {
+    const r = await call(s.base, 'POST', `/api/connectors/${id}/enable`, { cookie: s.cookie });
+    assert.equal(r.status, 400, id);
+    assert.equal(typeof r.body.error, 'string', id);
+  }
+});
+
+test('token and enable routes need a session (401)', async (t) => {
+  const s = await readyWithFakes(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/github/token', { body: { token: 'x' } })).status, 401);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/mslearn/enable')).status, 401);
+});
+
+test('the atlassian token flow still works through /api/connectors/atlassian/token', async (t) => {
+  const s = await readyWithFakes(t);
+  const r = await call(s.base, 'POST', '/api/connectors/atlassian/token', { cookie: s.cookie, body: {} });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /Enter your email/);
+  const az = await call(s.base, 'POST', '/api/connectors/azure/cancel', { cookie: s.cookie });
+  assert.equal(az.status, 200);
+});

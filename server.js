@@ -1545,8 +1545,10 @@ app.get('/api/connectors/atlassian/callback', (req, res, next) => (sessionAuthed
   res.set('Cache-Control', 'no-store').type('html').send(cxPage(text,
     ok ? `<script>try{var c=new BroadcastChannel('vaultos-connectors');c.postMessage('done');c.close()}catch(e){}</script>` : ''));
 });
-app.post('/api/connectors/atlassian/token', settingsGuard, connectorRoute('save the Atlassian sign-in', (req) =>
-  connectors.atlassianToken(req.body || {})));
+app.post('/api/connectors/:id/token', settingsGuard, connectorRoute('save the sign-in', (req) =>
+  connectors.saveToken(req.params.id, req.body || {})));
+app.post('/api/connectors/:id/enable', settingsGuard, connectorRoute('turn the connector on', (req) =>
+  connectors.enable(req.params.id)));
 app.post('/api/connectors/azure/start', settingsGuard, async (req, res) => {
   try { res.json(await connectors.azureStart()); } catch (err) {
     // az's own message (why the sign-in could not start) is for the person to read.
