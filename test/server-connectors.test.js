@@ -83,14 +83,14 @@ test('connectors need a session', async (t) => {
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/start')).status, 401);
 });
 
-test('GET /api/connectors lists atlassian and azure not connected, and eight planned', async (t) => {
+test('GET /api/connectors lists the four connectors not connected, and five planned', async (t) => {
   const s = await ready(t);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure']);
+  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure', 'github', 'mslearn']);
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'not-connected');
   assert.notEqual(r.body.connectors.find((c) => c.id === 'azure').state, 'connected');
-  assert.equal(r.body.planned.length, 8);
+  assert.equal(r.body.planned.length, 5);
   assert.equal(r.body.attention, false);
 });
 

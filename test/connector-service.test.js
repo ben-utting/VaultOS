@@ -427,3 +427,144 @@ test('cancel drops the pending sign-in: not connecting, and the callback gets th
   assert.equal((await svc.view()).connectors[0].state, 'not-connected');
   await assert.rejects(svc.atlassianCallback({ code: loc.searchParams.get('code'), state: loc.searchParams.get('state'), nonce: 'n1' }), { message: EXPIRED });
 });
+
+// ----- GitHub and Microsoft Learn -----
+const http = require('node:http');
+const { createRelay, messages } = require('../lib/connector-relay');
+
+async function setupRelayed(t, { agents = ['cursor'] } = {}) {
+  const gh = await startFake();
+  const ms = await startFake({ noAuth: true });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-rel-'));
+  const svc = createConnectorService({
+    home, port: 7684, env: { CONNECTOR_UPSTREAM_GITHUB: gh.base, CONNECTOR_UPSTREAM_MSLEARN: ms.base },
+    fetch: (...a) => globalThis.fetch(...a), run: fakeRun(), spawn: fakeSpawn(), now: () => 1000000,
+    installedAgents: async () => agents,
+  });
+  await svc.init();
+  t.after(async () => { await gh.stop(); await ms.stop(); fs.rmSync(home, { recursive: true, force: true }); });
+  return { gh, ms, home, svc };
+}
+const cursorJson = (home) => JSON.parse(fs.readFileSync(path.join(home, '.cursor/mcp.json'), 'utf8'));
+
+test('github: a token with surrounding whitespace is trimmed, probed and saved; view says connected as alex-example', async (t) => {
+  const { svc, home, gh } = await setupRelayed(t);
+  await svc.saveToken('github', { token: '  svc-key\n' });
+  assert.deepStrictEqual(
+    { method: store(home).connectors.github.method, key: store(home).connectors.github.key }, { method: 'token', key: 'svc-key' });
+  const g = await row(svc, 'github');
+  assert.strictEqual(g.state, 'connected');
+  assert.strictEqual(g.account, 'alex-example');
+  assert.strictEqual(g.tokenHelp, 'https://github.com/settings/personal-access-tokens/new');
+  assert.ok(gh.state.seen.some((s) => s.path === '/mcp/' && s.headers.authorization === 'Bearer svc-key'));
+  assert.strictEqual(await svc.relayTarget('github').authorization(), 'Bearer svc-key');
+});
+
+test('github: an empty token is refused without calling GitHub; saveToken refuses ids that take no token', async (t) => {
+  const { svc, gh } = await setupRelayed(t);
+  await assert.rejects(svc.saveToken('github', { token: '  \n' }), { message: 'Paste a GitHub token.' });
+  await assert.rejects(svc.saveToken('mslearn', { token: 'x' }), /doesn't use a token/);
+  await assert.rejects(svc.saveToken('azure', { token: 'x' }), /doesn't use a token/);
+  await assert.rejects(svc.saveToken('constructor', { token: 'x' }), { message: 'Unknown connector.' });
+  await assert.rejects(svc.enable('github'), /needs a sign-in/);
+  assert.strictEqual(gh.state.seen.length, 0);
+});
+
+test('github: a token that fails the probe keeps the previous token and throws the upstream error', async (t) => {
+  const { svc, home } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  await assert.rejects(svc.saveToken('github', { token: 'wrong' }), /401/);
+  assert.strictEqual(store(home).connectors.github.key, 'svc-key');
+  assert.strictEqual((await row(svc, 'github')).state, 'connected');
+});
+
+test('github: a 401 later shows needs-sign-in but keeps sending the token; a good Test clears it', async (t) => {
+  const { svc, home } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  const target = svc.relayTarget('github');
+  target.markNeedsSignIn();
+  for (let i = 0; i < 50 && !store(home).connectors.github.needsSignIn; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual((await row(svc, 'github')).state, 'needs-sign-in');
+  assert.strictEqual(svc.needsAttention(), true);
+  assert.strictEqual(await target.authorization(), 'Bearer svc-key');
+  assert.strictEqual(await target.renew('Bearer other'), 'Bearer svc-key'); // someone changed it: current one
+  assert.strictEqual(await target.renew('Bearer svc-key'), null); // nothing to renew with
+  const r = await svc.test('github');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual((await row(svc, 'github')).state, 'connected');
+  assert.strictEqual(store(home).connectors.github.needsSignIn, undefined);
+});
+
+test('github: the token never appears in view(), and cursor\'s entry holds only the relay url and key', async (t) => {
+  const { svc, home } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  assert.ok(!JSON.stringify(await svc.view()).includes('svc-key'));
+  const e = cursorJson(home).mcpServers.github;
+  assert.deepStrictEqual(Object.keys(e).sort(), ['headers', 'url']);
+  assert.strictEqual(e.url, 'http://127.0.0.1:7684/mcp/github');
+  assert.deepStrictEqual(Object.keys(e.headers), ['X-VaultOS-Key']);
+  assert.ok(!JSON.stringify(e).includes('svc-key'));
+});
+
+test('github: an existing hand-written github entry in cursor is left alone and reported', async (t) => {
+  const { svc, home } = await setupRelayed(t);
+  fs.mkdirSync(path.join(home, '.cursor'), { recursive: true });
+  const mine = { url: 'https://example.com/mine' };
+  fs.writeFileSync(path.join(home, '.cursor/mcp.json'), JSON.stringify({ mcpServers: { github: mine } }));
+  await svc.saveToken('github', { token: 'svc-key' });
+  assert.deepStrictEqual(cursorJson(home).mcpServers.github, mine);
+  const c = (await row(svc, 'github')).agents.find((x) => x.id === 'cursor');
+  assert.strictEqual(c.chip, 'Has its own entry');
+});
+
+test('mslearn: enable gives connected with 3 tools, cursor gets the entry, the relay sends no Authorization', async (t) => {
+  const { svc, home, ms } = await setupRelayed(t);
+  await svc.enable('mslearn');
+  const m = await row(svc, 'mslearn');
+  assert.strictEqual(m.state, 'connected');
+  assert.strictEqual(m.method, 'none');
+  assert.strictEqual(m.lastTest.tools, 3);
+  assert.strictEqual(m.account, undefined);
+  assert.strictEqual(cursorJson(home).mcpServers.mslearn.url, 'http://127.0.0.1:7684/mcp/mslearn');
+  const target = svc.relayTarget('mslearn');
+  assert.strictEqual(await target.authorization(), '');
+  const handler = createRelay({ getKey: () => 'k', target: (id) => svc.relayTarget(id) });
+  const server = http.createServer(handler);
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  t.after(() => server.close());
+  const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-03-26' } });
+  const hdr = { 'x-vaultos-key': 'k', 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  const res = await fetch(`http://127.0.0.1:${server.address().port}/mcp/mslearn`, { method: 'POST', headers: hdr, body });
+  assert.strictEqual(res.status, 200);
+  await res.text();
+  const seen = ms.state.seen.filter((s) => s.path === '/api/mcp');
+  assert.ok(seen.length > 1);
+  assert.ok(seen.every((s) => s.headers.authorization === undefined));
+
+  // disconnect: the entry goes and the next relay call gets the not-connected sentence at once
+  await svc.disconnect('mslearn');
+  assert.strictEqual(cursorJson(home).mcpServers.mslearn, undefined);
+  assert.strictEqual(store(home).connectors.mslearn, undefined);
+  assert.strictEqual(target.missing(), 'not-connected');
+  const res2 = await fetch(`http://127.0.0.1:${server.address().port}/mcp/mslearn`, {
+    method: 'POST', headers: hdr, body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+  });
+  assert.match(await res2.text(), new RegExp(messages.notConnected('Microsoft Learn').replace(/[.*+?^${}()|[\]\\→]/g, '.')));
+  assert.strictEqual((await row(svc, 'mslearn')).state, 'not-connected');
+});
+
+test('mslearn: a failing test leaves it enabled with the error shown', async (t) => {
+  const { svc, ms } = await setupRelayed(t);
+  await ms.stop();
+  await svc.enable('mslearn');
+  const m = await row(svc, 'mslearn');
+  assert.strictEqual(m.state, 'error');
+  assert.ok(m.error);
+  assert.strictEqual(m.method, 'none');
+  assert.strictEqual(await svc.relayTarget('mslearn').authorization(), '');
+});
+
+test('planned in view() has the five ids', async (t) => {
+  const { svc } = await setupRelayed(t);
+  assert.deepStrictEqual((await svc.view()).planned.map((p) => p.id), ['notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
+});
