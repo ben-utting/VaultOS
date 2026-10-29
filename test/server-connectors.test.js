@@ -163,3 +163,14 @@ test('token route reports a person-facing problem as 400', async (t) => {
   assert.equal(r.status, 400);
   assert.match(r.body.error, /Enter your email/);
 });
+
+test('POST /api/connectors/atlassian/cancel needs a session and ends the pending sign-in', async (t) => {
+  const s = await ready(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/cancel')).status, 401);
+  await signIn(s);
+  const before = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
+  assert.equal(before.body.connectors[0].state, 'connecting');
+  assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/cancel', { cookie: s.cookie })).status, 200);
+  const after = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
+  assert.equal(after.body.connectors[0].state, 'not-connected');
+});

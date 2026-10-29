@@ -1519,6 +1519,8 @@ app.post('/api/connectors/:id/test', settingsGuard, connectorRoute('test the con
 app.post('/api/connectors/:id/disconnect', settingsGuard, connectorRoute('disconnect the connector', (req) => connectors.disconnect(req.params.id)));
 app.post('/api/connectors/atlassian/start', settingsGuard, connectorRoute('start the Atlassian sign-in', (req) =>
   connectors.atlassianStart({ origin: `${req.protocol}://${req.get('host')}`, nonce: cxNonce(req) })));
+app.post('/api/connectors/atlassian/cancel', settingsGuard, connectorRoute('cancel the Atlassian sign-in', (req) =>
+  connectors.atlassianCancel({ nonce: cxNonce(req) })));
 // The page Atlassian sends the person back to. The server sets no Content-Security-Policy on HTML, so the one
 // inline line (tell the opener, which also polls) needs no nonce. Nothing on the page names a token.
 app.get('/api/connectors/atlassian/callback', settingsGuard, async (req, res) => {

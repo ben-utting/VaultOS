@@ -417,3 +417,13 @@ test('disconnect azure cancels a waiting device login', async (t) => {
   await svc.disconnect('azure');
   assert.strictEqual((await row(svc, 'azure')).state, 'not-connected');
 });
+
+test('cancel drops the pending sign-in: not connecting, and the callback gets the expired-link sentence', async (t) => {
+  const { svc } = await setup(t);
+  const { url } = await svc.atlassianStart({ origin: ORIGIN, nonce: 'n1' });
+  assert.equal((await svc.view()).connectors[0].state, 'connecting');
+  const loc = new URL((await fetch(url, { redirect: 'manual' })).headers.get('location'));
+  await svc.atlassianCancel({ nonce: 'n1' });
+  assert.equal((await svc.view()).connectors[0].state, 'not-connected');
+  await assert.rejects(svc.atlassianCallback({ code: loc.searchParams.get('code'), state: loc.searchParams.get('state'), nonce: 'n1' }), { message: EXPIRED });
+});

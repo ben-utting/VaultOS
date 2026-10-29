@@ -54,6 +54,23 @@
   const mark = (id, cls = '') => `<span class="ap-mark${cls}">${Marks ? Marks.connector(id) : ''}</span>`;
   const agentMark = (id) => `<span class="ap-mark small">${Marks ? Marks.svg(id) : ''}</span>`;
 
+  // What a new Atlassian view does to the pane's own state. st: { waiting, dismissed, waitFrom } (waitFrom: the method signed in
+  // when this pane started a sign-in over a connected one, else null); prev: { state, method } of the view before, if any.
+  // The form and the pasted token are cleared only on the way INTO a connected state (or a changed method), never on every
+  // connected view: a focus refresh must not wipe a token being pasted. While this pane's sign-in runs the wait goes on until
+  // the connection is a different method than before (a switch) or connected at all (a first sign-in).
+  function atlassianStep(st, prev, atl) {
+    const connected = atl.state === 'connected';
+    const into = connected && !(prev && prev.state === 'connected' && prev.method === atl.method);
+    let waiting = !!st.waiting, dismissed = !!st.dismissed;
+    if (waiting) {
+      const done = connected && (st.waitFrom == null || atl.method !== st.waitFrom);
+      if (done) waiting = false;
+    } else if (atl.state === 'connecting' && !dismissed) waiting = true;
+    if (atl.state !== 'connecting' && !waiting) dismissed = false;
+    return { waiting, dismissed, clear: into, poll: waiting };
+  }
+
   // ---- rendering --------------------------------------------------------------
   // st: { view: GET /api/connectors' answer, picked, err: { region: message }, email, token, waiting, azure: { url, code,
   // expiresAt } | null, options: { id: true }, notice }
@@ -98,6 +115,12 @@
 
   function atlassianBody(c, st, now) {
     const connectedLike = c.state === 'connected' || c.state === 'error';
+    if (st.waiting) {
+      return '<ul class="ap-facts"><li>Jira and Confluence, through Atlassian\'s own hosted server</li></ul>'
+        + '<div class="cx-wait" aria-live="polite"><div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
+        + '<span>Waiting for you to approve in the Atlassian tab…</span></div>'
+        + `<div class="ap-btns">${btn('reopen', 'Open the tab again')}${btn('cancel', 'Cancel')}</div>${errP(st, 'oauth')}</div>`;
+    }
     if (connectedLike && !st.options.atlassian) {
       const via = c.method === 'token'
         ? (c.account ? `Signed in as ${c.account} with an API token. A token lasts up to a year.` : 'Signed in with an API token. A token lasts up to a year.')
@@ -108,12 +131,6 @@
         + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
         + agentRowsHtml(c)
         + `<div class="ap-btns">${btn('test', 'Test again')}${btn('switch', c.method === 'token' ? 'Sign in with Atlassian instead' : 'Use an API token instead')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}`;
-    }
-    if (st.waiting && c.state !== 'connected') {
-      return '<ul class="ap-facts"><li>Jira and Confluence, through Atlassian\'s own hosted server</li></ul>'
-        + '<div class="cx-wait" aria-live="polite"><div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
-        + '<span>Waiting for you to approve in the Atlassian tab…</span></div>'
-        + `<div class="ap-btns">${btn('reopen', 'Open the tab again')}${btn('cancel', 'Cancel')}</div>${errP(st, 'oauth')}</div>`;
     }
     const lead = c.state === 'needs-sign-in'
       ? '<p class="su-err cx-err" role="alert">Your Atlassian sign-in has run out. Sign in again.</p>' : '';
@@ -231,10 +248,13 @@
       const atl = list.find((c) => c.id === 'atlassian');
       const az = list.find((c) => c.id === 'azure');
       if (atl) {
-        if (atl.state === 'connecting' && !st.dismissed) { st.waiting = true; if (!atlTimer) startAtlPoll(); }
-        else if (atl.state !== 'connecting') { st.waiting = false; st.dismissed = false; }
-        if (atl.state === 'connected') { delete st.options.atlassian; st.err.oauth = ''; st.err.token = ''; st.token = ''; stopAtlPoll(); }
-        if (!st.waiting) stopAtlPoll();
+        const step = atlassianStep(st, st.prevAtl, atl);
+        st.prevAtl = { state: atl.state, method: atl.method };
+        st.waiting = step.waiting; st.dismissed = step.dismissed;
+        if (!step.waiting) st.waitFrom = null;
+        if (step.clear) { delete st.options.atlassian; st.err.oauth = ''; st.err.token = ''; st.token = ''; }
+        if (step.poll && !atlTimer) startAtlPoll();
+        if (!step.poll) stopAtlPoll();
       }
       if (az) {
         if (az.state === 'connecting' && !azTimer) startAzPoll();
@@ -312,6 +332,8 @@
     }
 
     async function startAtlassian(reuse) {
+      const cur = st.view && st.view.connectors.find((x) => x.id === 'atlassian');
+      if (!reuse) st.waitFrom = cur && (cur.state === 'connected' || cur.state === 'error') ? cur.method : null;
       // The tab opens inside the click, before the wait for the server, so the browser does not block it.
       const w = reuse ? ui.openTab(reuse) : ui.openTab('about:blank');
       if (reuse) {
@@ -335,7 +357,14 @@
       const id = st.picked;
       if (act === 'oauth') return run('oauth', () => startAtlassian());
       if (act === 'reopen') return run('oauth', () => (st.url ? startAtlassian(st.url) : startAtlassian()));
-      if (act === 'cancel') { st.waiting = false; st.dismissed = true; stopAtlPoll(); st.err.oauth = ''; render(); return; }
+      if (act === 'cancel') {
+        return run('oauth', async () => {
+          st.waiting = false; st.waitFrom = null; stopAtlPoll();
+          await call('POST', '/api/connectors/atlassian/cancel');
+          st.dismissed = false;
+          await refresh();
+        });
+      }
       if (act === 'token') {
         return run('token', async () => {
           const email = st.email.trim(), token = st.token.trim();
@@ -409,5 +438,5 @@
     return { refresh, stop };
   }
 
-  return { esc, stateChip, agentChip, minutesLeft, hostPath, paneHtml, mountConnectors };
+  return { esc, stateChip, agentChip, minutesLeft, hostPath, atlassianStep, paneHtml, mountConnectors };
 });
