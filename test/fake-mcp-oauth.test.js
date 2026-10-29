@@ -147,3 +147,30 @@ test('refuse-refresh, revoke, basic and service keys, refused redirects, slow-ss
   assert.equal(ev.length, 2);
   assert.ok(Date.now() - start >= 250);
 });
+
+test('authorize refuses an unregistered redirect_uri or unknown client', async (t) => {
+  const fake = await startFake(); t.after(() => fake.stop());
+  const { meta, reg } = await signIn(fake);
+  const go = (clientId, uri) => {
+    const u = new URL(meta.authorization_endpoint);
+    Object.entries({ response_type: 'code', client_id: clientId, redirect_uri: uri, state: 's',
+      code_challenge: 'c', code_challenge_method: 'S256' }).forEach(([k, v]) => u.searchParams.set(k, v));
+    return fetch(u, { redirect: 'manual' });
+  };
+  assert.equal((await go(reg.client_id, 'http://evil.example/cb')).status, 400);
+  assert.equal((await go('nobody', REDIR)).status, 400);
+});
+
+test('code exchange refuses a different client_id or redirect_uri', async (t) => {
+  const fake = await startFake(); t.after(() => fake.stop());
+  const a = await signIn(fake);
+  const wrongUri = await fetch(a.meta.token_endpoint, { method: 'POST', headers: FORM,
+    body: form({ grant_type: 'authorization_code', code: a.code, code_verifier: a.verifier,
+      client_id: a.reg.client_id, redirect_uri: 'http://evil.example/cb' }) });
+  assert.equal(wrongUri.status, 400);
+  assert.equal((await wrongUri.json()).error, 'invalid_grant');
+  const b = await signIn(fake);
+  const wrongClient = await exchange(b.meta, { client_id: 'fake-other' }, b.code, b.verifier);
+  assert.equal(wrongClient.status, 400);
+  assert.equal((await wrongClient.json()).error, 'invalid_grant');
+});

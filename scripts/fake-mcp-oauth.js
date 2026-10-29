@@ -66,7 +66,8 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
       const c = state.codes[p.get('code')];
       delete state.codes[p.get('code')];
       const v = p.get('code_verifier') || '';
-      const ok = c && crypto.createHash('sha256').update(v).digest('base64url') === c.challenge;
+      const ok = c && c.clientId === p.get('client_id') && c.redirectUri === p.get('redirect_uri')
+        && crypto.createHash('sha256').update(v).digest('base64url') === c.challenge;
       if (!ok) return send(res, 400, { error: 'invalid_grant' });
       return send(res, 200, issue(c.clientId));
     }
@@ -142,10 +143,12 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
       if (k === 'GET /v1/authorize') {
         const q = url.searchParams;
         const uri = q.get('redirect_uri');
-        if (!state.clients[q.get('client_id')] || !uri) return send(res, 400, { error: 'invalid_client' });
+        const reg = state.clients[q.get('client_id')];
+        if (!reg) return send(res, 400, { error: 'invalid_client' });
+        if (!uri || !reg.includes(uri)) return send(res, 400, { error: 'invalid_redirect_uri' });
         if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge')) return send(res, 400, { error: 'invalid_request' });
         const code = rand('code');
-        state.codes[code] = { challenge: q.get('code_challenge'), clientId: q.get('client_id') };
+        state.codes[code] = { challenge: q.get('code_challenge'), clientId: q.get('client_id'), redirectUri: uri };
         const to = new URL(uri); to.searchParams.set('code', code);
         if (q.get('state') !== null) to.searchParams.set('state', q.get('state'));
         res.writeHead(302, { location: to.toString() }); return res.end();
