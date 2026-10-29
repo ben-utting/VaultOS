@@ -184,3 +184,39 @@ test("sync: one writer throwing doesn't stop the other", async () => {
   assert.equal(r.agents.cursor.ok, true);
   assert.ok(r.written.cursor.atlassian);
 });
+
+test('sync: partial failure keeps completed puts in written; next sync treats them as ours', async () => {
+  const w = memWriter('cursor');
+  const realPut = w.put;
+  w.put = async (n, e) => { if (n === 'azure') throw new Error('boom'); return realPut(n, e); };
+  let r = await syncAgents({ wanted: { atlassian: HTTP, azure: STDIO }, writers: [w], written: {} });
+  assert.equal(r.agents.cursor.ok, false);
+  assert.equal(r.written.cursor.atlassian, entryHash(toCursor(HTTP)));
+  assert.equal(r.written.cursor.azure, undefined);
+  const good = memWriter('cursor', { atlassian: toCursor(HTTP) });
+  r = await syncAgents({ wanted: { atlassian: HTTP, azure: STDIO }, writers: [good], written: r.written });
+  assert.deepEqual(r.agents.cursor.foreign, []);
+  assert.deepEqual(good.calls, [['put', 'azure']]);
+});
+
+test('sync adopts a present entry identical to what it would write', async () => {
+  const w = memWriter('cursor', { atlassian: toCursor(HTTP) });
+  const r = await syncAgents({ wanted: { atlassian: HTTP }, writers: [w], written: {} });
+  assert.deepEqual(w.calls, []);
+  assert.deepEqual(r.agents.cursor.foreign, []);
+  assert.equal(r.written.cursor.atlassian, entryHash(toCursor(HTTP)));
+});
+
+test('cursor: damaged mcpServers or top level is an AgentConfigError, file untouched', async () => {
+  for (const body of ['{"mcpServers":"x"}', '{"mcpServers":[]}', '{"mcpServers":null}', '{"mcpServers":5}', '[]', 'null', '7']) {
+    const home = tmpHome();
+    fs.mkdirSync(path.join(home, '.cursor'));
+    const f = path.join(home, '.cursor/mcp.json');
+    fs.writeFileSync(f, body);
+    const w = cursorWriter({ home });
+    await assert.rejects(() => w.put('atlassian', toCursor(HTTP)), (e) => e instanceof AgentConfigError && /Couldn't read `~\/\.cursor\/mcp\.json`/.test(e.message), body);
+    await assert.rejects(() => w.remove('atlassian'), AgentConfigError, body);
+    await assert.rejects(() => w.list(), AgentConfigError, body);
+    assert.equal(fs.readFileSync(f, 'utf8'), body);
+  }
+});
