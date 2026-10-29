@@ -377,4 +377,130 @@ Results go in "Decisions made during implementation" below.
 
 ## Decisions made during implementation
 
-(Filled in by the spikes and the build.)
+Spikes run 2026-10-29 in `vaultos:connectors` (the `vaultos:portable` image plus `libicu72`) as
+the `vaultos` user, with `scripts/connector-probe.sh`. Home is `/home/vaultos`.
+
+1. **Azure CLI install (spike 1): works, no sudo.** Command, as in the Azure section:
+   `npm install -g --prefix ~/.local @azure/mcp`, then
+   `python3 -m venv ~/.local/share/azure-cli && ~/.local/share/azure-cli/bin/pip install azure-cli`
+   and `ln -sf ~/.local/share/azure-cli/bin/az ~/.local/bin/az`. Result: `azure-cli 2.91.0`,
+   `Azure.Mcp.Server 4.0.0-beta.3` (`azmcp server start --help` runs with `libicu72`). Size:
+   `~/.local/share/azure-cli` 643M on a fresh run (732M after `az` had run once), `@azure`
+   node modules 152M, so about 800-900M in the home volume. Time: 44-45 s on this box (both
+   pieces together). The Azure panel should mention the disk use.
+2. **azmcp uses the az login (spike 2): pending: needs a device-code sign-in (controller Ruling
+   R1).** What is checked so far: with no login, `azmcp server start --read-only` over stdio
+   answers `initialize` (protocol 2025-06-18), `tools/list` (68 tools, including
+   `subscription_list`, `group_list`, `group_resource_list`), and a read call
+   (`subscription_list`) returns a clean `{"status":401,"message":"Azure credentials not found
+   or unavailable. Please run 'az login' ..."}` as an `isError` tool result, not a crash. That
+   call took about 90 s (it walks the whole credential chain), so the connector Test must allow
+   a long timeout. `group_list` called with no arguments fails with 400 "Missing Required
+   options: --subscription" before any credential check, so read calls must pass `subscription`.
+   Still to run after the sign-in: `subscription_list` and `group_list` with the login, then
+   with `AZURE_TOKEN_CREDENTIALS=AzureCliCredential`, then azd if both fail. The `azure-mcp`
+   probe mode takes the env pass-through.
+3. **Cursor CLI user-wide servers.** An entry in `~/.cursor/mcp.json` is listed by
+   `agent mcp list` from two different folders, used without an approval prompt (or note the
+   flag needed), with an HTTP entry carrying a custom header.
+4. **Claude Code user-wide HTTP entry with a custom header** reaches the relay from two folders
+   and doesn't start its own OAuth when the relay returns a JSON-RPC error.
+
+Results go in "Decisions made during implementation" below.
+
+## Testing
+
+- **Unit:**
+  - The catalogue has the required fields.
+  - The store round-trips, sets file modes and keeps a damaged file aside.
+  - The relay: loopback-only, key check, header allowlist both ways, the refresh-then-retry-once
+    rule, refreshes serialised, never 401 to the agent, the plain message for not connected
+    and for expired.
+  - OAuth: registration body, PKCE S256, `state` single-use and session-bound, 10-minute expiry.
+  - Agent writers: the Cursor writer keeps unrelated keys and entries byte-for-byte, refuses to
+    touch a same-named entry it didn't write, and removes only its own; the Claude writer builds
+    the right `claude mcp` commands (fake `run`).
+  - `syncAgents` add/rewrite/remove sets.
+- **Fake Atlassian** (`scripts/fake-mcp-oauth.js`): a local server with
+  `/.well-known/oauth-authorization-server`, register, authorize (auto-approves), token,
+  refresh, revoke, and a streamable-HTTP `/v1/mcp` with two tools, one answering as an SSE
+  stream. It can be told to expire tokens and refuse refreshes. The upstream URL comes from
+  `CONNECTOR_UPSTREAM_ATLASSIAN` in tests only.
+- **E2E** (`scripts/connectors-e2e.js`, preview container, never :7684): connect Atlassian
+  against the fake, check `GET /api/connectors`, then real Claude Code and the Cursor CLI each
+  list and call a tool through the relay from two different folders; expire the token and see
+  the call still work (refresh); refuse refresh and see the plain message; disconnect and see
+  the entries gone from both configs.
+- **Manual, with Ben:**
+  1. Optional, early: a free Atlassian Cloud site and a personal Azure login against the
+     preview. Also answers the homelab redirect-URI question.
+  2. The real test: the work laptop, its Atlassian and Azure, Cursor CLI as the default agent.
+     The only place code sign-in for Azure can be proven.
+
+## Building and release
+
+- Order: spikes 1–4; store; catalogue; relay with the fake; Atlassian OAuth and token; agent
+  writers and sync; Azure install, sign-in and entry; the screen; e2e.
+- The Dockerfile change (`libicu72`) means one `docker compose up -d --build` on the homelab and
+  a rebuild on the work laptop; everything else is `server.js`, `lib/` and `public/`.
+- The repo is public: before each push, grep the added lines for `scripts/private-words.txt`.
+  Tests and fixtures use made-up sites and accounts.
+- Release to the homelab is Ben's command to run, as usual. Rollback: the previous image tag and
+  the previous `main` commit; `~/.vaultos/connectors.json` and the agent entries are left behind
+  harmlessly by a rollback (the entries point at a relay that no longer answers, so remove them
+  with `claude mcp remove --scope user` and by deleting the two `mcpServers` keys, listed in the
+  release note).
+
+## Decisions made during implementation
+
+Spikes run 2026-10-29 in `vaultos:connectors` (the `vaultos:portable` image plus `libicu72`) as
+the `vaultos` user, with `scripts/connector-probe.sh`. Home is `/home/vaultos`.
+
+1. **Azure CLI install (spike 1): works, no sudo.** Command, as in the Azure section:
+   `npm install -g --prefix ~/.local @azure/mcp`, then
+   `python3 -m venv ~/.local/share/azure-cli && ~/.local/share/azure-cli/bin/pip install azure-cli`
+   and `ln -sf ~/.local/share/azure-cli/bin/az ~/.local/bin/az`. Result: `azure-cli 2.91.0`,
+   `Azure.Mcp.Server 4.0.0-beta.3` (`azmcp server start --help` runs with `libicu72`). Size:
+   `~/.local/share/azure-cli` 643M on a fresh run (732M after `az` had run once), `@azure`
+   node modules 152M, so about 800-900M in the home volume. Time: 44-45 s on this box (both
+   pieces together). The Azure panel should mention the disk use.
+2. **azmcp uses the az login (spike 2): pending: needs a device-code sign-in (controller Ruling
+   R1).** What is checked so far: with no login, `azmcp server start --read-only` over stdio
+   answers `initialize` (protocol 2025-06-18), `tools/list` (68 tools, including
+   `subscription_list`, `group_list`, `group_resource_list`), and a read call
+   (`subscription_list`) returns a clean `{"status":401,"message":"Azure credentials not found
+   or unavailable. Please run 'az login' ..."}` as an `isError` tool result, not a crash. That
+   call took about 90 s (it walks the whole credential chain), so the connector Test must allow
+   a long timeout. `group_list` needs `subscription` (it does not fall back when none is set
+   on the CLI profile, and it fails with 400 "Missing Required options: --subscription" before
+   any credential check), so the entry should rely on the CLI default subscription only after
+   `az account set`. Retry with `AZURE_TOKEN_CREDENTIALS=AzureCliCredential` and, if that
+   fails, azd is still to be run after sign-in; the `azure-mcp` probe mode supports the env
+   pass-through.
+3. **Cursor CLI user-wide servers (spike 3): works from any folder, no approval prompt in
+   `mcp list`.** With `~/.cursor/mcp.json` holding one `{ "url", "headers": { "X-VaultOS-Key" } }`
+   entry and one `{ "command", "args" }` entry, `agent mcp list` run from `/tmp/a` and `/tmp/b`
+   printed the same for both: `probe-http: ready`, `probe-cmd: ready` (against a fake HTTP
+   server and a fake stdio server; the fake HTTP server saw the `X-VaultOS-Key` header on
+   every POST). `agent mcp list-tools <name>` lists their tools. Against nothing listening
+   both showed `Error: Connection failed`. No approval file was written under `~/.cursor`.
+   `agent mcp enable|disable <identifier>` manages a "local approved list", and `agent` has
+   `--approve-mcps` ("Automatically approve all MCP servers"). Not proved: whether an
+   interactive `agent` session (needs a Cursor login, not available in the spike) prompts for
+   a user-wide server on first use. Carry: Task 10 notes in the panel that if Cursor asks to
+   approve a server, answering once is enough, and that `agent --approve-mcps` skips it; Task 6
+   writes no extra file.
+4. **Claude Code user-wide HTTP entry (spike 4): confirmed.** After
+   `claude mcp add-json --scope user probe '{"type":"http","url":"http://127.0.0.1:9999/mcp/x","headers":{"X-VaultOS-Key":"k"}}'`
+   (port 9999: an unprivileged user can't bind :9), `~/.claude.json` has, exactly:
+   `"mcpServers": { "probe": { "type": "http", "url": "http://127.0.0.1:9999/mcp/x", "headers": { "X-VaultOS-Key": "k" } } }`
+   (keys in that order, top level of the file, no extra fields). `claude mcp list` from `/tmp/a`
+   and `/tmp/b` shows the same entry. With nothing listening: `✘ Failed to connect —
+   ECONNREFUSED`. With a server answering every POST `200
+   {"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"x"}}`: `✘ Failed to connect —
+   Request timed out` from both folders, with no authorize URL and no "needs authentication"
+   status. A JSON-RPC error does not start OAuth. (A 401 would; the relay must never send one
+   for a valid key.) Install time of the Claude CLI 49-50 s, Cursor CLI 21 s.
+5. **Disk.** The host hit 100% during the spikes (builds plus three agent/Azure installs);
+   `docker builder prune` freed 3.9 GB. Check free space before building the image or running
+   the install probes.

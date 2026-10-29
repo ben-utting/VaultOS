@@ -23,7 +23,7 @@ WORKDIR /app
 # (python3: skills like diagram-design run self_check.py).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium fonts-inter fonts-jetbrains-mono fonts-dejavu-core fonts-noto-color-emoji \
-    bash git less procps ca-certificates curl tini python3 python3-pip python3-venv \
+    bash git less procps ca-certificates curl tini python3 python3-pip python3-venv libicu72 \
   && rm -rf /var/lib/apt/lists/*
 ENV CHROMIUM_PATH=/usr/bin/chromium
 # uid 1000 is `node` in this base image; rename it `vaultos` with home
