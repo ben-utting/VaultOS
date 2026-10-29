@@ -19,3 +19,14 @@ test('each agent has its own mark; an unknown id gets the Other agent mark', () 
   assert.equal(new Set(marks).size, PROFILE_IDS.length);
   assert.equal(AgentMarks.svg('nope'), AgentMarks.svg('custom'));
 });
+
+test('connector marks for atlassian and azure are single-colour 24px and distinct', () => {
+  const a = AgentMarks.connector('atlassian'), z = AgentMarks.connector('azure');
+  for (const s of [a, z]) {
+    assert.match(s, /^<svg [^>]*viewBox="0 0 24 24"/);
+    assert.match(s, /currentColor/);
+    assert.match(s, /aria-hidden="true"/);
+    assert.doesNotMatch(s, /<script|\son\w+=|#[0-9a-f]{3,6}\b|url\(/i);
+  }
+  assert.notEqual(a, z);
+});

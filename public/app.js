@@ -250,7 +250,7 @@ const secAvailable = (sec) => {
   if (sec === 'folders') return STATE.mode === 'board' || STATE.mode === 'kb';
   if (sec === 'cols') return STATE.mode === 'board';
   if (sec === 'agent') return termOn() && !ME.localRead;
-  if (sec === 'features' || sec === 'password') return !ME.localRead;
+  if (sec === 'features' || sec === 'password' || sec === 'connectors') return !ME.localRead;
   return true;
 };
 function showSection(sec) {
@@ -263,6 +263,7 @@ function showSection(sec) {
   else if (sec === 'cols') { renderColsList(); renderSubtaskToggle(); }
   else if (sec === 'features') loadFeatures();
   else if (sec === 'agent') loadAgent();
+  else if (sec === 'connectors') cxOpen();
   else if (sec === 'skills') loadSkills();
   else if (sec === 'password') resetPassword();
 }
@@ -333,11 +334,13 @@ function openSheet(sec = SHEET_SEC) {
   $('ss-scrim').classList.remove('hidden');
   showSection(sec);
   $('ss-close').focus();
+  if (sec !== 'connectors') cxCheck();
 }
 function closeSheet() {
   if (!sheetOpen()) return;
   $('setsheet').classList.add('hidden');
   $('ss-scrim').classList.add('hidden');
+  if (CX.pane) CX.pane.stop();
   $('setbtn').focus();
 }
 $('setbtn').addEventListener('click', () => (sheetOpen() ? closeSheet() : openSheet()));
@@ -351,8 +354,35 @@ window.addEventListener('keydown', (e) => {
 }, true);
 // The gear gets a dot while the sheet is hiding cards (folder filter / columns).
 function updateSetDot() {
-  $('set-dot').classList.toggle('hidden', $('filter-badge').classList.contains('hidden') && $('cols-badge').classList.contains('hidden'));
+  $('set-dot').classList.toggle('hidden', $('filter-badge').classList.contains('hidden') && $('cols-badge').classList.contains('hidden') && !CX.attention);
 }
+
+// ---------- Connectors ----------
+// Settings → Connectors is Connectors.mountConnectors (connectors.js), mounted the first time the section opens. CX.attention is
+// the last GET /api/connectors' `attention` (a sign-in has run out): the Settings dot shows while it's set. The list is read
+// when Settings opens and when the window regains focus.
+const CX = { pane: null, attention: false };
+function cxSawView(v) { CX.attention = !!(v && v.attention); updateSetDot(); }
+async function cxCheck() {
+  if (ME.localRead) return;
+  if (CX.pane) { CX.pane.refresh(); return; }
+  try { cxSawView(await api('/api/connectors')); } catch { /* the dot just stays as it was */ }
+}
+function cxOpen() {
+  if (!CX.pane) {
+    CX.pane = Connectors.mountConnectors($('cx-pane'), {
+      api: async (method, url, body) => api(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }),
+      openTerm: (cmd) => { if (termOn()) { termOpen({ cwd: '', run: cmd }); if (dockVisible()) closeSheet(); } },
+      openTab: (url) => window.open(url, '_blank'),
+      onView: cxSawView,
+      active: () => secOpen('connectors'),
+      copy: (t) => copyText(t),
+      canTerm: () => termOn(),
+    });
+  }
+  CX.pane.refresh();
+}
+window.addEventListener('focus', () => { if (!ME.localRead && ME.authed) cxCheck(); });
 
 // ---------- Folder filter popover (Board: projects · KB: collections) ----------
 // Occasional-use filtering, so it lives behind a button next to Settings instead of
@@ -2477,6 +2507,7 @@ async function start({ restore = false } = {}) {
   if (todayOn()) Today.init();
   if (!(restore && restoreAfterReload())) setMode(homeMode());
   KbMorning.init();   // checks ME.features.morningRead itself
+  cxCheck();   // the Settings dot, if a connector's sign-in has run out
 }
 
 // Once every script has run: start() uses today.js (Today) and workbench.js (renderDrawerAgent), which load

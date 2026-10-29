@@ -32,5 +32,13 @@
     const s = Object.prototype.hasOwnProperty.call(STROKED, id) ? STROKED[id] : STROKED.custom;
     return `${open} fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${s}</svg>`;
   }
-  return { svg };
+  // The connectors' marks (Settings → Connectors), same one-colour 24×24 treatment.
+  const CONNECTOR = {
+    atlassian: '<path d="M7.4 11.3c-.3-.4-.9-.3-1.1.1L2.1 19.8c-.2.4.1.9.6.9h5.8c.3 0 .5-.2.6-.4 1.3-2.6.5-6.6-1.7-9z"/><path d="M11.5 3.2c-2.3 3.6-2.1 7.6-.5 10.8l3 6.2c.1.3.4.5.7.5h5.8c.5 0 .8-.5.6-.9L12.6 3.2c-.2-.5-.9-.5-1.1 0z"/>',
+    azure: '<path d="M9.6 3.5h4.6L7.9 20.5H2.8z"/><path d="M14.6 6.3 21.2 20.5H10.6l3.8-1.4-3-6.8z"/>',
+  };
+  function connector(id) {
+    return Object.prototype.hasOwnProperty.call(CONNECTOR, id) ? `${open} fill="currentColor">${CONNECTOR[id]}</svg>` : svg('custom');
+  }
+  return { svg, connector };
 });

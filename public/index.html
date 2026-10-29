@@ -69,6 +69,7 @@
           <button type="button" data-sec="look">Appearance</button>
           <button type="button" data-sec="features">Features</button>
           <button type="button" data-sec="agent">Agent</button>
+          <button type="button" data-sec="connectors" id="ssn-connectors">Connectors</button>
           <button type="button" data-sec="skills">Skills</button>
           <button type="button" data-sec="password">Password</button>
         </nav>
@@ -212,6 +213,9 @@
         <div class="su-custom-foot"><button type="button" class="su-btn" id="ag-custom-save">Save agent</button><p class="su-err" id="ag-custom-err" aria-live="polite"></p></div>
       </div>
           </section>
+          <!-- Connectors: Atlassian and Azure, connected once and added to every agent (connectors.js; app.js mounts it
+               the first time the section opens). -->
+          <section class="ss-pane ss-form" data-sec="connectors"><div class="ap cx" id="cx-pane"></div></section>
           <!-- What Claude in a VaultOS terminal can use, read live from disk
                (/api/skills) plus a fixed list of Claude Code's own commands. -->
           <section class="ss-pane ss-skills" data-sec="skills">
@@ -443,6 +447,7 @@
   <script src="term.js"></script>
   <script src="agent-marks.js"></script>
   <script src="agent-form.js"></script>
+  <script src="connectors.js"></script>
   <script src="termtree.js"></script>
   <script src="termside.js"></script>
   <script src="termpick.js"></script>

@@ -3364,3 +3364,52 @@ body.su::before {
   .su-copy { padding: 8px 12px; }
   .su-seg button { padding: 12px 8px; }
 }
+
+/* ---- Settings → Connectors (connectors.js): the agent picker's sibling, same tiles, chips and detail panel ---- */
+.cx { display: grid; gap: 10px; align-content: start; }
+.cx-title { margin: 0; font-size: 18px; font-weight: 600; }
+.cx > .su-hint { margin: 0 0 6px; max-width: 70ch; }
+.cx .ap-tiles, .cx .ap-detail { margin-bottom: 0; }
+.cx-planned { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.cx-later { grid-template-columns: 32px minmax(0, 1fr); padding: 7px 10px; background: transparent; border-style: dashed; cursor: default; }
+.cx-later:hover { border-color: var(--line); }
+.cx-later .ap-mark { width: 32px; height: 32px; border-radius: 9px; font-size: 12px; font-weight: 600; opacity: .75; }
+.ap-chip.warn { color: var(--danger-fg); background: color-mix(in srgb, var(--danger-fg) 12%, transparent); border-color: color-mix(in srgb, var(--danger-fg) 40%, var(--line)); }
+.ap-chip.gold { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+.cx-reset { margin: 0; padding: 8px 12px; font-size: 13px; border-radius: var(--radius-md); color: var(--text);
+  background: color-mix(in srgb, var(--danger-fg) 10%, var(--panel-2)); border: 1px solid color-mix(in srgb, var(--danger-fg) 40%, var(--line)); }
+.cx-sub { margin: 10px 0 0; font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cx-arows { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.cx-arow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md); min-width: 0; }
+.cx-anm { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.cx-anote { flex-basis: 100%; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.cx-muted { margin: 0; font-size: 12.5px; color: var(--muted); }
+.cx-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }   /* two across when the sheet is wide enough, else stacked */
+.cx-opt { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); }
+.cx-opt.main { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.cx-opt h5 { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600; }
+.cx-opt p { margin: 0; font-size: 13px; color: var(--muted); }
+.cx-opt .su-field { margin: 0; }
+.cx-opt .ap-btns { margin-top: auto; align-items: center; }
+a.cx-link, .cx-link { font-size: 13px; color: var(--accent); }
+.cx-wait, .cx-code { display: grid; gap: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: var(--radius-md); }
+.cx-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.cx-dots { display: inline-flex; gap: 4px; }
+.cx-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: cx-pulse 1.2s ease-in-out infinite; }
+.cx-dots span:nth-child(2) { animation-delay: .2s; }
+.cx-dots span:nth-child(3) { animation-delay: .4s; }
+@keyframes cx-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cx-dots span { animation: none; } }
+.cx-codebox { font-family: var(--mono-font); font-size: 28px; font-weight: 600; letter-spacing: .12em; user-select: all; overflow-wrap: anywhere; }
+.cx-err { overflow-wrap: anywhere; }
+.cx-switchrow { margin: 0; }
+.cx-sub-field { margin: 0; max-width: 420px; }
+.cx-detail .su-btn.danger { color: var(--danger-fg); }
+.cx-detail a.su-btn { display: inline-flex; align-items: center; text-decoration: none; }
+.cx-hint { margin: 0; }
+@media (max-width: 700px) {
+  .cx-detail { grid-template-columns: minmax(0, 1fr); }
+  .cx-codebox { font-size: 24px; }
+  .ss-pane .cx input, .ss-pane .cx select { font-size: 16px; }   /* no iOS zoom-on-focus */
+}
+.cx-opt .su-btn { white-space: normal; text-align: center; }
