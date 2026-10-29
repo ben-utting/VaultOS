@@ -174,3 +174,33 @@ test('code exchange refuses a different client_id or redirect_uri', async (t) =>
   assert.equal(wrongClient.status, 400);
   assert.equal((await wrongClient.json()).error, 'invalid_grant');
 });
+
+const mcpPost = (url, method, params, headers = {}) => fetch(url, { method: 'POST',
+  headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+  body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+
+test('noAuth answers tools/list with no Authorization', async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const r = await mcpPost(fake.base + '/v1/mcp', 'tools/list');
+  assert.equal(r.status, 200);
+  assert.match(await r.text(), /atlassianUserInfo/);
+  const withAuth = await mcpPost(fake.base + '/v1/mcp', 'tools/list', undefined, { authorization: 'Bearer nope' });
+  assert.equal(withAuth.status, 200);
+  assert.ok(fake.state.seen.some((s) => s.headers.authorization === 'Bearer nope'));
+  const strict = await startFake(); t.after(() => strict.stop());
+  assert.equal((await mcpPost(strict.base + '/v1/mcp', 'tools/list')).status, 401);
+});
+
+test('get_me returns alex-example', async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  const r = await mcpPost(fake.base + '/mcp/', 'tools/call', { name: 'get_me', arguments: {} });
+  const j = await r.json();
+  assert.deepEqual(JSON.parse(j.result.content[0].text), { login: 'alex-example' });
+  const l = await (await mcpPost(fake.base + '/mcp/', 'tools/list')).text();
+  assert.match(l, /get_me/);
+});
+
+test('the MCP endpoint answers at /mcp/ and /api/mcp', async (t) => {
+  const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
+  for (const p of ['/mcp/', '/api/mcp', '/v1/mcp']) assert.equal((await mcpPost(fake.base + p, 'tools/list')).status, 200, p);
+});

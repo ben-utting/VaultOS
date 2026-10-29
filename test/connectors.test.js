@@ -9,11 +9,11 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'github', 'mslearn']);
 });
 
-test('PLANNED has the eight ids in order', () => {
-  assert.deepEqual(PLANNED.map((p) => p.id), ['github', 'notion', 'gitea', 'homeassistant', 'n8n', 'linear', 'sentry', 'mslearn']);
+test('PLANNED has the five ids in order', () => {
+  assert.deepEqual(PLANNED.map((p) => p.id), ['notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
   for (const p of PLANNED) for (const k of ['label', 'by', 'mono']) assert.equal(typeof p[k], 'string');
 });
 
@@ -36,4 +36,32 @@ test('entryFor azure is read-only unless allowChanges', () => {
 
 test('the Azure server is pinned to the version whose --read-only flag was checked', () => {
   assert.match(CONNECTORS.azure.install, /@azure\/mcp@4\.0\.0-beta\.3 /);
+});
+
+test('github and mslearn are relayed with the exact catalogue values', () => {
+  assert.deepEqual(CONNECTORS.github, {
+    id: 'github', label: 'GitHub', by: 'Repos · issues · pull requests', kind: 'relayed', signIn: ['token'],
+    base: 'https://api.githubcopilot.com', mcpPath: '/mcp/', tokenHelp: 'https://github.com/settings/personal-access-tokens/new',
+  });
+  assert.deepEqual(CONNECTORS.mslearn, {
+    id: 'mslearn', label: 'Microsoft Learn', by: 'Microsoft docs and code samples', kind: 'relayed', signIn: ['none'],
+    base: 'https://learn.microsoft.com', mcpPath: '/api/mcp',
+  });
+});
+
+test('baseFor reads CONNECTOR_UPSTREAM_<ID> for github and mslearn, not for azure', () => {
+  const env = { CONNECTOR_UPSTREAM_GITHUB: 'http://127.0.0.1:1', CONNECTOR_UPSTREAM_MSLEARN: 'http://127.0.0.1:2', CONNECTOR_UPSTREAM_AZURE: 'http://127.0.0.1:3' };
+  assert.equal(baseFor('github', env), 'http://127.0.0.1:1');
+  assert.equal(baseFor('mslearn', env), 'http://127.0.0.1:2');
+  assert.equal(baseFor('github', {}), 'https://api.githubcopilot.com');
+  assert.equal(baseFor('mslearn', {}), 'https://learn.microsoft.com');
+  assert.equal(baseFor('azure', env), undefined);
+});
+
+test('entryFor github and mslearn point at the loopback relay with the key', () => {
+  for (const id of ['github', 'mslearn']) {
+    assert.deepEqual(entryFor(id, { port: 8080, key: 'k' }), {
+      kind: 'http', url: `http://127.0.0.1:8080/mcp/${id}`, headers: { 'X-VaultOS-Key': 'k' },
+    });
+  }
 });

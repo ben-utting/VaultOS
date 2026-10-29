@@ -9,8 +9,10 @@ const TOOLS = [
   { name: 'atlassianUserInfo', description: 'Who is signed in', inputSchema: { type: 'object', properties: {} } },
   { name: 'getAccessibleAtlassianResources', description: 'Sites the user can reach', inputSchema: { type: 'object', properties: {} } },
 ];
+// Listed only when standing in for a connector with no OAuth (noAuth), so the Atlassian tool list stays at two.
+const GET_ME = { name: 'get_me', description: 'The signed-in login', inputSchema: { type: 'object', properties: {} } };
 
-function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
+function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = false } = {}) {
   const state = {
     seen: [], resources: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
     clients: {}, codes: {}, access: new Set(), refresh: {}, current: null,
@@ -86,7 +88,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
   async function mcp(req, res) {
     const email = who(req);
     const raw = await readBody(req);
-    if (!email) return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
+    if (!email && !noAuth) return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
     let msg; try { msg = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
     const hdr = {};
     if (req.headers['mcp-session-id']) hdr['mcp-session-id'] = req.headers['mcp-session-id'];
@@ -102,14 +104,15 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
       const ev = (o) => res.write(`event: message\ndata: ${JSON.stringify(o)}\n\n`);
       if (state.mode === 'slow-sse') {
         ev({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'listing' } });
-        const t = setTimeout(() => { ev(reply({ tools: TOOLS })); res.end(); }, 300);
+        const t = setTimeout(() => { ev(reply({ tools: noAuth ? [...TOOLS, GET_ME] : TOOLS })); res.end(); }, 300);
         res.on('close', () => clearTimeout(t));
-      } else { ev(reply({ tools: TOOLS })); res.end(); }
+      } else { ev(reply({ tools: noAuth ? [...TOOLS, GET_ME] : TOOLS })); res.end(); }
       return;
     }
     if (msg.method === 'tools/call') {
       const name = msg.params && msg.params.name;
       const data = name === 'atlassianUserInfo' ? { email }
+        : name === 'get_me' ? { login: 'alex-example' }
         : name === 'getAccessibleAtlassianResources' ? [{ url: 'https://example.atlassian.net' }] : null;
       if (!data) return send(res, 200, { jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'Unknown tool' } }, hdr);
       return send(res, 200, reply({ content: [{ type: 'text', text: JSON.stringify(data) }] }), hdr);
@@ -156,7 +159,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
         res.writeHead(302, { location: to.toString() }); return res.end();
       }
       if (k === 'POST /v1/token') return await token(req, res);
-      if (k === 'POST /v1/mcp') return await mcp(req, res);
+      if (k === 'POST /v1/mcp' || k === 'POST /mcp/' || k === 'POST /api/mcp') return await mcp(req, res);
       return send(res, 404, { error: 'not_found' });
     } catch (e) {
       if (!res.headersSent) send(res, 500, { error: String(e.message) }); else res.end();
@@ -180,6 +183,6 @@ module.exports = { startFake };
 
 if (require.main === module) {
   const i = process.argv.indexOf('--port');
-  startFake({ port: i > 0 ? Number(process.argv[i + 1]) : 5555, host: process.env.FAKE_HOST || '0.0.0.0', publicBase: process.env.FAKE_BASE || '' })
+  startFake({ port: i > 0 ? Number(process.argv[i + 1]) : 5555, host: process.env.FAKE_HOST || '0.0.0.0', publicBase: process.env.FAKE_BASE || '', noAuth: process.argv.includes('--no-auth') })
     .then((f) => console.log(`fake MCP/OAuth listening on ${f.base}`));
 }
