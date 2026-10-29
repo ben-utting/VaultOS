@@ -53,7 +53,7 @@ async function setup(t, { agents = ['cursor'], clock } = {}) {
   const time = { t: 1000000 };
   const svc = createConnectorService({
     home, port: 7684, env: { CONNECTOR_UPSTREAM_ATLASSIAN: fake.base },
-    fetch: globalThis.fetch, run, spawn, now: clock || (() => time.t),
+    fetch: (...a) => globalThis.fetch(...a), run, spawn, now: clock || (() => time.t),
     installedAgents: async () => agents,
   });
   await svc.init();
@@ -110,7 +110,7 @@ test('state from another nonce is refused with the expired-link sentence', async
     { message: EXPIRED },
   );
   await assert.rejects(svc.atlassianCallback({ code: 'x', state: 'nope', nonce: 'n1' }), { message: EXPIRED });
-  assert.strictEqual(store(home).connectors.atlassian.tokens, undefined);
+  assert.strictEqual((store(home).connectors.atlassian || {}).tokens, undefined);
 });
 
 test('a new origin re-registers the client', async (t) => {
@@ -121,7 +121,7 @@ test('a new origin re-registers the client', async (t) => {
   assert.strictEqual(regs(), 1);
   await svc.atlassianStart({ origin: 'http://127.0.0.1:7684', nonce: 'c' });
   assert.strictEqual(regs(), 2);
-  assert.strictEqual(store(home).connectors.atlassian.client.redirect_uri, 'http://127.0.0.1:7684/api/connectors/atlassian/callback');
+  assert.strictEqual(store(home).connectors.atlassian, undefined, 'a started flow writes nothing to the store');
 });
 
 test('a refused redirect gives the sentence', async (t) => {
@@ -165,23 +165,24 @@ test('refresh refused marks needs-sign-in and needsAttention() is true; network 
   fake.setMode('refuse-refresh');
   assert.strictEqual(await target.authorization(), null);
   assert.strictEqual(target.missing(), 'expired');
+  assert.strictEqual(svc.relayTarget('azure'), null);
   await new Promise((r) => setImmediate(r));
   assert.strictEqual(svc.needsAttention(), true);
   const a = await row(svc, 'atlassian');
   assert.strictEqual(a.state, 'needs-sign-in');
 });
 
-test('refresh over the network failing leaves the sign-in alone', async (t) => {
-  const { svc, fake, time } = await setup(t);
+test('a network-failed refresh throws, keeps the sign-in, and the next call after recovery works', async (t) => {
+  const { svc, time } = await setup(t);
   await signIn(svc);
   const target = svc.relayTarget('atlassian');
   time.t += 3600 * 1000;
-  await fake.stop();
-  assert.strictEqual(await target.authorization(), null);
-  target.markNeedsSignIn(); // what the relay does after a null renew
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('down'); };
+  try { await assert.rejects(target.authorization()); } finally { globalThis.fetch = realFetch; }
   assert.strictEqual(svc.needsAttention(), false);
-  assert.strictEqual(target.missing(), 'not-connected');
-  fake.stop = async () => {};
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'connected');
+  assert.match(await target.authorization(), /^Bearer /);
 });
 
 test('renew returns the stored credential when it already differs, and refreshes once for two callers', async (t) => {
@@ -287,4 +288,132 @@ test('view never contains a secret', async (t) => {
   strings.length = 0; walk(await svc.view());
   assert.ok(!strings.some((y) => y === 'tok' || y.includes(':tok')));
   assert.ok(fake);
+});
+
+test('a failed revoke note shows only while not connected and clears on sign-in', async (t) => {
+  const { svc } = await setup(t);
+  await signIn(svc);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, init) => { if (init && init.method === 'POST' && String(u).endsWith('/v1/token')) throw new Error('down'); return realFetch(u, init); };
+  try { await svc.disconnect('atlassian'); } finally { globalThis.fetch = realFetch; }
+  const gone = await row(svc, 'atlassian');
+  assert.strictEqual(gone.state, 'not-connected');
+  assert.match(gone.error, /didn't confirm the sign-out/);
+  await svc.atlassianToken({ key: 'svc-key' });
+  assert.strictEqual((await row(svc, 'atlassian')).error, undefined);
+  await svc.disconnect('atlassian'); // token method: nothing to revoke
+  assert.strictEqual((await row(svc, 'atlassian')).error, undefined);
+});
+
+test('test(): oauth 401 renews first and only then marks needs-sign-in', async (t) => {
+  const { svc, fake } = await setup(t);
+  await signIn(svc);
+  fake.state.access.clear(); // the access token is refused; a refresh issues a fresh one
+  const r = await svc.test('atlassian');
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(fake.state.refreshes, 1);
+  assert.strictEqual(svc.needsAttention(), false);
+  fake.setMode('refuse-refresh');
+  fake.state.access.clear();
+  const r2 = await svc.test('atlassian');
+  assert.strictEqual(r2.ok, false);
+  assert.strictEqual(svc.needsAttention(), true);
+});
+
+test('token method: needs-sign-in is shown but the token still goes out, and a good test clears it', async (t) => {
+  const { svc } = await setup(t);
+  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  const target = svc.relayTarget('atlassian');
+  target.markNeedsSignIn();
+  await new Promise((r) => setTimeout(r, 50));
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'needs-sign-in');
+  assert.match(await target.authorization(), /^Basic /);
+  assert.strictEqual((await svc.test('atlassian')).ok, true);
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'connected');
+});
+
+test('starting from another origin leaves the live session refreshable', async (t) => {
+  const { svc, fake, time } = await setup(t);
+  await signIn(svc);
+  await svc.atlassianStart({ origin: 'http://127.0.0.1:7684', nonce: 'b' }); // abandoned
+  time.t += 3600 * 1000;
+  const auth = await svc.relayTarget('atlassian').authorization();
+  assert.match(auth, /^Bearer /);
+  assert.strictEqual(fake.state.refreshes, 1);
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'connected');
+});
+
+test('a refresh that finishes after a token switch is dropped', async (t) => {
+  const { svc, fake, time } = await setup(t);
+  await signIn(svc);
+  time.t += 3600 * 1000;
+  fake.setMode('refuse-refresh');
+  const realFetch = globalThis.fetch;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  globalThis.fetch = async (u, init) => { if (String(u).endsWith('/v1/token')) await gate; return realFetch(u, init); };
+  let late;
+  try {
+    late = svc.relayTarget('atlassian').authorization(); // in flight, will be refused
+    await new Promise((r) => setTimeout(r, 20));
+    globalThis.fetch = realFetch;
+    await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+    release();
+    await late;
+  } finally { globalThis.fetch = realFetch; release(); }
+  assert.strictEqual(svc.needsAttention(), false);
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'connected');
+});
+
+test('switching OAuth to token revokes the old refresh token; view holds no key, Basic value or relay key', async (t) => {
+  const { svc, fake, home } = await setup(t, { agents: ['cursor', 'pi'] });
+  await signIn(svc);
+  const rt = store(home).connectors.atlassian.tokens.refresh_token;
+  await svc.atlassianToken({ email: 'alex@example.com', token: 'tok' });
+  assert.ok(fake.state.revoked.includes(rt));
+  const basicVal = Buffer.from('alex@example.com:tok').toString('base64');
+  const relayKey = store(home).relayKey;
+  const strings = [];
+  const walk = (v) => { if (typeof v === 'string') strings.push(v); else if (v && typeof v === 'object') Object.values(v).forEach(walk); };
+  walk(await svc.view());
+  await svc.atlassianToken({ key: 'svc-key' });
+  walk(await svc.view());
+  for (const x of ['svc-key', basicVal, relayKey]) assert.ok(!strings.some((y) => y.includes(x)), `leaked ${x}`);
+  assert.ok(!strings.includes('tok'));
+});
+
+test('azure fold never makes view() throw; the row says why and the person can start again', async (t) => {
+  const fake = await startFake();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-svc-'));
+  t.after(async () => { await fake.stop(); fs.rmSync(home, { recursive: true, force: true }); });
+  const spawn = fakeSpawn();
+  const base = fakeRun();
+  let broken = true;
+  const run = async (cmd) => { if (broken && cmd.startsWith('az account list')) throw new Error('boom'); return base(cmd); };
+  const svc = createConnectorService({ home, port: 7684, env: { CONNECTOR_UPSTREAM_ATLASSIAN: fake.base }, run, spawn, installedAgents: async () => [] });
+  await svc.init();
+  const p = svc.azureStart();
+  spawn.calls[0].proc.stderr.write(`${AZ_LINE}\n`);
+  await p;
+  spawn.calls[0].proc.emit('close', 0);
+  await new Promise((r) => setImmediate(r));
+  const a = await row(svc, 'azure');
+  assert.strictEqual(a.state, 'not-connected');
+  assert.match(a.error, /^Signed in, but VaultOS couldn't read your Azure account: boom/);
+  assert.strictEqual((await row(svc, 'azure')).state, 'not-connected');
+  broken = false;
+  const p2 = svc.azureStart();
+  spawn.calls[1].proc.stderr.write(`${AZ_LINE}\n`);
+  await p2;
+  assert.strictEqual((await row(svc, 'azure')).error, undefined);
+  svc.azureCancel();
+});
+
+test('disconnect azure cancels a waiting device login', async (t) => {
+  const { svc, spawn } = await setup(t);
+  const p = svc.azureStart();
+  spawn.calls[0].proc.stderr.write(`${AZ_LINE}\n`);
+  await p;
+  await svc.disconnect('azure');
+  assert.strictEqual((await row(svc, 'azure')).state, 'not-connected');
 });

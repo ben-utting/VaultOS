@@ -383,3 +383,15 @@ test('headers reach the agent before the first SSE event', async (t) => {
   assert.ok(took < 400, `headers took ${took} ms`);
   await r.body.cancel();
 });
+
+test('a throwing renew or authorization answers an error status and never marks needs-sign-in', async (t) => {
+  const fake = await setupFake(t);
+  const target = stubTarget(fake, { authorization: async () => 'Bearer at-stale', renew: async () => { throw new Error('network'); } });
+  const relay = await startRelay(t, { target });
+  const r = await relay.call('POST', msg('tools/list', 1));
+  assert.ok(r.status >= 500);
+  const t2 = stubTarget(fake, { authorization: async () => { throw new Error('network'); } });
+  const relay2 = await startRelay(t, { target: t2 });
+  assert.ok((await relay2.call('POST', msg('tools/list', 1))).status >= 500);
+  assert.equal(target.marked + t2.marked, 0);
+});
