@@ -18,7 +18,7 @@ function stubTarget(fake, over = {}) {
   const t = {
     label: 'Atlassian', url: fake.base + '/v1/mcp', marked: 0, renews: 0, kind: 'not-connected',
     authorization: async () => 'Bearer svc-key',
-    renew: async () => { t.renews++; return null; },
+    renew: async (rejected) => { t.rejected = rejected; t.renews++; return null; },
     markNeedsSignIn: () => { t.marked++; },
     missing: () => t.kind,
     ...over,
@@ -208,7 +208,7 @@ test('expired token: renew, retry once, success', async (t) => {
   let current = stale;
   const target = stubTarget(fake, {
     authorization: async () => current,
-    renew: async () => { target.renews++; current = 'Bearer svc-key'; return current; },
+    renew: async (rejected) => { target.renews++; assert.equal(rejected, stale); current = 'Bearer svc-key'; return current; },
   });
   const relay = await startRelay(t, { target });
   const r = await relay.call('POST', msg('tools/list', 1));
@@ -235,7 +235,7 @@ test('upstream that answers 401 even after renew never yields 401', async (t) =>
   const fake = await setupFake(t);
   const target = stubTarget(fake, {
     authorization: async () => 'Bearer at-stale',
-    renew: async () => { target.renews++; return 'Bearer at-still-bad'; },
+    renew: async (rejected) => { target.renews++; assert.equal(rejected, 'Bearer at-stale'); return 'Bearer at-still-bad'; },
   });
   const relay = await startRelay(t, { target });
   for (const [m, body] of [['POST', msg('tools/list', 1)], ['POST', msg('initialize', 2, {})],
@@ -336,4 +336,50 @@ test('mcpProbe reports a refused credential without throwing', async (t) => {
   assert.equal(p.ok, false);
   assert.deepEqual(p.tools, []);
   assert.match(p.error, /401/);
+});
+
+test('a 401 that arrives after another request\'s refresh does not refresh again', async (t) => {
+  const fake = await setupFake(t);
+  const live = await liveTokens(fake);
+  const stale = 'Bearer ' + live.tokens.access_token;
+  let stored = stale, rt = live.tokens.refresh_token;
+  const refresh = R.serialised(async () => {
+    const n = await o.refreshTokens(live.meta, { clientId: live.clientId, refreshToken: rt });
+    rt = n.refresh_token; stored = 'Bearer ' + n.access_token; fake.setMode('normal');
+    return stored;
+  });
+  // Both requests were issued with the old credential; renew(rejected) only refreshes if it is still current.
+  const target = stubTarget(fake, {
+    authorization: async () => stale,
+    renew: async (rejected) => (stored !== rejected ? stored : refresh()),
+  });
+  fake.setMode('expire');
+  const relay = await startRelay(t, { target });
+  const a = await relay.call('POST', msg('tools/list', 1));
+  assert.equal(a.status, 200); await a.text();
+  const b = await relay.call('POST', msg('tools/list', 2)); // its 401 comes after A's refresh finished
+  assert.equal(b.status, 200); assert.match(await b.text(), /atlassianUserInfo/);
+  assert.equal(fake.state.refreshes, 1);
+});
+
+test('headers reach the agent before the first SSE event', async (t) => {
+  const up = http.createServer((req, res) => {
+    req.resume();
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.flushHeaders();
+    const timer = setTimeout(() => { res.write('data: {}\n\n'); res.end(); }, 600);
+    res.on('close', () => clearTimeout(timer));
+  });
+  await new Promise((ok) => up.listen(0, '127.0.0.1', ok));
+  t.after(() => new Promise((ok) => { up.closeAllConnections(); up.close(ok); }));
+  const target = { label: 'Atlassian', url: `http://127.0.0.1:${up.address().port}/`, authorization: async () => 'Bearer x',
+    renew: async () => null, markNeedsSignIn() {}, missing: () => 'not-connected' };
+  const relay = await startRelay(t, { target });
+  const t0 = Date.now();
+  const r = await relay.call('GET', undefined, { accept: 'text/event-stream' });
+  const took = Date.now() - t0;
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /text\/event-stream/);
+  assert.ok(took < 400, `headers took ${took} ms`);
+  await r.body.cancel();
 });
