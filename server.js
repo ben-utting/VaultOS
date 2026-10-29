@@ -39,6 +39,9 @@ const { writeRootKit, writeBoardKit, updateAgentsBlock } = require('./lib/starte
 const { zonedDate } = require('./lib/today-note');
 const { legacySettings } = require('./lib/migrate');
 const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup');
+const { createConnectorService, ConnectorError } = require('./lib/connector-service');
+const { createRelay } = require('./lib/connector-relay');
+const { runCapture } = require('./lib/connector-azure');
 const { PROFILES, KICKOFF_PROMPT, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
@@ -908,7 +911,7 @@ function logRejectedHost(host) {
 }
 app.use((req, res, next) => {
   // /api/term/agent is already limited to loopback callers holding a per-terminal token.
-  if (req.path === '/health' || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search')) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
+  if (req.path === '/health' || req.path.startsWith('/mcp/') || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search')) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
   const host = safeHost(req.headers.host);
   logRejectedHost(host);
   res.status(421).type('text/plain').send(
@@ -948,6 +951,26 @@ app.get('/health', (req, res) => {
   if (SETTINGS_ERROR) body.error = `${SETTINGS_REL} could not be loaded`;
   res.status(ok ? 200 : 503).json(body);
 });
+// The connector relay: agents in this container call it with the relay key. It needs a loopback peer and the
+// key (not the Host allowlist or a session), and it reads the raw body itself, so it sits before the JSON parser.
+const CONNECTOR_AGENTS = ['claude', 'cursor', 'pi'];
+const connectors = createConnectorService({
+  home: process.env.HOME || os.homedir(),
+  port: PORT,
+  run: runCapture,
+  spawn,
+  installedAgents: async () => {
+    const ok = await Promise.all(CONNECTOR_AGENTS.map((id) => isInstalled(PROFILES[id]).catch(() => false)));
+    return CONNECTOR_AGENTS.filter((id, i) => ok[i]);
+  },
+});
+const relayHandler = createRelay({
+  getKey: () => connectors.relayKey(),
+  target: (id) => connectors.relayTarget(id),
+  fetch: (...a) => fetch(...a),
+  log: (m) => console.log(m),
+});
+app.all('/mcp/:id', relayHandler);
 app.use(express.json({ limit: '2mb' }));
 // body-parser's own errors (too big, not JSON, an unsupported charset or Content-Encoding, an aborted upload)
 // would otherwise reach Express's default handler: an HTML page with a stack trace and /app/node_modules paths,
@@ -1466,11 +1489,73 @@ async function agentsList() {
 app.get('/api/agents', settingsGuard, async (req, res) => {
   try {
     try { await ensureClaudeHook(); } catch (err) { console.error('claude hook install failed:', err && err.message); }
+    // A newly installed agent gets the connectors' entries; the answer does not wait for it.
+    connectors.sync().catch((err) => console.error('connectors sync failed:', err && err.message));
     res.json(await agentsList());
   } catch (err) {
     settingsFail(res, err, 'read the agents');
   }
 });
+// ---------- Connectors ----------
+// Thin routes over lib/connector-service.js, which holds every rule. Only a ConnectorError carries text
+// written for the person (400); anything else is logged and answered generically. Nothing here puts a token,
+// the relay key or a client id into a response or a log line.
+const connectorFail = (res, err, what) => {
+  if (err instanceof ConnectorError) return res.status(400).json({ error: err.message });
+  console.error(`${what} failed:`, err && err.message);
+  res.status(500).json({ error: `Could not ${what}` });
+};
+const connectorRoute = (what, fn) => async (req, res) => {
+  try { res.json((await fn(req, res)) || {}); } catch (err) { connectorFail(res, err, what); }
+};
+const cxNonce = (req) => {
+  if (!req.session.cxNonce) req.session.cxNonce = crypto.randomBytes(16).toString('hex');
+  return req.session.cxNonce;
+};
+app.get('/api/connectors', settingsGuard, connectorRoute('read the connectors', async () => ({
+  ...(await connectors.view()), attention: connectors.needsAttention(),
+})));
+app.post('/api/connectors/:id/test', settingsGuard, connectorRoute('test the connector', (req) => connectors.test(req.params.id)));
+app.post('/api/connectors/:id/disconnect', settingsGuard, connectorRoute('disconnect the connector', (req) => connectors.disconnect(req.params.id)));
+app.post('/api/connectors/atlassian/start', settingsGuard, connectorRoute('start the Atlassian sign-in', (req) =>
+  connectors.atlassianStart({ origin: `${req.protocol}://${req.get('host')}`, nonce: cxNonce(req) })));
+// The page Atlassian sends the person back to. The server sets no Content-Security-Policy on HTML, so the one
+// inline line (tell the opener, which also polls) needs no nonce. Nothing on the page names a token.
+app.get('/api/connectors/atlassian/callback', settingsGuard, async (req, res) => {
+  let text = 'Atlassian is connected, you can close this tab.';
+  let ok = true;
+  try {
+    await connectors.atlassianCallback({
+      code: String(req.query.code || ''), state: String(req.query.state || ''), nonce: req.session.cxNonce || '',
+    });
+  } catch (err) {
+    ok = false;
+    if (err instanceof ConnectorError) text = err.message;
+    else { console.error('Atlassian callback failed:', err && err.message); text = 'Something went wrong. Start again from VaultOS.'; }
+  }
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  res.set('Cache-Control', 'no-store').type('html').send(
+    `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VaultOS</title>` +
+    `<body style="font:16px system-ui,sans-serif;max-width:32rem;margin:4rem auto;padding:0 1rem"><p>${esc(text)}</p>` +
+    (ok ? `<script>window.opener&&window.opener.postMessage('vaultos-connectors',location.origin)</script>` : '') +
+    `</body></html>`);
+});
+app.post('/api/connectors/atlassian/token', settingsGuard, connectorRoute('save the Atlassian sign-in', (req) =>
+  connectors.atlassianToken(req.body || {})));
+app.post('/api/connectors/azure/start', settingsGuard, async (req, res) => {
+  try { res.json(await connectors.azureStart()); } catch (err) {
+    // az's own message (why the sign-in could not start) is for the person to read.
+    console.error('azure sign-in failed to start:', err && err.message);
+    res.status(400).json({ error: String((err && err.message) || 'The Azure sign-in could not start.') });
+  }
+});
+app.get('/api/connectors/azure/status', settingsGuard, connectorRoute('read the Azure sign-in', () => connectors.azureStatus()));
+app.post('/api/connectors/azure/cancel', settingsGuard, connectorRoute('cancel the Azure sign-in', () => connectors.azureCancel()));
+app.post('/api/connectors/azure/settings', settingsGuard, connectorRoute('save the Azure settings', (req) => {
+  const { allowChanges, subscription } = req.body || {};
+  return connectors.azureSettings({ allowChanges, subscription });
+}));
+
 app.get('/api/agent', settingsGuard, async (req, res) => {
   try {
     res.json(await agentStatus());
@@ -3127,6 +3212,7 @@ async function boot() {
 boot().then(() => {
   const server = app.listen(PORT, () => console.log(`vault-board listening on :${PORT}`));
   if (TERMINAL_ENV) mountTerminal(server);
+  connectors.init().catch((err) => console.error('connectors init failed:', err && err.message));
 }, (err) => {
   console.error('boot failed:', err);
   process.exit(1);
