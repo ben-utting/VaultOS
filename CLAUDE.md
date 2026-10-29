@@ -310,6 +310,71 @@ read" block in `app.js`, and `public/kb-morning.js` (the card).
   (takes ~45 s), K2 the dashboard, K3 the card + Not today, K4 Read now across workspaces (+K4b, a 409),
   K5 Skip, K6 the import, K7 waiting behind Settings + Escape. Screenshots to `/tmp/kb-shots/`.
 
+## Connectors (added 2026-10-29)
+
+Settings → Connectors signs in to a service once and adds it to every agent VaultOS can set up
+(Claude Code and the Cursor CLI), so it works in every folder. Agents never see a password or token.
+Spec: `docs/superpowers/specs/2026-10-29-connectors-design.md` (the last section lists what was
+decided or changed during the build). Code: `lib/connectors.js` (catalogue, copy), `lib/connector-store.js`,
+`lib/connector-oauth.js`, `lib/connector-relay.js`, `lib/connector-agents.js` (config writers),
+`lib/connector-azure.js`, `lib/connector-service.js` (the glue), the `/api/connectors/*` and `/mcp/:id`
+parts of `server.js`, and `public/connectors.js` (the pane).
+
+- **Sign-ins live in `~/.vaultos/connectors.json`** (version 1, file `0600`, folder `0700`): the relay
+  key, each connector's tokens, and what VaultOS wrote into each agent. Never in the vault, never in
+  logs or API responses (the relay key is absent from `GET /api/connectors` too). Azure's sign-in is
+  `az`'s own, under `~/.azure`.
+- **Atlassian is relayed.** Agents get an entry named `atlassian` pointing at
+  `http://127.0.0.1:<port>/mcp/atlassian` with an `X-VaultOS-Key` header (`~/.claude.json` top-level
+  `mcpServers`; `~/.cursor/mcp.json`). VaultOS adds the real credential and streams to
+  `https://mcp.atlassian.com/v1/mcp`. Sign-in is OAuth 2.1 with dynamic client registration and PKCE,
+  or an API token. Pending sign-ins live 10 minutes; the token refreshes 60 s before `expires_at`.
+  `POST /api/connectors/atlassian/cancel` drops this session's pending sign-ins (the pane's Cancel).
+- **Azure is local.** An `azure` entry runs `azmcp server start`, read-only (`--read-only`) unless the
+  person allows changes. Install is about 900 MB (`@azure/mcp` plus a venv with `azure-cli`): check
+  `df -h /` first. Sign-in is `az login --use-device-code`; the device page is `login.microsoft.com/device`.
+- **Relay rules.**
+  - **Loopback only, key required.** Wrong or missing key, or a peer that isn't loopback: `403`,
+    nothing forwarded, and the key header is never sent upstream. It runs before the JSON parser and is
+    exempt from the Host check only under `/mcp/`.
+  - **Never a `401` to an agent.** A 401 would start the agent's own OAuth flow, which can't finish.
+    Every "not usable" answer is HTTP 200 or a 5xx, never 401.
+  - **Messages, exactly:** `${label} isn't connected yet. Open Settings → Connectors in VaultOS to
+    connect it.` and `${label} sign-in has run out. Open Settings → Connectors in VaultOS to sign in again.`
+  - **R7, the placeholder tool.** With no usable sign-in the relay still answers `initialize`, lists
+    one tool, `vaultos_sign_in`, whose description is the sentence, returns the sentence as an
+    `isError` result when it's called, and answers every other method with JSON-RPC error `-32001`
+    carrying the sentence. So the agent shows the person what to do instead of "failed to connect".
+  - **Concurrent calls share one refresh** (`serialised`), and a stale access token is renewed once
+    then retried.
+  - **SSE passes through as it arrives**, and a hang-up from the agent aborts the upstream request.
+- **Transient vs refused refresh (R16).** Only a refused refresh (the server says `invalid_grant`, or the
+  record has no refresh token) marks the connector `needsSignIn` ("Sign in again", `attention: true`).
+  A network error or 5xx during refresh throws: the relay answers with an HTTP error, no sentence, and
+  nothing is marked. A blip must not log anyone out.
+- **VaultOS never overwrites an agent's own entry.** If the agent already has an `atlassian` entry, or
+  `~/.cursor/mcp.json` isn't valid JSON (or its `mcpServers` isn't an object), nothing is written to that
+  agent, the file stays byte-for-byte, and the row says why ("Has its own entry").
+- **Fake Atlassian:** `scripts/fake-mcp-oauth.js` (node:http only; OAuth with registration and PKCE,
+  token and refresh, an SSE `tools/list`; modes `normal`, `expire`, `refuse-refresh`, `slow-sse`;
+  env `CONNECTOR_UPSTREAM_ATLASSIAN` points the app at it). `expire` keeps whatever access token is current dead
+  until the mode goes back to `normal` (a refresh alone doesn't recover); the e2e's wrapper returns the fake
+  to `normal` on the first refresh.
+- **Preview:** `connectors-preview` on `127.0.0.1:7695`, files in `/opt/vault/connectors-preview/`
+  (compose bind-mounts the worktree's `server.js`, `lib/`, `public/`, `scripts/` read-only, so edits are
+  live after `docker restart connectors-preview`; the fake dies with a restart:
+  `docker exec -d connectors-preview node /app/scripts/fake-mcp-oauth.js --port 5555`). Never test
+  against :7684.
+- **E2E:** `node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6`, in order. C1 installs Claude Code and the
+  Cursor CLI into the preview's home if missing (about 1.5 minutes) and signs in through the fake; C2
+  checks both agents' configs and `claude mcp list` / `agent mcp list` from `/vault` and `/tmp`; C3 an MCP
+  call through the relay; C4 an expired access token (one refresh); C5 a refused refresh (the sentence,
+  `attention: true`, the placeholder tool); C6 disconnect, other entries untouched. It restarts the fake
+  with a small control port (:5556) and ends signed out.
+- **Tests:** `node --test test/connector-*.test.js test/connectors-ui.test.js test/server-connectors.test.js`
+  on the host; the full suite needs the image (terminal tests):
+  `docker run --rm -v "$PWD":/src:ro --entrypoint bash vaultos:connectors -lc 'cp -a /src /tmp/w && cd /tmp/w && rm -rf node_modules && cp -a /app/node_modules . && npm test'`.
+
 ## Hardened after an outside audit (2026-10-28)
 
 A security audit of a fork, run at `c792a11`, led to these. Each has a test; don't undo them.

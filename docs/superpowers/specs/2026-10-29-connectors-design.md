@@ -427,3 +427,22 @@ the `vaultos` user, with `scripts/connector-probe.sh`. Home is `/home/vaultos`.
 5. **Disk.** The host hit 100% during the spikes (builds plus three agent/Azure installs);
    `docker builder prune` freed 3.9 GB. Check free space before building the image or running
    the install probes.
+
+### Changed during the build
+
+- **R7, placeholder tool on no sign-in.** With no usable sign-in the relay still answers `initialize`,
+  lists one tool `vaultos_sign_in` whose description is the sentence, returns the sentence as an
+  `isError` result when it's called, and answers other methods with JSON-RPC `-32001` carrying the sentence.
+- **R8, az's device URL.** `az login --use-device-code` now prints `login.microsoft.com/device`; the
+  parser and the Open button use that.
+- **R11, `renew(rejected)`.** The relay passes the access header the upstream just refused; the service
+  refreshes only if the stored token is still that one, so a second caller reuses the fresh token.
+- **R13, partial sync progress kept.** When a writer fails partway through a sync, that agent's
+  `written` record keeps every change that completed before the failure, so an entry already written isn't
+  later mistaken for the agent's own.
+- **R14, a non-object Cursor config is damaged.** `mcpServers` that isn't an object is treated like invalid
+  JSON: nothing written, file untouched, the row says why.
+- **R16, transient failures throw.** A network error or 5xx during refresh throws (the relay answers with
+  an HTTP error, no sentence, nothing marked); only a refused refresh marks "Sign in again".
+- **R18, a cancel route.** `POST /api/connectors/atlassian/cancel` drops the session's pending sign-ins
+  and their in-memory new client, so the pane's Cancel is server-side.
