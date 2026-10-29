@@ -10,7 +10,7 @@ const TOOLS = [
   { name: 'getAccessibleAtlassianResources', description: 'Sites the user can reach', inputSchema: { type: 'object', properties: {} } },
 ];
 
-function startFake({ port = 0, host = '127.0.0.1' } = {}) {
+function startFake({ port = 0, host = '127.0.0.1', publicBase = '' } = {}) {
   const state = {
     seen: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
     clients: {}, codes: {}, access: new Set(), refresh: {}, current: null,
@@ -161,7 +161,7 @@ function startFake({ port = 0, host = '127.0.0.1' } = {}) {
   return new Promise((ok, fail) => {
     server.once('error', fail);
     server.listen(port, host, () => {
-      base = `http://${host}:${server.address().port}`;
+      base = publicBase || `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${server.address().port}`;
       ok({
         base, state,
         setMode: (m) => { state.mode = m; },
@@ -175,6 +175,6 @@ module.exports = { startFake };
 
 if (require.main === module) {
   const i = process.argv.indexOf('--port');
-  startFake({ port: i > 0 ? Number(process.argv[i + 1]) : 5555, host: process.env.FAKE_HOST || '0.0.0.0' })
+  startFake({ port: i > 0 ? Number(process.argv[i + 1]) : 5555, host: process.env.FAKE_HOST || '0.0.0.0', publicBase: process.env.FAKE_BASE || '' })
     .then((f) => console.log(`fake MCP/OAuth listening on ${f.base}`));
 }
