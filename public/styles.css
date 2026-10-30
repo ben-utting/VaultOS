@@ -2046,6 +2046,17 @@ html[data-font="dyslexic"] .fx-md { font-family: var(--read-font); letter-spacin
 }
 .fx-source .ln { display: block; min-height: 1.6em; padding: 0 20px 0 64px; white-space: pre-wrap; word-break: break-word; position: relative; }
 .fx-source code { outline: none; }
+.fx-edit { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.fx-edit-box {
+  flex: 1; width: 100%; min-height: 240px; box-sizing: border-box; resize: none; border: 0; outline: none;
+  padding: 14px 20px 60px; background: var(--bg); color: var(--text);
+  font-family: var(--mono-font); font-size: calc(12.5px * var(--fs)); line-height: 1.6; tab-size: 4;
+}
+.fx-edit-note {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; font-size: 12.5px;
+  background: var(--panel); border-bottom: 1px solid var(--line); color: var(--text);
+}
+.fx-edit-note.hidden { display: none; }
 .fx-copyall { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; }
 .fx-source .ln::before {
   counter-increment: ln; content: counter(ln);

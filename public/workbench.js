@@ -339,13 +339,14 @@ function fxOpen(p, { pin = false, reveal = false } = {}) {
     let previewIdx = FX.tabs.findIndex((t) => !t.pinned);
     tab = { path: p, pinned: pin };
     // A preview tab holding unsaved spreadsheet edits is never replaced: it becomes a kept tab instead.
-    if (!pin && previewIdx >= 0 && window.SheetFiles && SheetFiles.isDirty(FX.tabs[previewIdx].path)) {
+    if (!pin && previewIdx >= 0 && ((window.SheetFiles && SheetFiles.isDirty(FX.tabs[previewIdx].path)) || TextEdit.isDirty(FX.tabs[previewIdx].path))) {
       FX.tabs[previewIdx].pinned = true;
       previewIdx = -1;
     }
     if (!pin && previewIdx >= 0) {
       const old = FX.tabs[previewIdx].path;
       FX.files.delete(old);
+      TextEdit.drop(old);
       if (window.SheetFiles) SheetFiles.drop(old);
       FX.tabs[previewIdx] = tab;
     } else {
@@ -368,7 +369,9 @@ function fxPin(p) {
 function fxClose(p) {
   const i = FX.tabs.findIndex((t) => t.path === p);
   if (i < 0) return;
-  // A spreadsheet with unsaved edits asks first; closing its tab drops its grid.
+  // A file with unsaved edits asks first; closing its tab drops its grid or its draft.
+  if (!TextEdit.confirmDiscard(p)) return;
+  TextEdit.drop(p);
   if (window.SheetFiles) {
     if (!SheetFiles.confirmDiscard(p)) return;
     SheetFiles.drop(p);
@@ -391,7 +394,7 @@ function fxClose(p) {
 function renderTabs() {
   const el = $('fx-tabs');
   el.innerHTML = FX.tabs.map((t) => {
-    const unsaved = !!window.SheetFiles && SheetFiles.isDirty(t.path);
+    const unsaved = (!!window.SheetFiles && SheetFiles.isDirty(t.path)) || TextEdit.isDirty(t.path);
     return `<div class="fx-tab${t.path === FX.active ? ' active' : ''}${t.pinned ? '' : ' preview'}${FX.changed.has(t.path) ? ' changed' : ''}${unsaved ? ' unsaved' : ''}"`
       + ` role="tab" aria-selected="${t.path === FX.active}" data-path="${esc(t.path)}" title="${esc(t.path)}${t.pinned ? '' : ' (preview — double-click to keep)'}">`
       + `<span class="fx-ico">${fileIcon(fxKindOf(t.path))}</span><span class="fx-tab-name">${esc(baseOf(t.path))}</span>`
@@ -488,6 +491,7 @@ function renderView({ keepScroll = false } = {}) {
     <span class="fx-when" title="${esc(new Date(f.mtime).toLocaleString())}">edited ${ago(f.mtime)}</span>
     ${views ? `<div class="seg fx-seg" role="group" aria-label="View">${views.map(([v, label]) => `<button data-v="${v}" class="${mode === v ? 'on' : ''}">${label}</button>`).join('')}</div>` : ''}
     ${grid ? SheetFiles.barHtml(p, f) : ''}
+    ${TextEdit.barHtml(p, f, mode)}
     <span class="fx-tools">
     <button type="button" class="ghost fx-bar-btn" id="fx-locate" title="Show in the tree" aria-label="Show in the tree">${FX_ICONS.locate}</button>
     ${f.source != null ? `<button type="button" class="ghost fx-bar-btn fx-copyall" id="fx-copyall" title="Copy the whole file (or Ctrl+A in the file, then Ctrl+C)">${ICONS.copy}<span>Copy file</span></button>` : ''}
@@ -497,7 +501,9 @@ function renderView({ keepScroll = false } = {}) {
     <button type="button" class="ghost fx-bar-btn" id="fx-reload" title="Re-read from disk" aria-label="Refresh file">${FX_ICONS.refresh}</button>
     </span>`;
 
-  if (f.kind === 'md' && mode === 'rendered') {
+  if (TextEdit.isEditing(p) && TextEdit.canEdit(f, mode)) {
+    TextEdit.mount(view, p, f);
+  } else if (f.kind === 'md' && mode === 'rendered') {
     view.innerHTML = `<div class="fx-doc"><h1 class="fx-title">${esc(f.title)}</h1>${metaBlock(f.meta)}<article class="markdown fx-md">${f.html}</article></div>`;
     wireDocLinks(view, p);
     const diagrams = hydrateDiagrams(view);
@@ -613,9 +619,17 @@ $('fx-bar').addEventListener('click', (e) => {
     return;
   }
   const seg = e.target.closest('.fx-seg button');
-  if (seg) { FX.views[p] = seg.dataset.v; lsSet(FX_KEYS.views, FX.views); renderView(); return; }
+  if (seg) {
+    if (TextEdit.isEditing(p)) {   // another view of a file being edited: finish or discard the edit first
+      if (!TextEdit.confirmDiscard(p)) return;
+      TextEdit.drop(p);
+      renderTabs();
+    }
+    FX.views[p] = seg.dataset.v; lsSet(FX_KEYS.views, FX.views); renderView(); return;
+  }
   const btn = e.target.closest('button');
   if (!btn) return;
+  if (TextEdit.onBar(btn, p)) return;
   if (window.SheetFiles && SheetFiles.onBar(btn, p)) return;
   if (btn.id === 'fx-locate') { fxClearSearch(); fxReveal(p); if (window.matchMedia('(max-width: 900px)').matches) setFxSide(true); }
   else if (btn.id === 'fx-copy') copyText(p).then(() => toast('Copied ' + p));
