@@ -1,0 +1,187 @@
+'use strict';
+// The readability floor, read straight from public/styles.css (no browser):
+// muted text clears WCAG AA in both themes, every font size comes from one type
+// scale whose smallest step is 12px, and placeholders follow the theme.
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const CSS = fs.readFileSync(path.join(__dirname, '..', 'public', 'styles.css'), 'utf8');
+
+// ---------- a small CSS reader ----------
+// Comments go first (quoted strings are kept intact so a "/*" or "{" inside
+// content: '' can't confuse it), then the text is walked into a tree of blocks.
+// Each block has its prelude (selector or at-rule), its own declarations and the
+// preludes of the blocks around it, so a :root inside @media print is told apart
+// from the top-level one.
+function stripComments(src) {
+  let out = '';
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === '\\' ? 2 : 1;
+      out += src.slice(i, j + 1);
+      i = j;
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? src.length : end + 1;
+      out += ' ';
+    } else out += c;
+  }
+  return out;
+}
+
+function parseBlocks(src) {
+  const text = stripComments(src);
+  const blocks = [];
+  const stack = [{ prelude: '', own: '', ancestors: [] }];
+  let buf = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < text.length && text[j] !== c) j += text[j] === '\\' ? 2 : 1;
+      buf += text.slice(i, j + 1);
+      i = j;
+    } else if (c === '{') {
+      const parent = stack[stack.length - 1];
+      // Text before the brace, after the last ';', is this block's prelude; the rest belongs to the parent.
+      const cut = buf.lastIndexOf(';');
+      parent.own += buf.slice(0, cut + 1);
+      const node = {
+        prelude: buf.slice(cut + 1).replace(/\s+/g, ' ').trim(),
+        own: '',
+        ancestors: [...parent.ancestors, parent.prelude].filter(Boolean),
+      };
+      stack.push(node);
+      buf = '';
+    } else if (c === '}') {
+      const node = stack.pop();
+      node.own += buf;
+      node.decls = declarations(node.own);
+      blocks.push(node);
+      buf = '';
+    } else buf += c;
+  }
+  return blocks;
+}
+
+function declarations(body) {
+  const out = [];
+  for (const part of body.split(';')) {
+    const at = part.indexOf(':');
+    if (at === -1) continue;
+    const prop = part.slice(0, at).trim().toLowerCase();
+    const value = part.slice(at + 1).replace(/\s+/g, ' ').replace(/!important/i, '').trim();
+    if (prop) out.push({ prop, value });
+  }
+  return out;
+}
+
+const BLOCKS = parseBlocks(CSS);
+const topLevel = (b) => b.ancestors.length === 0;
+
+// Later declarations win, as in the cascade.
+function tokens(selector) {
+  const map = {};
+  for (const b of BLOCKS) {
+    if (!topLevel(b) || b.prelude !== selector) continue;
+    for (const d of b.decls) if (d.prop.startsWith('--')) map[d.prop] = d.value;
+  }
+  return map;
+}
+const DARK = tokens(':root');
+const SEPIA = { ...DARK, ...tokens(':root[data-theme="light"]') };
+
+// ---------- WCAG contrast ----------
+function luminance(hex) {
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((x) => x + x).join('') : h;
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function ratio(a, b) {
+  const [x, y] = [luminance(a), luminance(b)];
+  return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+}
+const HEX = /^#[0-9a-f]{3}([0-9a-f]{3})?$/i;
+
+test('muted text meets 4.5:1 in both themes', () => {
+  const misses = [];
+  for (const [name, theme] of [['dark', DARK], ['sepia', SEPIA]]) {
+    for (const fg of ['--muted', '--muted-2']) {
+      for (const bg of ['--bg', '--panel', '--panel-2']) {
+        assert.match(theme[fg] || '', HEX, `${name} ${fg} should be a hex colour`);
+        assert.match(theme[bg] || '', HEX, `${name} ${bg} should be a hex colour`);
+        const r = ratio(theme[fg], theme[bg]);
+        if (r < 4.5) misses.push(`${name} ${fg} ${theme[fg]} on ${bg} ${theme[bg]}: ${r.toFixed(2)}`);
+      }
+    }
+  }
+  assert.deepEqual(misses, [], `below 4.5:1:\n  ${misses.join('\n  ')}`);
+});
+
+// ---------- the type scale ----------
+const TYPE_TOKEN = /^--t-[a-z0-9]+$/;
+const px = (v) => { const m = /^(\d*\.?\d+)px$/.exec(v.trim()); return m ? Number(m[1]) : NaN; };
+
+function sizeAllowed(v) {
+  if (v === 'inherit') return true;
+  if (/^var\(--t-[a-z0-9]+\)$/.test(v)) return true;
+  if (/^calc\(var\(--t-[a-z0-9]+\) \* var\(--fs\)\)$/.test(v)) return true;
+  if (/^\d*\.?\d+(em|rem|%)$/.test(v)) return true;
+  const clamp = /^clamp\(([^,]+),/.exec(v);
+  if (clamp) {
+    const min = clamp[1].trim();
+    return px(min) >= 12 || /^var\(--t-[a-z0-9]+\)$/.test(min);
+  }
+  return false;
+}
+
+// @font-face, print and the spreadsheet grid (.sg-*, which copies Excel's sizes) are exempt.
+function exempt(b) {
+  const scope = [...b.ancestors, b.prelude];
+  if (scope.some((p) => /^@font-face\b/i.test(p) || /^@media print\b/i.test(p))) return true;
+  return b.prelude.split(',').every((s) => s.trim().startsWith('.sg-'));
+}
+
+test('every font-size uses the type scale', () => {
+  const misses = [];
+  for (const b of BLOCKS) {
+    if (exempt(b)) continue;
+    for (const d of b.decls) {
+      if (d.prop === 'font-size' && !sizeAllowed(d.value)) misses.push(`${b.prelude} { font-size: ${d.value} }`);
+      // The font shorthand carries a size too: a literal length there (not the /line-height after it)
+      // dodges the scale the same way.
+      if (d.prop === 'font' && /(^|\s)\d*\.?\d+px/.test(d.value)) misses.push(`${b.prelude} { font: ${d.value} }`);
+    }
+  }
+  assert.deepEqual(misses, [], `${misses.length} font sizes off the scale:\n  ${misses.join('\n  ')}`);
+});
+
+test('no type token is below 12px', () => {
+  const scale = Object.entries(DARK).filter(([k]) => TYPE_TOKEN.test(k));
+  assert.deepEqual(Object.fromEntries(scale), {
+    '--t-xs': '12px', '--t-sm': '13px', '--t-md': '14px', '--t-lg': '16px',
+    '--t-xl': '20px', '--t-2xl': '26px', '--t-3xl': '32px',
+  });
+  // No theme or media block may redefine a step below the floor either.
+  for (const b of BLOCKS) {
+    for (const d of b.decls) {
+      if (TYPE_TOKEN.test(d.prop)) assert.ok(px(d.value) >= 12, `${b.prelude} { ${d.prop}: ${d.value} } is below 12px`);
+    }
+  }
+  // And every var(--t-*) in use names a step that exists.
+  const used = new Set(CSS.match(/var\(--t-[a-z0-9]+\)/g) || []);
+  for (const u of used) assert.ok(DARK[u.slice(4, -1)], `${u} is used but not defined`);
+});
+
+test('placeholders are themed', () => {
+  const global = BLOCKS.find((b) => topLevel(b)
+    && b.prelude.split(',').some((s) => /^\*?::placeholder$/.test(s.trim()))
+    && b.decls.some((d) => d.prop === 'color' && d.value === 'var(--muted)'));
+  assert.ok(global, 'a global ::placeholder { color: var(--muted) } rule');
+});
