@@ -9,3 +9,4 @@ sheet-backups/
 !.env.example
 certs/*
 !certs/README.md
+.impeccable/
