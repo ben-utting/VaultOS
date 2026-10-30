@@ -109,6 +109,7 @@
   --review: #f59e0b;
   --done: #22c55e;
   --done-ink: var(--done);        /* the check icon on a soft done tick (.td-tick); sepia darkens it to hold 3:1 */
+  --done-bar: color-mix(in srgb, var(--done) 55%, var(--panel-2));   /* Today's quiet score bars: 3.4:1 on the card (--panel) */
   --bar-fill: #2e7d4e;            /* progress bar fill — dimmer than --done so it doesn't compete with tags */
 
   /* Semantic tokens so the Sepia theme can override the few hardcoded darks. */
@@ -160,6 +161,7 @@
      Plum keeps the magenta story in the muted register this palette uses. ΔE to done 29 -> 88. */
   --needs-decision: #b0428a; --review: #b07d1c; --done: #5f7a3a; --bar-fill: #7d9257;
   --done-ink: color-mix(in srgb, var(--done) 70%, var(--text));   /* --done itself is 2.6:1 on the soft tick; this is 3.4:1 */
+  --done-bar: color-mix(in srgb, var(--done) 90%, var(--panel-2));   /* sepia needs the stronger mix to reach 3:1 on the card (--panel) */
   --break-fg: #2f5a94;
 
   --on-accent: #ffffff;
@@ -601,7 +603,6 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
   transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
 .viewseg button:hover { color: var(--text); }
-.viewseg button.on { background: var(--accent); color: var(--on-accent); }
 .path { color: var(--muted); font-family: var(--mono-font); font-size: var(--t-xs); margin-top: 4px; word-break: break-all; }
 .d-meta { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0 6px; }
 
@@ -925,14 +926,16 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   background: none; color: var(--text); font: inherit; font-size: var(--t-sm); text-align: left; cursor: pointer;
 }
 .ws-menu button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-menu button:hover, .ws-menu button:focus-visible { background: var(--panel-2); outline: none; }
+.ws-menu button:hover { background: var(--panel-2); }
 /* Keyboard focus is a ring outside the item, so it never reads as the selected ring inside it. */
-.ws-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ws-menu button:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: 1px; }
 /* The one "selected" look: a quiet fill and a 1px accent ring. Gold fills are for the mode pill and
    primary buttons only. Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
-.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"] {
+.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"] {
   background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent);
 }
+/* In the menu the ring is the only other cue, so the selected item is also bolder than a focused one. */
+.ws-menu [aria-checked="true"] { font-weight: 600; }
 
 /* Settings → Boards, Features, Agent and Password. The fields, switches and agent cards are the setup
    page's (.su-* under "Setup" below), so a setting looks the same in both places. */
@@ -2981,7 +2984,7 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-tick { grid-area: tick; width: 36px; height: 36px; padding: 0; cursor: pointer; border-radius: 10px; border: 2px solid var(--line); background: transparent; display: grid; place-items: center; color: transparent; transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out); }
 .td-tick .icon { width: 20px; height: 20px; stroke-width: 2.5; }
 .td-tick:hover { border-color: var(--done); }
-.td-tick[aria-pressed="true"], .td-cell.on {
+.td-tick[aria-pressed="true"], .td-cell.on, .td-tchk[aria-pressed="true"] {
   background: color-mix(in srgb, var(--done) 24%, var(--panel-2)); border-color: color-mix(in srgb, var(--done) 60%, transparent); color: var(--done-ink);
 }
 .td-hmain { grid-area: main; min-width: 0; display: grid; gap: 4px; }
@@ -3044,7 +3047,7 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-score h3 { grid-column: 1 / -1; margin: 0; font-size: var(--t-xs); font-weight: 600; color: var(--muted); letter-spacing: .04em; }
 .td-bars { display: grid; grid-template-columns: repeat(7, minmax(18px, 1fr)); gap: 6px; height: 74px; align-items: end; max-width: 380px; }
 .td-bar { display: grid; grid-template-rows: 1fr auto; gap: 4px; height: 100%; }
-.td-col { align-self: end; background: color-mix(in srgb, var(--done) 55%, var(--panel-2)); border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
+.td-col { align-self: end; background: var(--done-bar); border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
 .td-bar.sel .td-col { background: var(--brand); }
 .td-lab { font-size: var(--t-xs); text-align: center; color: var(--muted-2); }
 .td-bar.sel .td-lab { color: var(--accent); font-weight: 600; }
@@ -3064,7 +3067,6 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-tchk { width: 20px; height: 20px; padding: 0; cursor: pointer; border-radius: 5px; border: 2px solid var(--line); background: transparent; display: grid; place-items: center; color: transparent; }
 .td-tchk .icon { width: 12px; height: 12px; stroke-width: 3; }
 .td-tchk:not(:disabled):hover { border-color: var(--done); }
-.td-tchk[aria-pressed="true"] { background: var(--done); border-color: var(--done); color: var(--bg); }
 .td-tchk:disabled { cursor: default; opacity: .5; }
 .td-ttext { min-width: 0; font-size: var(--t-md); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
 .td-ttext > span:first-child { overflow-wrap: anywhere; }
