@@ -218,10 +218,13 @@ the theme.
 Gold used to mean everything: selected, done-ish, primary, brand. Now it means two things, **VaultOS** (the mode
 pill, the wordmark) and **the one action to take** (primary buttons). Every other "this one is selected" is a single
 quiet look: `--panel-2` fill, `--text` colour and a 1px `--accent` ring, in the one shared rule in `styles.css`
-(`.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked]`, declared after
+(`.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"]`, declared after
 every rule it overrides). A new selectable control joins that selector; it does not get its own gold fill.
 `test/look-tokens.test.js` enforces it: it lists every selector that may fill with gold (the identity-and-action and
 asked-about allowlists), fails on any other, and fails again if an entry stops being gold, so the list stays honest.
+The solid-gold fills left on that list (`.su-switch:checked`, `.tw-keys button[aria-pressed="true"]`, `.ap-chip.def`,
+`.td-fill`, `.td-dots i.on`) are state and progress marks (a switch that is on, a latched key, a tag, a progress fill),
+kept because Ben asked about them; they are not precedent for a new selected state.
 Done is green, but green text on a soft tick or a score bar missed 3:1 in sepia, so there are two tokens:
 `--done-ink` (the check on `.td-tick`) and `--done-bar` (Today's score bars), each darker in sepia. Use them for
 those; `--done` itself is for status dots and borders.
@@ -229,9 +232,12 @@ those; `--done` itself is for status dots and borders.
 ### Type scale (2026-10-30)
 
 Every `font-size` is a `--t-*` token: `--t-xs` 12, `--t-sm` 13, `--t-md` 14, `--t-lg` 16, `--t-xl` 20, `--t-2xl` 26,
-`--t-3xl` 32. Nothing renders below 12px, and where text follows the A−/A+ reading control it is
-`calc(var(--t-*) * var(--fs))`. Never type `font-size: 11px`. `test/look-tokens.test.js` fails on a raw size and on a
-token under 12px; muted and sheet text must also clear 4.5:1 in both themes (`--muted-2` was the offender).
+`--t-3xl` 32. Where text follows the A−/A+ reading control it is `calc(var(--t-*) * var(--fs))`; A− goes down to
+`FS_MIN` 0.85 (app.js), so a step that would fall under 12px there (`--t-xs`, `--t-md`) carries the floor itself:
+`max(var(--t-xs), calc(var(--t-*) * var(--fs)))` (body text, the Files source view and text editor). Outside the
+spreadsheet grid nothing renders below 12px. The grid (`.sg-*`) is exempt: it copies the workbook's own sizes
+(`--sg-fs` and Excel's px values), which can be smaller. Never type `font-size: 11px`. `test/look-tokens.test.js` fails
+on a raw size, on a token under 12px and on a scaled step without that floor; muted and sheet text must also clear 4.5:1 in both themes (`--muted-2` was the offender).
 
 ## needs-decision is magenta, not teal (changed 2026-09-18)
 
@@ -578,7 +584,12 @@ that is why the breakpoint is 1025px and the Board turns flex only there. While 
 `dragstart` adds the class a frame late (`requestAnimationFrame`), because widening the rails inside the handler shifts
 the layout before Safari and Firefox snapshot the drag image. `endBoardDrag` removes it, and both ends call
 `updateBoardNav` because the rails change the scrollable width. `render()` re-sets the class from `DRAG`, so a repaint
-cannot leave it stuck.
+mid-drag keeps the rails open and one after the drag leaves them shut. It can't recover a lost end, though: if a
+repaint (the poll, Refresh) replaces the dragged card, its `dragend` fires on a node that is no longer in the page and
+reaches no listener, the document's included. A drop on a column still ends the drag (the document's `drop`
+listener); a drop anywhere else leaves `DRAG` set, and the rails open, until the next drag ends.
+The column a card is dropped on gets `col-landing`, which keeps it open while the move is saved (the drop clears
+`board-dragging` straight away); the `render()` after the save replaces it with the column's new state.
 
 ## Files: staged loading (2026-10-30)
 
@@ -586,7 +597,9 @@ cannot leave it stuck.
 open tab (`FX.rootState`: `loading` / `ok` / `error`; an error shows a Retry in the pane, not a toast that would be
 gone before it was read). "Changed recently" loads on its own (`FX.recentState`, `fxLoadRecentInPlace`) and lands or
 fails in its own section. The remembered open folders restore last, in the background, dropping any that have gone.
-The in-flight promise is stored so a second call joins it; nothing awaits it, so it carries its own `.catch`.
+The in-flight promise is stored so a second call joins it; nothing awaits it, so it carries its own `.catch`, and so
+do the two background jobs inside it (Recent and the folder restore). The root's Retry reruns Recent only if Recent
+had not loaded.
 
 ## Files: edit text, rename (added 2026-10-30)
 

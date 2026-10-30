@@ -107,7 +107,9 @@ async function fxLoadStaged() {
   applyRecentOpen();
   FX.rootState = 'loading';
   renderView();
-  fxLoadRecentInPlace();   // independent of the root: starts now, lands (or fails) in its own section
+  // Independent of the root: starts now, lands (or fails) in its own section. A root Retry leaves a Recent that
+  // already loaded alone. Nobody awaits it, so it carries its own .catch (a render throw).
+  if (FX.recentState !== 'ok') fxLoadRecentInPlace().catch(console.warn);
   try {
     await fxLoadDir('');
   } catch (err) {
@@ -126,7 +128,7 @@ async function fxLoadStaged() {
   Promise.all([...FX.expanded].map((d) => fxLoadDir(d).catch(() => FX.expanded.delete(d)))).then(() => {
     lsSet(FX_KEYS.expanded, [...FX.expanded]);
     renderTree();
-  });
+  }).catch(console.warn);
 }
 
 // "Changed recently" on its own: Recent shows Loading…, then the list or a Retry; nothing else repaints.
@@ -190,7 +192,7 @@ function renderRecent() {
 }
 
 $('fx-recent').addEventListener('click', (e) => {
-  if (e.target.closest('[data-retry]')) { fxLoadRecentInPlace(); return; }
+  if (e.target.closest('[data-retry]')) { fxLoadRecentInPlace().catch(console.warn); return; }
   const b = e.target.closest('[data-path]');
   if (b) fxOpen(b.dataset.path);   // the tree stays put; the crosshair in the file bar reveals it
 });

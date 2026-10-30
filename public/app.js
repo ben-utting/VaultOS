@@ -39,7 +39,8 @@ STATE.hideSubtasks = loadHideSubtasks(STATE.workspace);
 let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped by whichever is open
 let DRAG = null;
 // body.board-dragging is what opens the folded (empty) columns while a card is in the air.
-// It must never outlive the drag: dragend clears it, so do a drop anywhere and the repaint.
+// dragend and a drop clear it, and render() re-sets it from DRAG. A repaint that replaces the dragged card loses
+// that card's dragend (see "Board rails" in CLAUDE.md), so DRAG can outlive a drop outside the columns.
 function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); updateBoardNav(); }   // the rails refold: the scroll arrows follow
 document.addEventListener('dragend', endBoardDrag);
 document.addEventListener('drop', endBoardDrag);   // bubbles after a column's own drop, which has read DRAG by then
@@ -724,7 +725,7 @@ function render() {
   // columns" in styles.css), so hold those too, keyed by status: a hidden
   // column or a filter can shift the positions between renders.
   const colTops = new Map([...$('board').querySelectorAll('.col-body')].map((b) => [b.dataset.status, b.scrollTop]));
-  document.body.classList.toggle('board-dragging', !!DRAG);   // a repaint can't leave it stuck on
+  document.body.classList.toggle('board-dragging', !!DRAG);   // follows DRAG across a repaint
   indexBatches();          // before visibleTasks()/card() — both read BATCH_INDEX
   updateFilterBadge();
   updateColsBadge();
@@ -750,12 +751,16 @@ function render() {
   $('clear-filters').classList.toggle('hidden', STATE.mode !== 'board' || !anyFilterActive());
 
   const statuses = STATE.statuses.filter((s) => !STATE.hiddenColumns.has(s));
+  // An empty column folds to a rail (wide screens), but not when every column is empty: a search with no hits or
+  // an empty workspace would be a row of rails with nothing saying why, so it shows full columns with "No tasks".
+  const allEmpty = !statuses.some((s) => tasks.some((t) => t.status === s));
   $('board').innerHTML = statuses.map((s) => {
     const inCol = tasks
       .filter((t) => t.status === s)
       .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
+    const rail = !inCol.length && !allEmpty;
     return `
-      <section class="col${inCol.length ? '' : ' col-empty'}"${inCol.length ? '' : ` aria-label="${esc(statusLabel(s))}, 0 tasks" title="${esc(statusLabel(s))}, 0 tasks"`}>
+      <section class="col${rail ? ' col-empty' : ''}"${rail ? ` aria-label="${esc(statusLabel(s))}, 0 tasks" title="${esc(statusLabel(s))}, 0 tasks"` : ''}>
         <div class="col-head">
           <span class="dot" style="background: var(--${s})"></span>
           ${esc(s.replace('-', ' '))}
@@ -806,9 +811,11 @@ function render() {
       if (!DRAG) return;
       const status = col.dataset.status;
       const moving = DRAG;
+      // The drop folds the rails again at once; the one landed on stays open until the render() after the save.
+      sec.classList.add('col-landing');
       endBoardDrag();
       const task = STATE.tasks.find((t) => t.path === moving.path);
-      if (!task || task.status === status) return;
+      if (!task || task.status === status) { sec.classList.remove('col-landing'); return; }
       try {
         const updated = await api(ws('/api/task/status'), {
           method: 'POST',
@@ -2151,7 +2158,10 @@ $('ws-menu').addEventListener('keydown', (e) => {
   const i = items.indexOf(document.activeElement);
   const to = { ArrowDown: (i + 1) % items.length, ArrowUp: (i - 1 + items.length) % items.length, Home: 0, End: items.length - 1 }[e.key];
   if (to !== undefined) { e.preventDefault(); items[to].focus(); }
-  else if (e.key === 'Tab') closeWsMenu({ focus: false });
+  // The menu sits after <header> in the page, so the browser's own Tab order from inside it is wrong both ways.
+  // Shift+Tab goes back to the chip; Tab moves focus to the chip and lets the Tab go on to whatever follows it.
+  else if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); closeWsMenu(); }
+  else if (e.key === 'Tab') closeWsMenu();
 });
 // Window capture, like the Settings sheet's: one Escape closes the menu and nothing behind it (the drawer).
 window.addEventListener('keydown', (e) => {

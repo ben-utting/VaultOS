@@ -157,10 +157,15 @@ test('sheet text meets 4.5:1 in both themes', () => {
 const TYPE_TOKEN = /^--t-[a-z0-9]+$/;
 const px = (v) => { const m = /^(\d*\.?\d+)px$/.exec(v.trim()); return m ? Number(m[1]) : NaN; };
 
+// The A−/A+ reading control scales text by --fs, down to FS_MIN (app.js). A scaled step whose smallest size falls
+// under 12px must carry the floor itself: max(var(--t-xs), calc(var(--t-*) * var(--fs))).
+const FS_MIN = Number(/const FS_MIN = (\d*\.?\d+)/.exec(fs.readFileSync(path.join(__dirname, '..', 'public', 'app.js'), 'utf8'))[1]);
 function sizeAllowed(v) {
   if (v === 'inherit') return true;
   if (/^var\(--t-[a-z0-9]+\)$/.test(v)) return true;
-  if (/^calc\(var\(--t-[a-z0-9]+\) \* var\(--fs\)\)$/.test(v)) return true;
+  const scaled = /^calc\(var\((--t-[a-z0-9]+)\) \* var\(--fs\)\)$/.exec(v);
+  if (scaled) return px(DARK[scaled[1]] || '') * FS_MIN >= 12;
+  if (/^max\(var\(--t-xs\), calc\(var\(--t-[a-z0-9]+\) \* var\(--fs\)\)\)$/.test(v)) return true;
   if (/^\d*\.?\d+(em|rem|%)$/.test(v)) return true;
   const clamp = /^clamp\(([^,]+),/.exec(v);
   if (clamp) {

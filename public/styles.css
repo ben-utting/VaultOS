@@ -204,7 +204,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--ui-font);
-  font-size: calc(var(--t-md) * var(--fs));
+  font-size: max(var(--t-xs), calc(var(--t-md) * var(--fs)));   /* A− (0.85) would make 14px 11.9px */
   line-height: 1.5;
 }
 
@@ -383,20 +383,21 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
 /* An empty column folds to a 48px rail on a wide screen: its name runs down the side, still real
    text, with the dot and a 0. It opens to a full column while a card is being dragged
    (body.board-dragging), so it stays a drop target. Phone and tablet keep the full column
-   ("No tasks"). The Board turns flex here so one column can be narrower than the rest. */
+   ("No tasks"). The Board turns flex here so one column can be narrower than the rest.
+   .col-landing is the column a card was just dropped on: it stays open until the render() after the save. */
 @media (min-width: 1025px) {
   #board.board { display: flex; gap: 14px; align-items: flex-start; }
   #board .col { flex: 1 1 270px; min-width: 270px; }
-  body:not(.board-dragging) #board .col.col-empty {
+  body:not(.board-dragging) #board .col.col-empty:not(.col-landing) {
     flex: 0 0 48px; min-width: 0; width: 48px;
     background: transparent; box-shadow: none; border-style: dashed;
   }
-  body:not(.board-dragging) #board .col-empty .col-body { display: none; }
-  body:not(.board-dragging) #board .col-empty .col-head {
+  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-body { display: none; }
+  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-head {
     writing-mode: vertical-rl; justify-content: flex-start; gap: 10px;
     padding: 14px 0; border-bottom: 0; white-space: nowrap;
   }
-  body:not(.board-dragging) #board .col-empty .col-head .n { margin: 0; }
+  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-head .n { margin: 0; }
 }
 .board {
   display: grid;
@@ -2134,7 +2135,7 @@ html[data-font="dyslexic"] .fx-md { font-family: var(--read-font); letter-spacin
 .fx-props dd { margin: 0; word-break: break-word; }
 .fx-source {
   margin: 0; padding: 14px 0 60px; min-height: 100%; box-sizing: border-box;
-  font-family: var(--mono-font); font-size: calc(var(--t-xs) * var(--fs)); line-height: 1.6;
+  font-family: var(--mono-font); font-size: max(var(--t-xs), calc(var(--t-xs) * var(--fs))); line-height: 1.6;
   counter-reset: ln; tab-size: 4; color: var(--text);
 }
 .fx-source .ln { display: block; min-height: 1.6em; padding: 0 20px 0 64px; white-space: pre-wrap; word-break: break-word; position: relative; }
@@ -2143,7 +2144,7 @@ html[data-font="dyslexic"] .fx-md { font-family: var(--read-font); letter-spacin
 .fx-edit-box {
   flex: 1; width: 100%; min-height: 240px; box-sizing: border-box; resize: none; border: 0; outline: none;
   padding: 14px 20px 60px; background: var(--bg); color: var(--text);
-  font-family: var(--mono-font); font-size: calc(var(--t-xs) * var(--fs)); line-height: 1.6; tab-size: 4;
+  font-family: var(--mono-font); font-size: max(var(--t-xs), calc(var(--t-xs) * var(--fs))); line-height: 1.6; tab-size: 4;
 }
 .fx-edit-note {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; font-size: var(--t-xs);
