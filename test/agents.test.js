@@ -153,3 +153,27 @@ test('the recall hook command is a no-op where node or the script is missing', (
   assert.equal(noNode.status, 0);
   assert.equal(noNode.stderr, '');
 });
+
+test('kickoffPrompt opens with /i-have-adhd for Claude Code when that skill is installed', () => {
+  const home = tmpHome();
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), A.KICKOFF_PROMPT, 'no skill installed: the plain prompt');
+  fs.mkdirSync(path.join(home, '.claude', 'skills', 'i-have-adhd'), { recursive: true });
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), A.KICKOFF_PROMPT, 'an empty skill folder is not the skill');
+  fs.writeFileSync(path.join(home, '.claude', 'skills', 'i-have-adhd', 'SKILL.md'), '---\nname: i-have-adhd\n---\n');
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), `/i-have-adhd ${A.KICKOFF_PROMPT}`);
+  assert.equal(A.startCommand(A.PROFILES.claude, A.kickoffPrompt(A.PROFILES.claude, home)), `claude '/i-have-adhd ${A.KICKOFF_PROMPT}'`);
+});
+
+test('kickoffPrompt leaves other agents, and a missing home, on the plain prompt', () => {
+  const home = tmpHome();
+  fs.mkdirSync(path.join(home, '.claude', 'skills', 'i-have-adhd'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'skills', 'i-have-adhd', 'SKILL.md'), 'x');
+  assert.equal(A.kickoffPrompt(A.PROFILES.cursor, home), A.KICKOFF_PROMPT);
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, undefined), A.KICKOFF_PROMPT);
+  assert.equal(A.kickoffPrompt(null, home), A.KICKOFF_PROMPT);
+});
+
+test('the check-in asks for a few short lines', () => {
+  assert.match(A.KICKOFF_PROMPT, /few short lines/);
+  assert.match(A.KICKOFF_PROMPT, /until I say so/);
+});

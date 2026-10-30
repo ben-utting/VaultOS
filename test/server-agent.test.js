@@ -54,7 +54,7 @@ test('agent claude reports installed and a start command', async (t) => {
   assert.equal(g.body.profile, 'claude');
   assert.equal(g.body.installed, true);
   assert.equal(g.body.hooks, 'claude');
-  assert.ok(g.body.startCommand.startsWith("claude 'Catch me up on this task."));
+  assert.ok(g.body.startCommand.startsWith("claude 'Catch me up on this task"));
   assert.deepEqual(r.body, g.body);
 });
 

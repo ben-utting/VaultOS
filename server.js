@@ -42,7 +42,7 @@ const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup')
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
-const { PROFILES, KICKOFF_PROMPT, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
+const { PROFILES, kickoffPrompt, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -1048,7 +1048,7 @@ app.get('/api/me', (req, res) => {
     authed: true,
     ...(localRead ? { localRead: true } : {}),
     features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead) },
-    agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, KICKOFF_PROMPT) } : null,
+    agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)) } : null,
   });
 });
 
@@ -1467,7 +1467,7 @@ async function agentStatus() {
   if (!profile) return { profile: 'none', label: null, installed: null, startCommand: null, install: null, login: null, hooks: null };
   return {
     profile: profile.id, label: profile.label, installed: await isInstalled(profile),
-    startCommand: startCommand(profile, KICKOFF_PROMPT),
+    startCommand: startCommand(profile, kickoffPrompt(profile)),
     install: profile.install || null, login: profile.login || null, hooks: profile.hooks,
   };
 }
