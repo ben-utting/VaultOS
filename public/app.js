@@ -1166,6 +1166,12 @@ function setMode(mode) {
   $('search').value = { kb: STATE.kb.query, files: FX.query }[mode] ?? STATE.query;
   $('search').classList.toggle('hidden', mode === 'today');   // nothing to search on Today
   document.body.dataset.mode = mode;
+  // Today and Files cover the whole vault, so the workspace chip still shows where Board and KB are but
+  // reads as not applying here. It stays clickable: picking one is how you choose where you land next.
+  const wsOff = mode === 'today' || mode === 'files';
+  $('ws-chip').classList.toggle('ws-chip-off', wsOff);
+  $('ws-chip').title = wsOff ? 'Today and Files cover the whole vault' : '';
+  closeWsMenu({ focus: false });
   closeSheet();   // its folder/column sections depend on the mode (see secAvailable)
   updateFilterBadge();
   if (mode === 'today') Today.show(); else Today.hide();   // Today.show() fills #count from its payload
@@ -2066,16 +2072,82 @@ document.addEventListener('visibilitychange', pollBoard);
 window.addEventListener('focus', pollBoard);
 
 // ---------- Workspace switcher ----------
-// Lives in the Settings sheet (Workspace section) rather than as a pill in the header, so the
-// header is the same shape in every mode. The popover lists the full registry:
-// click a row to switch to it.
+// The chip in the header (#ws-chip) names the workspace Board and Knowledge Base are showing and opens a
+// menu of the visible ones; Settings → Workspaces has the same pick plus renaming, reordering and hiding.
+// The chip is always present, dimmed on Today and Files (they cover the whole vault, see setMode), precisely
+// so the header is the same shape in every mode. With one workspace there is nothing to pick: it names it
+// and opens nothing. The full registry comes from /api/workspaces, the hidden ones left out.
 let WORKSPACE_LIST = [];
 
 function renderWorkspaceSwitcher() {
   const cur = WORKSPACE_LIST.find((w) => w.key === STATE.workspace);
   $('ws-current').textContent = cur ? cur.label : '';
+  const chip = $('ws-chip');
+  const pick = WORKSPACE_LIST.length > 1;
+  chip.classList.toggle('hidden', !cur);   // nothing to name until /api/workspaces has answered
+  chip.classList.toggle('ws-chip-single', !!cur && !pick);
+  chip.querySelector('.ws-chip-label').textContent = cur ? cur.label : '';
+  if (pick) { chip.setAttribute('aria-haspopup', 'menu'); chip.setAttribute('aria-expanded', String(wsMenuOpen())); }
+  else { chip.removeAttribute('aria-haspopup'); chip.removeAttribute('aria-expanded'); closeWsMenu({ focus: false }); }
+  if (wsMenuOpen()) renderWsMenu();
   if (secOpen('ws')) renderWsList();
 }
+
+// The chip's menu. Escape and a click outside close it, like the Settings sheet; ↑/↓ move, Enter picks.
+const wsMenuOpen = () => !$('ws-menu').classList.contains('hidden');
+function renderWsMenu() {
+  $('ws-menu').innerHTML = WORKSPACE_LIST.map((w) => `
+    <button type="button" role="menuitemradio" aria-checked="${w.key === STATE.workspace}" data-ws="${esc(w.key)}"><span>${esc(w.label)}</span></button>`).join('');
+}
+function openWsMenu() {
+  if (WORKSPACE_LIST.length < 2 || wsMenuOpen()) return;
+  renderWsMenu();
+  const menu = $('ws-menu');
+  menu.classList.remove('hidden');
+  const c = $('ws-chip').getBoundingClientRect();
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(8, Math.min(c.left, window.innerWidth - r.width - 8)) + 'px';
+  menu.style.top = (c.bottom + 6) + 'px';
+  $('ws-chip').setAttribute('aria-expanded', 'true');
+  (menu.querySelector('[aria-checked="true"]') || menu.querySelector('button')).focus();
+}
+// focus: false when the caller is moving on (a mode switch, a resize), where handing focus back to the
+// chip would be the wrong place for it.
+function closeWsMenu({ focus = true } = {}) {
+  if (!wsMenuOpen()) return;
+  $('ws-menu').classList.add('hidden');
+  $('ws-chip').setAttribute('aria-expanded', 'false');
+  if (focus) $('ws-chip').focus();
+}
+$('ws-chip').addEventListener('click', () => { if (wsMenuOpen()) closeWsMenu(); else openWsMenu(); });
+$('ws-chip').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' && !wsMenuOpen() && WORKSPACE_LIST.length > 1) { e.preventDefault(); openWsMenu(); }
+});
+$('ws-menu').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-ws]');
+  if (!b) return;
+  closeWsMenu();
+  setWorkspace(b.dataset.ws);
+});
+$('ws-menu').addEventListener('keydown', (e) => {
+  const items = [...$('ws-menu').querySelectorAll('button')];
+  const i = items.indexOf(document.activeElement);
+  const to = { ArrowDown: (i + 1) % items.length, ArrowUp: (i - 1 + items.length) % items.length, Home: 0, End: items.length - 1 }[e.key];
+  if (to !== undefined) { e.preventDefault(); items[to].focus(); }
+  else if (e.key === 'Tab') closeWsMenu({ focus: false });
+});
+// Window capture, like the Settings sheet's: one Escape closes the menu and nothing behind it (the drawer).
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && wsMenuOpen()) { e.preventDefault(); e.stopPropagation(); closeWsMenu(); }
+}, true);
+// A click elsewhere closes it. Focus goes back to the chip unless the click landed on something that
+// takes focus itself (a search box): that click has already moved it, and it stays there.
+document.addEventListener('click', (e) => {
+  if (!wsMenuOpen() || $('ws-menu').contains(e.target) || $('ws-chip').contains(e.target)) return;
+  const a = document.activeElement;
+  closeWsMenu({ focus: !a || a === document.body || $('ws-menu').contains(a) });
+}, true);
+window.addEventListener('resize', () => closeWsMenu({ focus: false }));
 
 async function loadWorkspaces() {
   try { WORKSPACE_LIST = await api('/api/workspaces'); }

@@ -254,6 +254,19 @@ header {
 }
 .brand { font-family: var(--brand-font); font-weight: 600; font-size: 15px; letter-spacing: .01em; color: var(--text); }
 .brand-os { color: var(--brand); }
+/* The workspace chip: which workspace Board and Knowledge Base are showing, and the way to change it. A .ghost
+   button (its border and hover), with a --text label and a --muted chevron. */
+.ws-div { flex: none; width: 1px; height: 18px; background: var(--line); }
+header:has(#ws-chip.hidden) .ws-div { display: none; }
+header button.ws-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;   /* beats the touch rule's 12px */
+  white-space: nowrap;
+}
+.ws-chip-label { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.ws-chip-chev { width: 12px; height: 12px; flex: none; }   /* currentColor: --muted, --text on hover */
+.ws-chip-single { cursor: default; }
+.ws-chip-single .ws-chip-chev { display: none; }
+.ws-chip-off .ws-chip-label { color: var(--muted); }   /* Today and Files: not the workspace you are looking at */
 .spacer { flex: 1; }
 .count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
 /* Today's running timer, in every mode (today.js). Gold for focus, blue for a break, quiet when paused.
@@ -881,6 +894,21 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .ws-pick { flex: 1; color: var(--text); }
 .ws-row.active { background: color-mix(in srgb, var(--brand) 14%, transparent); }
 .ws-row.active .ws-pick { color: var(--brand); font-weight: 600; }
+/* The chip's dropdown. The same surface as the Files right-click menu. */
+.ws-menu {
+  position: fixed; z-index: 70; min-width: 180px; max-width: calc(100vw - 16px); padding: 4px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
+  animation: pop-in 120ms var(--ease-out);
+}
+.ws-menu button {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 6px 10px; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.ws-menu button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-menu button:hover, .ws-menu button:focus-visible { background: var(--panel-2); outline: none; }
+.ws-menu button[aria-checked="true"] { background: var(--panel-2); color: var(--text); }   /* Task 5 gives this the shared "selected" look */
 
 /* Settings → Boards, Features, Agent and Password. The fields, switches and agent cards are the setup
    page's (.su-* under "Setup" below), so a setting looks the same in both places. */
@@ -1469,7 +1497,16 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 @media (max-width: 1180px) {
   /* A hardcoded 260px is the first thing to overflow — let it take what's left. */
   header input[type="search"] { width: auto; flex: 1 1 150px; min-width: 110px; }
-
+  /* The workspace chip took ~110px of this row. Only the search box gives way now: without this "Sign out" and
+     the count broke onto two lines and the header grew 62px → 81px between 861px and 1180px. */
+  #logout, .count, #setbtn { white-space: nowrap; flex: none; }
+}
+/* The last 100px before the two-row layout takes over at 860px: the total (repeated on every column head) and the
+   divider give way, and a long workspace name is cut earlier, so the one row neither wraps nor scrolls sideways. */
+@media (min-width: 861px) and (max-width: 960px) {
+  header .count, header .ws-div { display: none; }
+  .ws-chip-label { max-width: 14ch; }
+  header input[type="search"] { min-width: 80px; }
 }
 
 @media (max-width: 860px) {
@@ -1477,7 +1514,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   /* Zero-height full-width flex item = a forced line break. Row one is identity
      and tools; row two is the two things actually touched all day. */
   header::after { content: ""; flex: 0 0 100%; height: 8px; order: 7; }
-  .brand { order: 1; }
+  .brand, .ws-div, .ws-chip { order: 1; }
   header .spacer { order: 4; }
   .count, .today-chip { order: 5; }
   #refresh, #termbtn, #setbtn, #logout { order: 6; }
@@ -1489,7 +1526,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 @media (min-width: 861px) and (max-width: 1180px) {
   header:has(> .today-chip:not(.hidden)) { flex-wrap: wrap; row-gap: 0; padding: 10px 12px; }
   header:has(> .today-chip:not(.hidden))::after { content: ""; flex: 0 0 100%; height: 8px; order: 7; }
-  header:has(> .today-chip:not(.hidden)) .brand { order: 1; }
+  header:has(> .today-chip:not(.hidden)) :is(.brand, .ws-div, .ws-chip) { order: 1; }
   header:has(> .today-chip:not(.hidden)) .spacer { order: 4; }
   header:has(> .today-chip:not(.hidden)) :is(.count, .today-chip) { order: 5; }
   header:has(> .today-chip:not(.hidden)) :is(#refresh, #termbtn, #setbtn, #logout) { order: 6; }
@@ -1592,7 +1629,9 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
     flex-wrap: nowrap; gap: 8px;
     padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
   }
-  header::after, header .spacer, .modes, .brand { display: none; }
+  header::after, header .spacer, .modes, .brand, .ws-div { display: none; }
+  /* The wordmark is gone, so the chip leads the row; the 38vw cap on its label keeps the search box a usable width. */
+  header button.ws-chip { order: 0; padding: 2px 6px 2px 8px; }
   header input[type="search"] { order: 1; flex: 1 1 auto; min-width: 0; }
   .clear-filters { order: 2; padding: 4px 8px; }
   .today-chip { order: 2; padding: 4px 8px; }
@@ -1771,6 +1810,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    still gets fingers, and a narrow desktop window still gets a mouse. */
 @media (pointer: coarse) {
   button.ghost, #setbtn { min-height: 40px; padding: 8px 12px; }
+  .ws-menu button { min-height: 40px; }
   /* ...but the drawer's pair stays square — a 40px-tall, 12px-padded pill would
      unbalance them against each other again. */
   #d-refresh, #d-close, .d-act { width: 40px; height: 40px; min-height: 40px; padding: 0; }
@@ -3080,7 +3120,10 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 @media (max-width: 700px) {
   /* No search box on Today, so the phone header would be two buttons stuck at its left end.
      The wordmark takes that end back and pushes the tools right, as in the mockup. */
-  body[data-mode="today"] header .brand { display: block; margin-right: auto; }
+  body[data-mode="today"] header .brand { display: block; order: 0; }
+  body[data-mode="today"] header .ws-div { display: block; order: 0; }
+  body[data-mode="today"] header:has(#ws-chip.hidden) .ws-div { display: none; }
+  body[data-mode="today"] header .ws-chip { margin-right: auto; }
   #today-view { padding-bottom: calc(var(--mnav-h) + 24px); }
   .td-page { padding: 12px; gap: 12px; }
   .td-cols, .td-side { gap: 12px; }
