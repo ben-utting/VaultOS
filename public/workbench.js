@@ -18,6 +18,8 @@ function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch
 
 const FX = {
   loaded: false,
+  rootState: 'loading',                              // the vault's top folder: 'loading' | 'ok' | 'error' (first load only)
+  recentState: 'loading',                            // "Changed recently": 'loading' | 'ok' | 'error' (first load and its Retry)
   tree: new Map(),                                   // dir path ('' = root) -> items
   expanded: new Set(lsGet(FX_KEYS.expanded, [])),
   tabs: lsGet(FX_KEYS.tabs, []),                     // [{ path, pinned }]
@@ -77,6 +79,7 @@ async function fxLoadDir(dir) {
 async function fxLoadRecent() {
   const d = await api('/api/fs/recent?hours=' + FX.hours);
   FX.recent = d.items;
+  FX.recentState = 'ok';   // any success (refresh, poll, hours change) also clears an earlier error
   // Anything open in a tab that's newer on disk than what we rendered is stale.
   for (const r of d.items) {
     const f = FX.files.get(r.path);
@@ -91,21 +94,50 @@ async function fxLoadRecent() {
   }
 }
 
-async function fxLoad() {
+// First load, in stages: the root folder paints the tree (and restores the open tab) as soon as it arrives;
+// the remembered open folders and "Changed recently" fill in after it, each in its own place. A root failure
+// is shown in the pane with a Retry (a toast would be gone before anyone read it); later refreshes keep the toast.
+let fxLoading = null;
+function fxLoad() {
+  if (!fxLoading) fxLoading = fxLoadStaged().finally(() => { fxLoading = null; });
+  return fxLoading;
+}
+async function fxLoadStaged() {
   $('fx-recent-hours').value = String(FX.hours);
   applyRecentOpen();
+  FX.rootState = 'loading';
+  renderView();
+  fxLoadRecentInPlace();   // independent of the root: starts now, lands (or fails) in its own section
   try {
     await fxLoadDir('');
-    // Restore expanded folders, dropping any that have since moved or gone.
-    await Promise.all([...FX.expanded].map((d) => fxLoadDir(d).catch(() => FX.expanded.delete(d))));
-    lsSet(FX_KEYS.expanded, [...FX.expanded]);
-    await fxLoadRecent();
-  } catch (err) { toast(err.message); return; }
+  } catch {
+    FX.rootState = 'error';
+    renderView();
+    return;
+  }
+  FX.rootState = 'ok';
   FX.loaded = true;
   FX.tabs = FX.tabs.filter((t) => t && t.path);
   if (FX.active && !FX.tabs.some((t) => t.path === FX.active)) FX.active = FX.tabs[0] ? FX.tabs[0].path : null;
   fxRenderAll();
   if (FX.active) fxShow(FX.active).catch(() => fxClose(FX.active));
+  // Restore expanded folders in the background, dropping any that have since moved or gone.
+  Promise.all([...FX.expanded].map((d) => fxLoadDir(d).catch(() => FX.expanded.delete(d)))).then(() => {
+    lsSet(FX_KEYS.expanded, [...FX.expanded]);
+    renderTree();
+  });
+}
+
+// "Changed recently" on its own: Recent shows Loading…, then the list or a Retry; nothing else repaints.
+async function fxLoadRecentInPlace() {
+  FX.recentState = 'loading';
+  renderRecent();
+  try { await fxLoadRecent(); } catch { FX.recentState = 'error'; }
+  renderRecent();
+  if (FX.loaded) {   // the root beat us: tabs show a changed-on-disk dot, and the welcome pane lists "Just changed"
+    renderTabs();
+    if (!FX.active) renderView();
+  }
 }
 
 async function fxRefresh() {
@@ -137,6 +169,11 @@ function applyRecentOpen() {
 
 function renderRecent() {
   const el = $('fx-recent');
+  if (FX.recentState === 'loading') { el.innerHTML = '<p class="fx-empty">Loading…</p>'; return; }
+  if (FX.recentState === 'error') {
+    el.innerHTML = '<p class="fx-empty">Couldn\'t load recent changes</p><button type="button" class="ghost fx-retry" data-retry="recent">Retry</button>';
+    return;
+  }
   if (!FX.recent.length) {
     el.innerHTML = `<p class="fx-empty">Nothing changed in the last ${FX.hours === 1 ? 'hour' : FX.hours === 24 ? '24 hours' : '7 days'}.</p>`;
     return;
@@ -152,6 +189,7 @@ function renderRecent() {
 }
 
 $('fx-recent').addEventListener('click', (e) => {
+  if (e.target.closest('[data-retry]')) { fxLoadRecentInPlace(); return; }
   const b = e.target.closest('[data-path]');
   if (b) fxOpen(b.dataset.path);   // the tree stays put; the crosshair in the file bar reveals it
 });
@@ -479,6 +517,13 @@ function renderView({ keepScroll = false } = {}) {
   // would make the browser lay the whole grid out again.
   if (window.SheetFiles) SheetFiles.beforeViewChange(p || null, grid ? 'grid' : f ? f.kind : null);
   view.classList.toggle('fx-view-sheet', grid);
+  if (FX.rootState !== 'ok') {   // first load: nothing to show yet, or the root failed
+    bar.classList.add('hidden');
+    view.innerHTML = FX.rootState === 'error'
+      ? '<p class="fx-empty fx-pad">Couldn\'t open the vault</p><button type="button" class="ghost fx-retry fx-pad-btn" data-retry="root">Retry</button>'
+      : '<p class="fx-empty fx-pad">Loading the vault…</p>';
+    return;
+  }
   if (!p) {
     bar.classList.add('hidden');
     view.innerHTML = fxWelcome();
@@ -605,6 +650,7 @@ function fxWelcome() {
 }
 
 $('fx-view').addEventListener('click', (e) => {
+  if (e.target.closest('[data-retry="root"]')) { fxLoad(); return; }
   const b = e.target.closest('.fx-welcome-list [data-path]');
   if (b) fxOpen(b.dataset.path, { pin: true, reveal: true });
 });
