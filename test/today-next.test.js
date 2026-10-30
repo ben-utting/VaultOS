@@ -31,13 +31,13 @@ test('board fallback takes in-progress only', () => {
       { title: 'R', path: 'r.md', status: 'review', mtime: 8 },
       { title: 'P', path: 'p.md', status: 'in-progress', mtime: 1 },
     ],
-    wsLabel: 'Sucden',
+    wsLabel: 'Work',
   });
   assert.equal(n.kind, 'board');
   assert.equal(n.title, 'P');
   assert.equal(n.path, 'p.md');
   assert.equal(n.target, 'task: P');
-  assert.equal(n.wsLabel, 'Sucden');
+  assert.equal(n.wsLabel, 'Work');
 });
 
 test('needs-you beats a newer task', () => {
