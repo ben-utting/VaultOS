@@ -953,13 +953,20 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .ws-menu button:hover { background: var(--panel-2); }
 /* Keyboard focus is a ring outside the item, so it never reads as the selected ring inside it. */
 .ws-menu button:focus-visible { background: var(--panel-2); outline: 2px solid var(--accent); outline-offset: 1px; }
-/* The one "selected" look: a quiet fill and a 1px accent ring. Gold fills are for the mode pill and
-   primary buttons only. Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
+/* The one "selected" look: a gold tint on the --panel-2 track, no ring. Gold marks have one job each: a ring
+   is keyboard focus, a tint is selected, an underline is today, solid gold is the brand and the primary action.
+   16% is the smallest tint that steps 1.2:1 off the track in both themes (look-tokens.test.js checks it, and
+   --text on it). Later selectors (a menuitemradio, an icon tile) join this list and use the same percentage.
+   Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
 .seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"] {
-  background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); color: var(--text); box-shadow: none;
 }
-/* In the menu the ring is the only other cue, so the selected item is also bolder than a focused one. */
+/* The tint is the selected cue; in the menu the item is also bolder, and hover or keyboard focus keep the tint
+   (focus adds its own ring) so a focused item still reads as selected when it is. */
 .ws-menu [aria-checked="true"] { font-weight: 600; }
+.ws-menu button[aria-checked="true"]:hover, .ws-menu button[aria-checked="true"]:focus-visible {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
+}
 
 /* Settings → Workspaces, Features, Agent and Password. The fields, switches and agent cards are the setup
    page's (.su-* under "Setup" below), so a setting looks the same in both places. */
@@ -3048,7 +3055,8 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-cell { width: 22px; height: 22px; padding: 0; cursor: pointer; border-radius: 6px; border: 1.5px solid var(--line); background: transparent; display: grid; place-items: center; color: transparent; }
 .td-cell .icon { width: 12px; height: 12px; stroke-width: 3; }
 .td-cell:hover { border-color: var(--done); }
-.td-cell.sel { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Today in the habit grid is an underline (the weekday label above is gold and bold); the ring is keyboard focus only. */
+.td-cell.sel { border-bottom: 2px solid var(--brand); }
 .td-dl { width: 22px; text-align: center; font-size: var(--t-xs); color: var(--muted-2); line-height: 1.1; }
 .td-dl.sel { color: var(--accent); font-weight: 600; }
 .td-streak { grid-area: streak; text-align: right; line-height: 1.1; }
@@ -3079,7 +3087,7 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-hf-icon { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; cursor: pointer; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--panel); }
 .td-hf-icon .icon { width: 17px; height: 17px; }
 .td-hf-icon:hover { color: var(--text); }
-.td-hf-icon[aria-checked="true"] { color: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.td-hf-icon[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); color: var(--text); box-shadow: none; }
 .td-hf-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .td-hform .td-task-msg { margin: 0; }
 .td-hf-del { margin-left: auto; color: var(--danger-fg); }
@@ -3409,8 +3417,9 @@ body.su::before {
 }
 .ap-tile:hover { border-color: var(--muted); }
 .ap-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.ap-tile[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel-2)); }
 .ap-minor .ap-tile { background: transparent; border-style: dashed; }
+/* After .ap-minor, so a selected minor tile gets the tint too. */
+.ap-tile[aria-checked="true"] { background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); color: var(--text); box-shadow: none; }
 .ap-txt { display: grid; min-width: 0; }
 .ap-nm { font-weight: 600; font-size: var(--t-md); overflow-wrap: anywhere; }
 .ap-by { font-size: var(--t-xs); color: var(--muted); overflow-wrap: anywhere; }

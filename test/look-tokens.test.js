@@ -269,17 +269,26 @@ test('only the mode pill and primary buttons fill with gold', () => {
   assert.deepEqual(gone, [], `allowlisted but no longer gold (tidy the list):\n  ${gone.join('\n  ')}`);
 });
 
+// The shared selected rule: a gold tint on the --panel-2 track, no ring. Every selector that joins it
+// (later ones too, e.g. a menuitemradio) is listed here and must declare the same percentage.
+const SELECTED = ['.seg button.on', '.viewseg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]',
+  '.td-hf-icon[aria-checked="true"]', '.ap-tile[aria-checked="true"]'];   // the icon picker and the agent cards
+const TINT = /^color-mix\(in srgb, var\(--accent\) (\d+)%, var\(--panel-2\)\)$/;
+const lastDecl = (s, prop) => BLOCKS.filter((b) => topLevel(b) && sel(b).includes(s)).flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();
+// The percentage the selected rule uses (read from the first selector; the test below makes the rest match it).
+const tintPercent = () => { const d = lastDecl(SELECTED[0], 'background'); const m = d && TINT.exec(d.value); return m ? Number(m[1]) : NaN; };
+
 test('selected states share one treatment', () => {
-  const want = [
-    ['background', 'var(--panel-2)'],
-    ['color', 'var(--text)'],
-    ['box-shadow', 'inset 0 0 0 1px var(--accent)'],
-  ];
   const lacking = [];
-  for (const s of ['.seg button.on', '.viewseg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]']) {
-    const blocks = BLOCKS.filter((b) => topLevel(b) && sel(b).includes(s));
-    for (const [prop, value] of want) {
-      const last = blocks.flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();
+  const n = tintPercent();
+  assert.ok(n >= 16, `${SELECTED[0]} background should be color-mix(in srgb, var(--accent) N%, var(--panel-2)) with N >= 16`);
+  for (const s of SELECTED) {
+    for (const [prop, value] of [
+      ['background', `color-mix(in srgb, var(--accent) ${n}%, var(--panel-2))`],
+      ['color', 'var(--text)'],
+      ['box-shadow', 'none'],
+    ]) {
+      const last = lastDecl(s, prop);
       if (!last || last.value !== value) lacking.push(`${s} { ${prop}: ${last ? last.value : '(none)'} } should be ${value}`);
     }
   }
@@ -287,12 +296,62 @@ test('selected states share one treatment', () => {
   // Radios follow the interaction colour, not the brand.
   const radio = BLOCKS.find((b) => topLevel(b) && sel(b).includes('.ws-row input[type="radio"]') && b.decls.some((d) => d.prop === 'accent-color'));
   assert.equal(radio && radio.decls.find((d) => d.prop === 'accent-color').value, 'var(--accent)');
-  // In the menu the selected item is also bolder, so "selected" doesn't rest on the ring alone.
-  const weight = BLOCKS.filter((b) => topLevel(b) && sel(b).includes('.ws-menu [aria-checked="true"]')).flatMap((b) => b.decls).filter((d) => d.prop === 'font-weight').pop();
+  // In the menu the selected item is also bolder, so "selected" doesn't rest on the tint alone.
+  const weight = lastDecl('.ws-menu [aria-checked="true"]', 'font-weight');
   assert.equal(weight && weight.value, '600');
   // The menu item that has keyboard focus must not look like the selected one.
-  const outline = BLOCKS.filter((b) => topLevel(b) && sel(b).includes('.ws-menu button:focus-visible')).flatMap((b) => b.decls).filter((d) => d.prop === 'outline').pop();
+  const outline = lastDecl('.ws-menu button:focus-visible', 'outline');
   assert.ok(outline && outline.value === '2px solid var(--accent)', '.ws-menu button:focus-visible keeps the 2px accent ring');
+});
+
+test('selected tint stands off its track', () => {
+  const n = tintPercent();
+  assert.ok(n >= 16, 'the selected rule must be a --accent tint of at least 16%');
+  const misses = [];
+  for (const [name, t] of [['dark', DARK], ['sepia', SEPIA]]) {
+    const tint = mix(t['--accent'], t['--panel-2'], n / 100);
+    const step = ratio(tint, t['--panel-2']);
+    if (step < 1.2) misses.push(`${name} tint ${tint} vs track ${t['--panel-2']}: ${step.toFixed(2)} (needs 1.2)`);
+    const text = ratio(t['--text'], tint);
+    if (text < 4.5) misses.push(`${name} --text ${t['--text']} on tint ${tint}: ${text.toFixed(2)} (needs 4.5)`);
+  }
+  assert.deepEqual(misses, [], misses.join('\n'));
+});
+
+// ---------- the gold ring means keyboard focus, and nothing else ----------
+test('the gold ring means focus only', () => {
+  const GOLD = /var\(--(accent|brand)\)/;
+  const FOCUS = /:focus(-visible|-within)?\b/;
+  // Gold outlines and inset rings that are not focus, written down with the reason each stays.
+  const ALLOWED = {
+    '.col-body.over': 'a Board column highlighting as the drop target while a card is dragged over it',
+    '.fx-row.fx-drop': 'the Files drop target while files are dragged in from the desktop (dashed, with a tint)',
+    '.fx-tree.fx-drop': 'the Files drop target while files are dragged in from the desktop (dashed, with a tint)',
+    '.fx-view.fx-drop': 'the Files drop target while files are dragged in from the desktop (dashed, with a tint)',
+  };
+  const ringy = (d) => GOLD.test(d.value) && (d.prop === 'outline' || (d.prop === 'box-shadow' && /inset 0 0 0/.test(d.value)));
+  const found = new Set();
+  const offending = [];
+  for (const b of BLOCKS) {
+    if (!b.decls.some(ringy)) continue;
+    for (const s of sel(b)) {
+      if (FOCUS.test(s)) continue;
+      if (Object.prototype.hasOwnProperty.call(ALLOWED, s)) { found.add(s); continue; }
+      offending.push(`${where(b).replace(b.prelude, s)}`);
+    }
+  }
+  assert.deepEqual(offending, [], `gold rings outside :focus (use the tint for selected, the underline for today):\n  ${offending.join('\n  ')}`);
+  const gone = Object.keys(ALLOWED).filter((s) => !found.has(s));
+  assert.deepEqual(gone, [], `allowlisted but no longer a gold ring (tidy the list):\n  ${gone.join('\n  ')}`);
+});
+
+test('today is marked by an underline', () => {
+  const cell = BLOCKS.filter((b) => topLevel(b) && sel(b).includes('.td-cell.sel')).flatMap((b) => b.decls);
+  assert.ok(!cell.some((d) => d.prop === 'outline'), '.td-cell.sel must not draw an outline (that is the focus ring)');
+  assert.equal(cell.filter((d) => d.prop === 'border-bottom').pop()?.value, '2px solid var(--brand)');
+  // The weekday label above it stays gold and bold.
+  assert.equal(lastDecl('.td-dl.sel', 'color')?.value, 'var(--accent)');
+  assert.equal(lastDecl('.td-dl.sel', 'font-weight')?.value, '600');
 });
 
 // Resolve a token value to a hex: a hex, var(--x), or color-mix(in srgb, A p%, B) of those.
