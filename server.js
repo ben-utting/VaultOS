@@ -792,7 +792,7 @@ function setFrontmatterField(raw, key, value) {
   let fm = m[2];
   const quoted = /[:#"\\]/.test(value) || value !== value.trim()
     ? `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : value;
-  fm = re.test(fm) ? fm.replace(re, `$1${quoted}`) : `${fm}\n${key}: ${quoted}`;
+  fm = re.test(fm) ? fm.replace(re, (_, p1) => p1 + quoted) : `${fm}\n${key}: ${quoted}`;
   return raw.slice(0, m[1].length) + fm + raw.slice(m[1].length + m[2].length);
 }
 

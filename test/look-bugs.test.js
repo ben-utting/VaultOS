@@ -85,6 +85,9 @@ test('a value with a double quote is written escaped', () => {
     assert.ok(back.split('\n').includes('decision_note: "C:\\\\x"'), back);
     assert.equal(parseFrontmatter(back).meta.decision_note, 'C:\\x');
     assert.equal(parseFrontmatter("---\nk: 'it''s'\n---\n").meta.k, "it's");
+    // $-patterns in a value are text, not replacement tokens ($& would paste the whole line back in).
+    const dollar = setFrontmatterField(raw, 'decision_note', "costs $& and $' and $1");
+    assert.equal(parseFrontmatter(dollar).meta.decision_note, "costs $& and $' and $1");
   } finally {
     for (const [k, v] of Object.entries(keep)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     fs.rmSync(root, { recursive: true, force: true });

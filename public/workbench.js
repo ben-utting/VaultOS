@@ -99,7 +99,7 @@ async function fxLoadRecent() {
 // is shown in the pane with a Retry (a toast would be gone before anyone read it); later refreshes keep the toast.
 let fxLoading = null;
 function fxLoad() {
-  if (!fxLoading) fxLoading = fxLoadStaged().finally(() => { fxLoading = null; });
+  if (!fxLoading) fxLoading = fxLoadStaged().catch((err) => console.warn(err)).finally(() => { fxLoading = null; });   // nobody awaits it: a render throw must not go unhandled
   return fxLoading;
 }
 async function fxLoadStaged() {
@@ -110,7 +110,8 @@ async function fxLoadStaged() {
   fxLoadRecentInPlace();   // independent of the root: starts now, lands (or fails) in its own section
   try {
     await fxLoadDir('');
-  } catch {
+  } catch (err) {
+    console.warn(err);
     FX.rootState = 'error';
     renderView();
     return;
