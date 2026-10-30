@@ -62,7 +62,7 @@ const boards = () => (SETTINGS() ? SETTINGS().boards : []);
 const defaultBoard = () => boards().find((b) => !b.hidden) || boards()[0];
 function resolveWorkspace(key) {
   const b = boards().find((x) => x.key === key) || defaultBoard();
-  if (!b) throw Object.assign(new Error('No boards yet. Finish setup first.'), { status: 409 });
+  if (!b) throw Object.assign(new Error('No workspaces yet. Finish setup first.'), { status: 409 });
   return { key: b.key, dir: path.join(VAULT_DIR, b.dir), label: b.label };
 }
 
@@ -1138,9 +1138,9 @@ app.post('/api/setup/boards', async (req, res) => {
   if (!sessionAuthed(req)) return res.status(401).json({ error: 'Not authenticated' });
   const st = stage();
   if ((st !== 'boards' && st !== 'resume') || boards().length) {
-    return res.status(409).json({ error: 'Boards are already set up' });
+    return res.status(409).json({ error: 'Workspaces are already set up' });
   }
-  if (SETUP_BOARDS_BUSY) return res.status(409).json({ error: 'Setup is already saving your boards' });
+  if (SETUP_BOARDS_BUSY) return res.status(409).json({ error: 'Setup is already saving your workspaces' });
   SETUP_BOARDS_BUSY = true;
   try {
     await setupBoards(req, res);
@@ -1151,14 +1151,14 @@ app.post('/api/setup/boards', async (req, res) => {
 async function setupBoards(req, res) {
   const { labels, timezone } = req.body || {};
   if (!Array.isArray(labels) || labels.length < 1 || labels.length > 10) {
-    return res.status(400).json({ error: 'Give 1 to 10 board names' });
+    return res.status(400).json({ error: 'Give 1 to 10 workspace names' });
   }
   // Every board is worked out before anything is written, so one bad name creates nothing.
   let settings = SETTINGS() || settingsDefaults();
   const added = [];
   try {
     for (const label of labels) {
-      if (typeof label !== 'string') throw new Error('A board name must be text');
+      if (typeof label !== 'string') throw new Error('A workspace name must be text');
       const r = addBoard(settings, label);
       settings = r.settings;
       added.push(r.board);
@@ -1171,7 +1171,7 @@ async function setupBoards(req, res) {
   const clash = added.find((b) => folderExists(b.dir));
   if (clash) {
     return res.status(400).json({
-      error: `A folder called "${clash.dir}" already exists. Pick another name, or add it later from Settings → Boards → Add an existing folder.`,
+      error: `A folder called "${clash.dir}" already exists. Pick another name, or add it later from Settings → Workspaces → Add an existing folder.`,
     });
   }
   try {
@@ -1194,7 +1194,7 @@ app.post('/api/setup/finish', async (req, res) => {
   const s = SETTINGS();
   // After setup, Today and the timezone are changed from Settings, which manages the Today service.
   if (stage() !== 'resume') return res.status(409).json({ error: 'Setup is already finished' });
-  if (!s || !s.boards.length) return res.status(409).json({ error: 'Add a board first' });
+  if (!s || !s.boards.length) return res.status(409).json({ error: 'Add a workspace first' });
   const { today, timezone } = req.body || {};
   const next = {
     ...s,
@@ -1379,7 +1379,7 @@ async function saveBoards(settings) {
 app.post('/api/settings/boards', settingsGuard, async (req, res) => {
   try {
     const { label } = req.body || {};
-    if (typeof label !== 'string') return res.status(400).json({ error: 'A board name must be text' });
+    if (typeof label !== 'string') return res.status(400).json({ error: 'A workspace name must be text' });
     res.json(await withSettingsLock(async () => {
       const { settings, board } = addBoard(SETTINGS(), label);
       if (folderExists(board.dir)) {
@@ -1389,7 +1389,7 @@ app.post('/api/settings/boards', settingsGuard, async (req, res) => {
       return saveBoards(settings);
     }));
   } catch (err) {
-    settingsFail(res, err, 'add the board');
+    settingsFail(res, err, 'add the workspace');
   }
 });
 
@@ -1418,7 +1418,7 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
     }
     res.json(await withSettingsLock(() => saveBoards(updateBoard(SETTINGS(), req.params.key, { label, hidden, index }))));
   } catch (err) {
-    settingsFail(res, err, 'update the board');
+    settingsFail(res, err, 'update the workspace');
   }
 });
 
@@ -2872,7 +2872,7 @@ function renameRefusal(rel, isDir) {
   const base = segs[segs.length - 1].toLowerCase();
   if (!isDir && RENAME_PROTECTED_FILES.has(base)) return `${segs[segs.length - 1]} is read by name, so it cannot be renamed.`;
   if (segs.some((x) => x.toLowerCase() === '_tasks')) return 'The _tasks folder and what is inside it are read by name, so they cannot be renamed.';
-  if (isDir && segs.length === 1 && boards().some((b) => b.dir === rel)) return 'A board\'s top-level folder cannot be renamed.';
+  if (isDir && segs.length === 1 && boards().some((b) => b.dir === rel)) return 'A workspace\'s top-level folder cannot be renamed.';
   return null;
 }
 

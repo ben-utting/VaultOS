@@ -215,6 +215,6 @@ test('an unexpected failure is a generic 500 without the raw message', async (t)
   fs.writeFileSync(path.join(s.vault, '.vaultos'), 'x');
   const r = await call(s.base, 'PATCH', '/api/settings/boards/home', { cookie: s.cookie, body: { label: 'House' } });
   assert.equal(r.status, 500);
-  assert.equal(r.body.error, 'Could not update the board');
+  assert.equal(r.body.error, 'Could not update the workspace');
   assert.ok(!r.text.includes(s.vault));
 });

@@ -277,14 +277,14 @@ const para = (text) => h('p', { text });
 function folderState(f) {
   if (f.state === 'existing') {
     const n = f.boardCount;
-    return check('info', `Found ${n} board${n === 1 ? '' : 's'}`,
-      para('This folder already has VaultOS boards. They are kept as they are.'));
+    return check('info', `Found ${n} workspace${n === 1 ? '' : 's'}`,
+      para('This folder already has VaultOS workspaces. They are kept as they are.'));
   }
   if (f.state === 'has-files') {
     return check('info', 'This folder already has files',
       para('VaultOS adds its own folders next to yours. Nothing is moved or changed.'));
   }
-  return check('info', 'This folder is empty', para('Your first board goes here.'));
+  return check('info', 'This folder is empty', para('Your first workspace goes here.'));
 }
 
 function stepFolder() {
@@ -361,18 +361,18 @@ function stepBoards() {
   const list = h('div', { class: 'su-boards' });
   const err = errLine();
   const add = h('button', { type: 'button', class: 'su-add' }, icon('plus'), 'Add another');
-  const go3 = submit('Create board');
+  const go3 = submit('Create workspace');
   function sync() {
     add.classList.toggle('hidden', rows.length >= MAX_BOARDS);
     rows.forEach((r, i) => {
       r.del.classList.toggle('hidden', rows.length === 1);
-      r.input.setAttribute('aria-label', `Board ${i + 1} name`);
+      r.input.setAttribute('aria-label', `Workspace ${i + 1} name`);
     });
-    go3.textContent = rows.length > 1 ? 'Create boards' : 'Create board';
+    go3.textContent = rows.length > 1 ? 'Create workspaces' : 'Create workspace';
   }
   function addRow(value) {
     const input = h('input', { class: 'su-input', type: 'text', maxlength: '60', autocomplete: 'off', value });
-    const del = h('button', { type: 'button', class: 'su-iconbtn', 'aria-label': 'Remove this board', title: 'Remove' }, icon('x'));
+    const del = h('button', { type: 'button', class: 'su-iconbtn', 'aria-label': 'Remove this workspace', title: 'Remove' }, icon('x'));
     const r = { input, del, row: h('div', { class: 'su-board' }, input, del) };
     del.addEventListener('click', () => {
       const i = rows.indexOf(r);
@@ -391,23 +391,23 @@ function stepBoards() {
   addRow('Work');
   screen({
     numbered: true,
-    title: 'Boards',
-    intro: 'A board is a folder of task cards, each with its own Knowledge Base. Start with one or a few; you can add, rename and hide boards later in Settings.',
-    body: [h('div', { class: 'su-field' }, h('span', { class: 'su-label', text: 'Board names' }), list, err), add],
+    title: 'Workspaces',
+    intro: 'A workspace is a folder of task cards, each with its own Knowledge Base. Start with one or a few; you can add, rename and hide workspaces later in Settings.',
+    body: [h('div', { class: 'su-field' }, h('span', { class: 'su-label', text: 'Workspace names' }), list, err), add],
     foot: stepFoot(go3),
     onSubmit: async () => {
       err.textContent = '';
       const labels = rows.map((r) => r.input.value.trim());
       const blank = labels.findIndex((l) => !l);
       if (blank >= 0) {
-        err.textContent = 'Give every board a name, or remove the empty one';
+        err.textContent = 'Give every workspace a name, or remove the empty one';
         return rows[blank].input.focus();
       }
       // Clashes and bad names are the server's rules (it says which board).
       const r = await api('POST', '/api/setup/boards', { labels, timezone: TZ });
       if (r.ok) return next();
       if (overtaken(r)) return load();
-      err.textContent = errText(r, 'Could not create the boards');
+      err.textContent = errText(r, 'Could not create the workspaces');
     },
   });
 }

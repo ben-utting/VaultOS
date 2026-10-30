@@ -1364,5 +1364,5 @@ every request with 421. After a release check
 `docker logs vault-board 2>&1 | grep 'host rejected:'`, and add any legitimate host it names to
 `ALLOWED_HOSTS` (`/health` is exempt, so the healthcheck is unaffected). The migration makes
 board order alphabetical, so the default board becomes Business until Ben reorders in
-Settings → Boards. Rollback: retag `vault-board:pre-portable` as `latest`, remove the four env
+Settings → Workspaces. Rollback: retag `vault-board:pre-portable` as `latest`, remove the four env
 lines, `docker compose up -d board`; the extra `.vaultos/settings.json` is harmless to old code.
