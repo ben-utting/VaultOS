@@ -40,7 +40,7 @@ let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped
 let DRAG = null;
 // body.board-dragging is what opens the folded (empty) columns while a card is in the air.
 // It must never outlive the drag: dragend clears it, so do a drop anywhere and the repaint.
-function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); }
+function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); updateBoardNav(); }   // the rails refold: the scroll arrows follow
 document.addEventListener('dragend', endBoardDrag);
 document.addEventListener('drop', endBoardDrag);   // bubbles after a column's own drop, which has read DRAG by then
 let OPEN = null; // { path, mtime } of the task shown in the drawer
@@ -701,6 +701,8 @@ function card(t) {
     </div>`;
 }
 
+const statusLabel = (s) => { const w = s.replace('-', ' '); return w.charAt(0).toUpperCase() + w.slice(1); };
+
 function updateBoardNav() {
   const board = $('board');
   const view = $('board-view');
@@ -753,7 +755,7 @@ function render() {
       .filter((t) => t.status === s)
       .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
     return `
-      <section class="col${inCol.length ? '' : ' col-empty'}">
+      <section class="col${inCol.length ? '' : ' col-empty'}"${inCol.length ? '' : ` aria-label="${esc(statusLabel(s))}, 0 tasks" title="${esc(statusLabel(s))}, 0 tasks"`}>
         <div class="col-head">
           <span class="dot" style="background: var(--${s})"></span>
           ${esc(s.replace('-', ' '))}
@@ -774,7 +776,13 @@ function render() {
     el.addEventListener('dragstart', (e) => {
       DRAG = { path: el.dataset.path, mtime: Number(el.dataset.mtime) };
       el.classList.add('dragging');
-      document.body.classList.add('board-dragging');   // empty rails open up as drop targets
+      // After the browser has snapshotted the drag image: widening the rails inside dragstart shifts the layout
+      // first, and Safari and Firefox then drag a picture of the wrong place. The arrows follow the new width.
+      requestAnimationFrame(() => {
+        if (!DRAG) return;   // dropped or cancelled before the frame
+        document.body.classList.add('board-dragging');   // empty rails open up as drop targets
+        updateBoardNav();
+      });
       e.dataTransfer.effectAllowed = 'move';
     });
     el.addEventListener('dragend', () => { el.classList.remove('dragging'); endBoardDrag(); });
@@ -2094,6 +2102,8 @@ function renderWorkspaceSwitcher() {
   chip.classList.toggle('hidden', !cur);   // nothing to name until /api/workspaces has answered
   chip.classList.toggle('ws-chip-single', !!cur && !pick);
   chip.querySelector('.ws-chip-label').textContent = cur ? cur.label : '';
+  if (cur) chip.setAttribute('aria-label', `Workspace: ${cur.label}`); else chip.removeAttribute('aria-label');
+  if (cur && !pick) chip.setAttribute('aria-disabled', 'true'); else chip.removeAttribute('aria-disabled');
   if (pick) { chip.setAttribute('aria-haspopup', 'menu'); chip.setAttribute('aria-expanded', String(wsMenuOpen())); }
   else { chip.removeAttribute('aria-haspopup'); chip.removeAttribute('aria-expanded'); closeWsMenu({ focus: false }); }
   if (wsMenuOpen()) renderWsMenu();
@@ -2162,7 +2172,7 @@ async function loadWorkspaces() {
   // The remembered board may be hidden or gone, or never existed here (a new install, another VaultOS
   // in this browser): fall back to the first visible one, so the app never opens on a board that isn't
   // there. Before anything is loaded (startup, sign-in) that is its key and its own column choices; with
-  // a board already on screen (hidden from Settings → Boards) it is a full switch.
+  // a board already on screen (hidden from Settings → Workspaces) it is a full switch.
   const fallback = !WORKSPACE_LIST.some((w) => w.key === STATE.workspace) && WORKSPACE_LIST[0];
   if (fallback && (STATE.loaded || STATE.kb.loaded)) return setWorkspace(fallback.key);
   if (fallback) {
@@ -2242,7 +2252,7 @@ function fieldErr(id, msg) {
   if (msg) $(id).setAttribute('aria-invalid', 'true'); else $(id).removeAttribute('aria-invalid');
 }
 
-// ---------- Boards ----------
+// ---------- Workspaces ----------
 // Under the switcher: every board, hidden ones too, from /api/settings. A change goes to the server, then
 // this list and the switcher are read again. Changes queue, so each one sees the list the last one left.
 let BOARDS = { boards: [], folders: [] };
@@ -2291,7 +2301,7 @@ function renderBoardSettings() {
       + '<span class="bd-dir"></span>';
     const input = row.querySelector('.bd-label');
     input.value = b.label;
-    input.setAttribute('aria-label', `Name of board ${i + 1}`);
+    input.setAttribute('aria-label', `Name of workspace ${i + 1}`);
     for (const [act, what] of [['up', 'Move up'], ['down', 'Move down']]) {
       const btn = row.querySelector(`[data-act="${act}"]`);
       btn.title = what;
@@ -2317,7 +2327,7 @@ function renderBoardSettings() {
   sel.replaceChildren(...BOARDS.folders.map((f) => Object.assign(document.createElement('option'), { value: f, textContent: f })));
   $('bd-existing-row').classList.toggle('hidden', !BOARDS.folders.length);
   $('bd-existing-hint').textContent = BOARDS.folders.length
-    ? 'A top-level folder that isn\'t a board yet. VaultOS adds the board files it is missing and changes nothing else.'
+    ? 'A top-level folder that isn\'t a workspace yet. VaultOS adds the workspace files it is missing and changes nothing else.'
     : 'No other top-level folders to add.';
 }
 
@@ -2328,7 +2338,7 @@ function renameBoard(input) {
   const b = BOARDS.boards[boardAt(key)];
   const label = input.value.trim();
   if (!b || label === b.label || BD_RENAMING.get(key) === label) return;
-  if (!label) { input.value = b.label; $('bd-err').textContent = 'A board needs a name'; return; }
+  if (!label) { input.value = b.label; $('bd-err').textContent = 'A workspace needs a name'; return; }
   BD_RENAMING.set(key, label);
   boardChange(async () => {
     try { await patchBoard(key, { label }); } finally { BD_RENAMING.delete(key); }
@@ -2360,7 +2370,7 @@ $('bd-add').addEventListener('submit', (e) => {
   const input = $('bd-add-name');
   const label = input.value.trim();
   fieldErr('bd-add-name', '');
-  if (!label) { fieldErr('bd-add-name', 'Give the board a name'); return input.focus(); }
+  if (!label) { fieldErr('bd-add-name', 'Give the workspace a name'); return input.focus(); }
   boardChange(async () => {
     await api('/api/settings/boards', { method: 'POST', body: JSON.stringify({ label }) });
     input.value = '';

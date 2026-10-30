@@ -81,8 +81,8 @@
           <button type="button" data-sec="password">Password</button>
         </nav>
         <div class="ss-panes">
-          <!-- Boards: the switcher (visible boards, from /api/workspaces), then the
-               managing list (every board, from /api/settings). app.js fills both. -->
+          <!-- Workspaces: the switcher (visible workspaces, from /api/workspaces), then the
+               managing list (every workspace, from /api/settings). app.js fills both. -->
           <section class="ss-pane ss-boards" data-sec="ws">
       <div class="filter-actions">
         <span class="lbl">Switch to</span>
@@ -90,16 +90,16 @@
       <div id="ws-list" class="filter-list"></div>
       <div id="bd-manage" class="bd-manage">
         <div class="filter-actions"><span class="lbl">Your workspaces</span></div>
-        <p class="su-hint">Rename, reorder or hide a board. VaultOS opens on the first one that isn't hidden.</p>
+        <p class="su-hint">Rename, reorder or hide a workspace. VaultOS opens on the first one that isn't hidden.</p>
         <div id="bd-list" class="bd-list"></div>
         <p class="su-err" id="bd-err" aria-live="polite"></p>
         <form id="bd-add" class="su-field bd-add" novalidate>
-          <label for="bd-add-name">Add a board</label>
+          <label for="bd-add-name">Add a workspace</label>
           <div class="bd-addrow">
-            <input id="bd-add-name" class="su-input" type="text" maxlength="60" placeholder="Board name" autocomplete="off" aria-describedby="bd-add-hint bd-add-name-err">
-            <button type="submit" class="su-btn">Add board</button>
+            <input id="bd-add-name" class="su-input" type="text" maxlength="60" placeholder="Workspace name" autocomplete="off" aria-describedby="bd-add-hint bd-add-name-err">
+            <button type="submit" class="su-btn">Add workspace</button>
           </div>
-          <p class="su-hint" id="bd-add-hint">A new folder with a board's starter files.</p>
+          <p class="su-hint" id="bd-add-hint">A new folder with a workspace's starter files.</p>
           <p class="su-err" id="bd-add-name-err" aria-live="polite"></p>
         </form>
         <form id="bd-existing" class="su-field bd-add" novalidate>

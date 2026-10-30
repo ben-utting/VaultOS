@@ -279,7 +279,7 @@ header button.ws-chip {
   flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;   /* beats the touch rule's 12px */
   white-space: nowrap;
 }
-.ws-chip-label { max-width: 38vw; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.ws-chip-label { max-width: min(24ch, 38vw); overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .ws-chip-chev { width: 12px; height: 12px; flex: none; }   /* currentColor: --muted, --text on hover */
 .ws-chip-single { cursor: default; }
 .ws-chip-single .ws-chip-chev { display: none; }
@@ -957,7 +957,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 /* In the menu the ring is the only other cue, so the selected item is also bolder than a focused one. */
 .ws-menu [aria-checked="true"] { font-weight: 600; }
 
-/* Settings → Boards, Features, Agent and Password. The fields, switches and agent cards are the setup
+/* Settings → Workspaces, Features, Agent and Password. The fields, switches and agent cards are the setup
    page's (.su-* under "Setup" below), so a setting looks the same in both places. */
 .ss-boards, .ss-form { max-width: 560px; }
 .ss-pane .su-field, .ss-pane .su-row { margin: 0 0 6px; }
@@ -3176,7 +3176,7 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
   body[data-mode="today"] header .brand { display: block; order: 0; }
   body[data-mode="today"] header .ws-div { display: block; order: 0; }
   body[data-mode="today"] header:has(#ws-chip.hidden) .ws-div { display: none; }
-  body[data-mode="today"] header .ws-chip { margin-right: auto; }
+  body[data-mode="today"] header .spacer { display: block; order: 0; }   /* pushes the tools right, chip or no chip */
   #today-view { padding-bottom: calc(var(--mnav-h) + 24px); }
   .td-page { padding: 12px; gap: 12px; }
   .td-cols, .td-side { gap: 12px; }
