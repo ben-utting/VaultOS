@@ -1,10 +1,12 @@
 'use strict';
 // End-to-end scenarios for Connectors, run against the connectors preview container (127.0.0.1:7695) with
-// the fake Atlassian (scripts/fake-mcp-oauth.js) inside it. Never the live board (:7684).
+// the fake Atlassian/GitHub (scripts/fake-mcp-oauth.js) inside it. Never the live board (:7684).
 //
-//   node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6
+//   node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6 C7 C8
 //
-// Scenarios build on each other (C1 signs in, C6 signs out), so run them in order. C1 installs Claude Code and
+// C7 is GitHub against the fake. C8 is Microsoft Learn against the REAL https://learn.microsoft.com/api/mcp, so
+// it needs outbound internet and the preview must run without CONNECTOR_UPSTREAM_MSLEARN.
+// Scenarios build on each other (C1 signs in, C6 signs out; C7 and C8 stand alone after C1), so run them in order. C1 installs Claude Code and
 // the Cursor CLI into the preview's home when they are missing (about 1.5 minutes, a few hundred MB: check
 // `df -h /` first). Neither agent is signed in to its own model provider, which `mcp list` does not need.
 // The session cookie is minted from the preview's data dir and never printed or written. Exit code: 1 when a
@@ -28,8 +30,8 @@ const INSTALL = {
 
 const args = process.argv.slice(2);
 if (args.some((a) => /^https?:\/\//.test(a) || /7684/.test(a))) { console.error(`this harness only runs against the preview, ${BASE}`); process.exit(2); }
-const NAMES = args.filter((a) => /^C[1-6]$/.test(a));
-if (!NAMES.length || NAMES.length !== args.length) { console.error('usage: node scripts/connectors-e2e.js C1 [C2 … C6]'); process.exit(2); }
+const NAMES = args.filter((a) => /^C[1-8]$/.test(a));
+if (!NAMES.length || NAMES.length !== args.length) { console.error('usage: node scripts/connectors-e2e.js C1 [C2 … C8]'); process.exit(2); }
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -229,6 +231,64 @@ const SCENARIOS = {
         const fs=require('fs'),h='${HOME}';
         for (const [f,k] of [['/.claude.json'],['/.cursor/mcp.json']]) { const j=JSON.parse(fs.readFileSync(h+f,'utf8')); delete j.mcpServers.other; fs.writeFileSync(h+f,JSON.stringify(j,null,2)); }"`);
     }
+  },
+  async C7() {
+    restartFake();
+    await sleep(1500);
+    const bad = await api('POST', '/api/connectors/github/token', { token: 'wrong' });
+    check('a token the service refuses is not saved', bad.status >= 400, bad.status);
+    const save = await api('POST', '/api/connectors/github/token', { token: 'svc-key' });
+    check('saving the GitHub token answers 200', save.status === 200, { status: save.status, text: save.text.slice(0, 200) });
+    const g = (await view()).connectors.find((c) => c.id === 'github');
+    check('GitHub shows connected as alex-example', g.state === 'connected' && g.account === 'alex-example', { state: g.state, account: g.account });
+    check('both agents were set up', g.agents.length === 2 && g.agents.every((x) => x.chip === 'Added'), g.agents);
+    const claudeRaw = sh(`cat ${HOME}/.claude.json`).out;
+    const cursorRaw = sh(`cat ${HOME}/.cursor/mcp.json`).out;
+    const e = JSON.parse(claudeRaw).mcpServers.github;
+    const c = JSON.parse(cursorRaw).mcpServers.github;
+    check('~/.claude.json has the github entry with the relay key', e && /^http:\/\/127\.0\.0\.1:8080\/mcp\/github$/.test(e.url) && e.headers['X-VaultOS-Key'] === relayKey(), e && { url: e.url });
+    check('~/.cursor/mcp.json has the github entry with the relay key', c && /^http:\/\/127\.0\.0\.1:8080\/mcp\/github$/.test(c.url) && c.headers['X-VaultOS-Key'] === relayKey(), c && { url: c.url });
+    check('the GitHub token is in neither agent file', !claudeRaw.includes('svc-key') && !cursorRaw.includes('svc-key'));
+    for (const cwd of ['/vault', '/tmp']) {
+      const cl = sh('claude mcp list', { cwd, timeout: 120000 });
+      check(`claude mcp list from ${cwd} shows github connected`, /github[^\n]*Connected/.test(cl.out) && !/github[^\n]*(Failed|authentication)/.test(cl.out), cl.out.slice(-300));
+      const ag = sh('agent mcp list', { cwd, timeout: 120000 });
+      check(`agent mcp list from ${cwd} shows github ready`, /github[^\n]*ready/i.test(ag.out), ag.out.slice(-300));
+    }
+    const me = toolText(await mcp('tools/call', { name: 'get_me', arguments: {} }, 'github'));
+    check('get_me through the relay returns alex-example', me && me.login === 'alex-example', me);
+    const d = await api('POST', '/api/connectors/github/disconnect');
+    check('disconnect answers 200', d.status === 200, d.status);
+    const claude = JSON.parse(sh(`cat ${HOME}/.claude.json`).out);
+    const cursor = JSON.parse(sh(`cat ${HOME}/.cursor/mcp.json`).out);
+    check('the github entry is gone from both agents', !('github' in claude.mcpServers) && !('github' in cursor.mcpServers));
+  },
+
+  async C8() {
+    const on = await api('POST', '/api/connectors/mslearn/enable', {});
+    check('turning on Microsoft Learn answers 200', on.status === 200, { status: on.status, text: on.text.slice(0, 200) });
+    const m = (await view()).connectors.find((c) => c.id === 'mslearn');
+    check('Microsoft Learn is connected with tools (real service)', m.state === 'connected' && m.lastTest && m.lastTest.ok && m.lastTest.tools > 0, { state: m.state, lastTest: m.lastTest });
+    check('both agents were set up', m.agents.length === 2 && m.agents.every((x) => x.chip === 'Added'), m.agents);
+    const claude = JSON.parse(sh(`cat ${HOME}/.claude.json`).out).mcpServers.mslearn;
+    const cursor = JSON.parse(sh(`cat ${HOME}/.cursor/mcp.json`).out).mcpServers.mslearn;
+    check('both agent files have the mslearn entry', claude && /\/mcp\/mslearn$/.test(claude.url) && cursor && /\/mcp\/mslearn$/.test(cursor.url), { claude, cursor });
+    for (const cwd of ['/vault', '/tmp']) {
+      const cl = sh('claude mcp list', { cwd, timeout: 120000 });
+      check(`claude mcp list from ${cwd} shows mslearn connected`, /mslearn[^\n]*Connected/.test(cl.out) && !/mslearn[^\n]*(Failed|authentication)/.test(cl.out), cl.out.slice(-300));
+      const ag = sh('agent mcp list', { cwd, timeout: 120000 });
+      check(`agent mcp list from ${cwd} shows mslearn ready`, /mslearn[^\n]*ready/i.test(ag.out), ag.out.slice(-300));
+    }
+    const res = await mcp('tools/call', { name: 'microsoft_docs_search', arguments: { query: 'azure key vault rotation' } }, 'mslearn');
+    const text = res.msg && res.msg.result && res.msg.result.content && res.msg.result.content.map((x) => x.text || '').join('');
+    check('microsoft_docs_search through the relay returns content', res.status === 200 && !(res.msg.result.isError) && typeof text === 'string' && text.length > 50, res);
+    const d = await api('POST', '/api/connectors/mslearn/disconnect');
+    check('disconnect answers 200', d.status === 200, d.status);
+    const c2 = JSON.parse(sh(`cat ${HOME}/.claude.json`).out).mcpServers;
+    const u2 = JSON.parse(sh(`cat ${HOME}/.cursor/mcp.json`).out).mcpServers;
+    check('the mslearn entry is gone from both agents', !('mslearn' in c2) && !('mslearn' in u2));
+    const gone = await mcp('tools/call', { name: 'microsoft_docs_search', arguments: { query: 'x' } }, 'mslearn');
+    check('the next relay call says it is not connected', /isn't connected yet/.test(JSON.stringify(gone.msg)), gone);
   },
 };
 

@@ -330,6 +330,15 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   `https://mcp.atlassian.com/v1/mcp`. Sign-in is OAuth 2.1 with dynamic client registration and PKCE,
   or an API token. Pending sign-ins live 10 minutes; the token refreshes 60 s before `expires_at`.
   `POST /api/connectors/atlassian/cancel` drops this session's pending sign-ins (the pane's Cancel).
+- **GitHub and Microsoft Learn are relayed too** (spec `docs/superpowers/specs/2026-10-29-github-mslearn-connectors-design.md`),
+  through the generic `lib/connector-relayed.js` and the same relay. GitHub takes a personal access token
+  (`POST /api/connectors/github/token`, `{ token }`, trimmed, probed with `get_me` first; a refused token
+  is not saved and the old one stays) and goes to `https://api.githubcopilot.com/mcp/`. Microsoft Learn needs
+  no sign-in (`POST /api/connectors/mslearn/enable`) and goes to `https://learn.microsoft.com/api/mcp`.
+  A stored credential of `''` means "connected, no credential": the relay sends no `Authorization` header
+  and it never reads as not connected. `POST /api/connectors/:id/token|enable|disconnect|test` work for any
+  relayed connector. Entry names are `github` and `mslearn`; the token never reaches `view()`, logs or
+  agent configs.
 - **Azure is local.** An `azure` entry runs `azmcp server start`, read-only (`--read-only`) unless the
   person allows changes. That switch only governs Azure's own tools for agents: `az` is on PATH with one
   shared full-rights login, so an agent that can run shell commands can still use `az` (R21; the pane says
@@ -364,7 +373,9 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   agent, the file stays byte-for-byte, and the row says why ("Has its own entry").
 - **Fake Atlassian:** `scripts/fake-mcp-oauth.js` (node:http only; OAuth with registration and PKCE,
   token and refresh, an SSE `tools/list`; modes `normal`, `expire`, `refuse-refresh`, `slow-sse`;
-  env `CONNECTOR_UPSTREAM_ATLASSIAN` points the app at it). `expire` keeps whatever access token is current dead
+  env `CONNECTOR_UPSTREAM_ATLASSIAN` points the app at it; `CONNECTOR_UPSTREAM_GITHUB` does the same for
+  GitHub, which accepts `Bearer svc-key` and has a `get_me` tool returning `alex-example`. Microsoft Learn
+  has no fake: leave `CONNECTOR_UPSTREAM_MSLEARN` unset and the e2e hits the real service). `expire` keeps whatever access token is current dead
   until the mode goes back to `normal` (a refresh alone doesn't recover); the e2e's wrapper returns the fake
   to `normal` on the first refresh.
 - **Preview:** `connectors-preview` on `127.0.0.1:7695`, files in `/opt/vault/connectors-preview/`
@@ -372,12 +383,14 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   live after `docker restart connectors-preview`; the fake dies with a restart:
   `docker exec -d connectors-preview node /app/scripts/fake-mcp-oauth.js --port 5555`). Never test
   against :7684.
-- **E2E:** `node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6`, in order. C1 installs Claude Code and the
+- **E2E:** `node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6 C7 C8`, in order. C1 installs Claude Code and the
   Cursor CLI into the preview's home if missing (about 1.5 minutes) and signs in through the fake; C2
   checks both agents' configs and `claude mcp list` / `agent mcp list` from `/vault` and `/tmp`; C3 an MCP
   call through the relay; C4 an expired access token (one refresh); C5 a refused refresh (the sentence,
   `attention: true`, the placeholder tool); C6 disconnect, other entries untouched. It restarts the fake
-  with a small control port (:5556) and ends signed out.
+  with a small control port (:5556) and ends signed out. C7 saves a GitHub token against the fake
+  (agent entries, `get_me` through the relay, disconnect); C8 turns Microsoft Learn on against the real
+  service (needs internet), searches the docs through the relay, turns it off. Preview HOME is `/home/vaultos`.
 - **Tests:** `node --test test/connector-*.test.js test/connectors-ui.test.js test/server-connectors.test.js`
   on the host; the full suite needs the image (terminal tests):
   `docker run --rm -v "$PWD":/src:ro --entrypoint bash vaultos:connectors -lc 'cp -a /src /tmp/w && cd /tmp/w && rm -rf node_modules && cp -a /app/node_modules . && npm test'`.

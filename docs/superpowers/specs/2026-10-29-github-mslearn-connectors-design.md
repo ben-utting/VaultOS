@@ -108,3 +108,14 @@ alone and reported, as today.
 
 GitHub device sign-in with a registered app; GitHub Enterprise Server; GitHub read-only mode or
 toolset selection; the other planned connectors.
+
+## Built (2026-10-30)
+
+- Microsoft Learn was checked for real from the preview (no `CONNECTOR_UPSTREAM_MSLEARN`): Turn on showed it
+  connected with **3 tools**, as expected, and `microsoft_docs_search` with `azure key vault rotation`
+  through the relay returned content. The relay sends no `Authorization` header for a `''` credential
+  (proved by the relay unit tests).
+- The e2e gained C7 (GitHub against the fake, `svc-key`, `get_me` returns `alex-example`) and C8 (Microsoft
+  Learn against the real service). `claude mcp list` and `agent mcp list` treat the no-credential entry like
+  any other: connected and ready from `/vault` and `/tmp`.
+- Microsoft Learn has no fake; the plan's no-auth fake mode was not needed.
