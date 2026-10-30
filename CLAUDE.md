@@ -78,7 +78,8 @@ waiting longer in real time.
    as visually verified when the POST 401'd.
 3. **There are no deep links.** `app.js` reads no URL params and no hash, so
    every fresh load opens on the default: Today mode, workspace Personal (the
-   switcher is a single radio pick over every workspace; the old show/hide in
+   switcher is the header chip `#ws-chip` and its menu, plus a single radio pick in Settings → Workspaces,
+   which also renames, reorders and hides; the old show/hide in
    `workspace-visibility.json` is no longer read by the UI). To reach a specific workspace, task or article
    you must click, which means a puppeteer script, not the one-shot
    `--screenshot` flag. Puppeteer is in the npx cache:
@@ -211,6 +212,26 @@ image tooling on the box (no ImageMagick, no PIL); the recolour was a pure-stdli
 Python PNG round-trip. `theme-color` in index.html/manifest.json stays `--bg` on
 purpose — it tints browser chrome to match the app, and app.js:162 swaps it with
 the theme.
+
+### Selected state and gold (2026-10-30)
+
+Gold used to mean everything: selected, done-ish, primary, brand. Now it means two things, **VaultOS** (the mode
+pill, the wordmark) and **the one action to take** (primary buttons). Every other "this one is selected" is a single
+quiet look: `--panel-2` fill, `--text` colour and a 1px `--accent` ring, in the one shared rule in `styles.css`
+(`.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked]`, declared after
+every rule it overrides). A new selectable control joins that selector; it does not get its own gold fill.
+`test/look-tokens.test.js` enforces it: it lists every selector that may fill with gold (the identity-and-action and
+asked-about allowlists), fails on any other, and fails again if an entry stops being gold, so the list stays honest.
+Done is green, but green text on a soft tick or a score bar missed 3:1 in sepia, so there are two tokens:
+`--done-ink` (the check on `.td-tick`) and `--done-bar` (Today's score bars), each darker in sepia. Use them for
+those; `--done` itself is for status dots and borders.
+
+### Type scale (2026-10-30)
+
+Every `font-size` is a `--t-*` token: `--t-xs` 12, `--t-sm` 13, `--t-md` 14, `--t-lg` 16, `--t-xl` 20, `--t-2xl` 26,
+`--t-3xl` 32. Nothing renders below 12px, and where text follows the A−/A+ reading control it is
+`calc(var(--t-*) * var(--fs))`. Never type `font-size: 11px`. `test/look-tokens.test.js` fails on a raw size and on a
+token under 12px; muted and sheet text must also clear 4.5:1 in both themes (`--muted-2` was the offender).
 
 ## needs-decision is magenta, not teal (changed 2026-09-18)
 
@@ -547,6 +568,25 @@ Ben drags files from his desktop into a folder, the way he did in VS Code.
 - **Right-click menu** (`.fx-menu`) on tree rows, Changed recently, tabs and the welcome list:
   Open / Download / Copy vault path / Upload files here… / Terminal here. Upload files here…
   is also the way to upload from a phone.
+
+## Board rails (2026-10-30)
+
+From 1025px up an empty column folds to a 48px rail: its name runs down the side as real text with the dot and a 0,
+and it carries `aria-label` / `title` ("Blocked, 0 tasks"). Phone and tablet keep the full column with "No tasks";
+that is why the breakpoint is 1025px and the Board turns flex only there. While a card is dragged
+`body.board-dragging` opens every rail to a full drop target, so a card can still go into an empty column.
+`dragstart` adds the class a frame late (`requestAnimationFrame`), because widening the rails inside the handler shifts
+the layout before Safari and Firefox snapshot the drag image. `endBoardDrag` removes it, and both ends call
+`updateBoardNav` because the rails change the scrollable width. `render()` re-sets the class from `DRAG`, so a repaint
+cannot leave it stuck.
+
+## Files: staged loading (2026-10-30)
+
+`fxLoad` paints in stages instead of waiting for everything. The root folder arrives first and draws the tree and the
+open tab (`FX.rootState`: `loading` / `ok` / `error`; an error shows a Retry in the pane, not a toast that would be
+gone before it was read). "Changed recently" loads on its own (`FX.recentState`, `fxLoadRecentInPlace`) and lands or
+fails in its own section. The remembered open folders restore last, in the background, dropping any that have gone.
+The in-flight promise is stored so a second call joins it; nothing awaits it, so it carries its own `.catch`.
 
 ## Files: edit text, rename (added 2026-10-30)
 
