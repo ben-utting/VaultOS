@@ -28,6 +28,13 @@ test('an encoded dot-dot is resolved by the URL parser, so it can only land on a
   assert.throws(() => E.resolveTarget('/%2e%2e/sendMail'), E.EntraError);
 });
 
+test('policies, identity, consent grants and reports are readable; the write-ish and mail areas still are not', () => {
+  for (const ok of ['/policies/conditionalAccessPolicies', '/identity/conditionalAccess/policies', '/oauth2PermissionGrants', '/reports/authenticationMethods/userRegistrationDetails']) {
+    assert.doesNotThrow(() => E.resolveTarget(ok), ok);
+  }
+  for (const bad of ['/me/messages/../../sendMail', '/security/alerts', '/identityGovernance/x', '/policiesX']) assert.throws(() => E.resolveTarget(bad), E.EntraError, bad);
+});
+
 test('resolveTarget refuses other areas, hosts, versions, traversal and batching', () => {
   for (const bad of ['/me/../sendMail', '/sendMail', '/$batch', '/beta/users', '/v2/users',
     'https://evil.example/v1.0/users', 'http://graph.microsoft.com.evil.example/v1.0/users', '', '  ', 5, null]) {
