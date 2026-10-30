@@ -4,7 +4,7 @@
 // MoreMenu — the "⋯" menu behaviour (window.MoreMenu), shared by the task
 // drawer's header (app.js) and the Files bar (workbench.js).
 //
-//   const m = MoreMenu.attach(button, menu, { onOpen })   → { close, open, isOpen }
+//   const m = MoreMenu.attach(button, menu, { onOpen })   → { close, open, isOpen, detach }
 //
 // `button` opens `menu`; `menu` is a .fx-menu element (role="menu") whose items
 // are [role=menuitem] or [role=menuitemradio] buttons. The owner keeps its own
@@ -27,6 +27,10 @@
 // transformed ancestor (the drawer, mid slide-in) fixed means "relative to that
 // ancestor", which put it off the drawer's edge and scrolled the drawer sideways.
 // onOpen() runs just before the menu is shown, to enable, hide or relabel items.
+// attach() is idempotent per button: a second call with the same button returns the
+// existing handle and binds nothing (a toolbar that re-renders can call it every time).
+// detach() removes every listener the attach added (button, window, document, the
+// ResizeObserver) and the menu node, and forgets the button, so it can be attached afresh.
 // The model is the workspace menu (#ws-menu in app.js), which this doesn't replace.
 // ========================================================================
 
@@ -35,14 +39,16 @@
   else root.MoreMenu = f();
 })(typeof self !== 'undefined' ? self : this, function () {
   const ITEMS = '[role=menuitem], [role=menuitemradio]';
+  const HANDLES = new WeakMap();   // button -> its handle
   const GAP = 6, EDGE = 8;   // px under the button; px kept clear of the viewport edge
 
   function attach(button, menu, { onOpen } = {}) {
     if (!button || !menu) throw new Error('MoreMenu.attach needs a button and a menu');
+    if (HANDLES.has(button)) return HANDLES.get(button);
     const isOpen = () => !menu.classList.contains('hidden');
     // Items that can take focus: not disabled, not hidden.
     const items = () => [...menu.querySelectorAll(ITEMS)].filter((e) =>
-      !e.disabled && e.getAttribute('aria-disabled') !== 'true' && !e.hidden && !e.closest('.hidden'));
+      !e.disabled && e.getAttribute('aria-disabled') !== 'true' && !e.hidden && e.getClientRects().length > 0);   // not rendered (CSS-hidden at this width): not a stop
     const rendered = (e) => e.isConnected && e.getClientRects().length > 0;
     if (menu.parentElement !== document.body) document.body.appendChild(menu);
     // While open: the button disappearing (display: none on an ancestor) closes the menu.
@@ -83,12 +89,14 @@
 
     button.setAttribute('aria-haspopup', 'menu');
     button.setAttribute('aria-expanded', String(isOpen()));
-    button.addEventListener('click', () => { if (isOpen()) close(); else open(); });
-    button.addEventListener('keydown', (e) => {
+    const onButtonClick = () => { if (isOpen()) close(); else open(); };
+    const onButtonKey = (e) => {
       if (e.key === 'ArrowDown' && !isOpen()) { e.preventDefault(); open(); }
-    });
+    };
+    button.addEventListener('click', onButtonClick);
+    button.addEventListener('keydown', onButtonKey);
 
-    menu.addEventListener('keydown', (e) => {
+    const onMenuKey = (e) => {
       const list = items();
       const i = list.indexOf(document.activeElement);
       const to = { ArrowDown: (i + 1) % list.length, ArrowUp: (i - 1 + list.length) % list.length, Home: 0, End: list.length - 1 }[e.key];
@@ -98,26 +106,49 @@
       // wrong both ways. Shift+Tab goes back to the button; Tab puts focus on the button and lets the Tab go on.
       else if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); close(); }
       else if (e.key === 'Tab') close();
-    });
+    };
     // The item's own handler has run by the time the click bubbles here.
-    menu.addEventListener('click', (e) => {
+    const onMenuClick = (e) => {
       const it = e.target.closest(ITEMS);
       if (it && menu.contains(it) && !it.disabled && it.getAttribute('aria-disabled') !== 'true') close();
-    });
+    };
+    menu.addEventListener('keydown', onMenuKey);
+    menu.addEventListener('click', onMenuClick);
     // Window capture, like the Settings sheet's: one Escape closes the menu and nothing behind it.
-    window.addEventListener('keydown', (e) => {
+    const onEscape = (e) => {
       if (e.key === 'Escape' && isOpen()) { e.preventDefault(); e.stopPropagation(); close(); }
-    }, true);
+    };
+    window.addEventListener('keydown', onEscape, true);
     // A click elsewhere closes it. Focus goes back to the button unless the click landed on something that
     // takes focus itself: that click has already moved it, and it stays there.
-    document.addEventListener('click', (e) => {
+    const onOutside = (e) => {
       if (!isOpen() || menu.contains(e.target) || button.contains(e.target)) return;
       const a = document.activeElement;
       close({ focus: !a || a === document.body || menu.contains(a) });
-    }, true);
-    window.addEventListener('resize', () => close({ focus: false }));
+    };
+    const onResize = () => close({ focus: false });
+    document.addEventListener('click', onOutside, true);
+    window.addEventListener('resize', onResize);
 
-    return { close, open, isOpen };
+    function detach() {
+      close({ focus: false });
+      if (watch) watch.disconnect();
+      button.removeEventListener('click', onButtonClick);
+      button.removeEventListener('keydown', onButtonKey);
+      menu.removeEventListener('keydown', onMenuKey);
+      menu.removeEventListener('click', onMenuClick);
+      window.removeEventListener('keydown', onEscape, true);
+      document.removeEventListener('click', onOutside, true);
+      window.removeEventListener('resize', onResize);
+      button.removeAttribute('aria-haspopup');
+      button.removeAttribute('aria-expanded');
+      menu.remove();
+      HANDLES.delete(button);
+    }
+
+    const handle = { close, open, isOpen, detach };
+    HANDLES.set(button, handle);
+    return handle;
   }
 
   return { attach };

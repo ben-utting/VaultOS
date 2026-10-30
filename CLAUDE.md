@@ -218,7 +218,7 @@ the theme.
 Gold used to mean everything: selected, done-ish, primary, brand. Now it means two things, **VaultOS** (the mode
 pill, the wordmark) and **the one action to take** (primary buttons). Every other "this one is selected" is a single
 quiet look: `--panel-2` fill, `--text` colour and a 1px `--accent` ring, in the one shared rule in `styles.css`
-(`.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"]`, declared after
+(`.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"]`, declared after
 every rule it overrides). A new selectable control joins that selector; it does not get its own gold fill.
 `test/look-tokens.test.js` enforces it: it lists every selector that may fill with gold (the identity-and-action and
 asked-about allowlists), fails on any other, and fails again if an entry stops being gold, so the list stays honest.
@@ -550,7 +550,7 @@ printed in it are clickable and open as tabs. Code: `public/workbench.js` (Files
   `MoreMenu` (`public/more-menu.js`: arrows, Home/End, Enter/Space, Escape back to the button, Tab, outside click,
   resize; `attach()` moves the menu to `<body>` because a transformed ancestor, the drawer mid slide-in, makes
   `position: fixed` relative to it, and it closes itself if its button stops rendering). The three view radios are
-  `[role=menuitemradio]` with `data-v`, selected by `aria-checked` (the shared selected rule). Refresh task's spin and
+  `[role=menuitemradio]` with `data-v`, selected by `aria-checked` (the shared selected rule). At 700px and under the radios, their label and the separator are hidden by CSS (the phone drawer is always the full sheet); `attach()` skips non-rendered items. `attach()` is idempotent per button (returns the existing handle) and `detach()` removes its listeners and the menu node, so a toolbar that re-renders can re-attach every time. Refresh task's spin and
   done pulse go on `#d-more`, since the menu has closed. `closeDrawer()` closes the menu. `#d-agent` is hidden when
   there is no default agent (the preview has none: `ME.agent = {...}; applyMe()` shows it). `[data-tip]` tooltips are
   hidden under `@media (hover: none)`, which headless Chrome reports, so a screenshot needs `[data-tip]::after{display:block !important}`.

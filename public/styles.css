@@ -2040,6 +2040,11 @@ body.fx-resizing { cursor: ns-resize; user-select: none; }
 .more-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .more-menu .more-label { padding: 6px 10px 3px; font-size: var(--t-xs); color: var(--muted); }
 .more-menu .more-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+/* The task view only means something beside a board: on a phone the drawer is always the full sheet, so the
+   view radios, their label and the separator under them are left out, as the old three-way switch was. */
+@media (max-width: 700px) {
+  #d-more-menu #d-view-label, #d-more-menu [role="group"], #d-more-menu .more-sep { display: none; }
+}
 
 /* Drag files in from the desktop */
 .fx-row.fx-drop, .fx-tree.fx-drop, .fx-view.fx-drop {
