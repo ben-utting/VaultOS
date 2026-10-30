@@ -315,8 +315,11 @@ header button.ws-chip {
 }
 .clear-filters:hover { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
 
+/* The one row never wraps a control: only the search box gives way (down to 110px), at every width.
+   Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
+#logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
 header input[type="search"] {
-  width: 260px; padding: 7px 11px;
+  flex: 0 1 260px; min-width: 110px; padding: 7px 11px;
   border-radius: var(--radius-md); border: 1px solid var(--line);
   background: var(--panel-2); color: var(--text); font: inherit;
 }
@@ -1537,23 +1540,32 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    sees any of it. */
 
 /* ---------- Header ----------
-   Ten controls in one non-wrapping row need roughly 1200px, so it degrades in
-   three steps rather than one cliff: fold the occasional-use tools into an
-   overflow menu, then wrap the primary controls onto a second row, then drop
-   the decorative bits. */
-@media (max-width: 1180px) {
-  /* A hardcoded 260px is the first thing to overflow — let it take what's left. */
-  header input[type="search"] { width: auto; flex: 1 1 150px; min-width: 110px; }
-  /* The workspace chip took ~110px of this row. Only the search box gives way now: without this "Sign out" and
-     the count broke onto two lines and the header grew 62px → 81px between 861px and 1180px. */
-  #logout, .count, #setbtn { white-space: nowrap; flex: none; }
+   Thirteen controls in one non-wrapping row (Terminal, Today's chip and "Clear all filters" included) need about
+   1340px, so from 861px up it stays one row by giving things way in steps rather than one cliff, and only below
+   860px wraps onto a second row. Nothing is lost on the way: Sign out is in the Settings sheet (#logout-sheet), the
+   Settings button keeps its icon and name, and every column head repeats the count. Checked with Terminal shown,
+   with a search on and with the Pomodoro chip, at 880–1600px in every mode (/opt/vault/look-check/t2.js). */
+@media (max-width: 1280px) {
+  /* Sign out folds into the Settings sheet's footer and Settings becomes its gear. */
+  #logout, .setbtn-lbl { display: none; }
 }
-/* The last 100px before the two-row layout takes over at 860px: the total (repeated on every column head) and the
-   divider give way, and a long workspace name is cut earlier, so the one row neither wraps nor scrolls sideways. */
-@media (min-width: 861px) and (max-width: 960px) {
-  header .count, header .ws-div { display: none; }
+@media (min-width: 861px) and (max-width: 1366px) {
+  /* While a filter is on, "Clear all filters" takes the count's place: the column heads still count. */
+  header:has(> #clear-filters:not(.hidden)) .count { display: none; }
+}
+/* The last stretch before the two-row layout takes over at 860px: the total (repeated on every column head) and the
+   divider give way, "Clear all filters" says just "Clear" (its aria-label keeps the full name), the gaps close up
+   and a long workspace name is cut earlier, so the one row neither wraps nor scrolls sideways. */
+@media (min-width: 861px) and (max-width: 1100px) {
+  header { column-gap: 8px; }
+  header .count, header .ws-div, .cf-more { display: none; }
   .ws-chip-label { max-width: 14ch; }
   header input[type="search"] { min-width: 80px; }
+}
+/* Under 961px Today's chip and "Clear" together still don't fit, so while the chip runs the wordmark gives way
+   (as it does on a phone): it is the same in every mode, because the chip is. */
+@media (min-width: 861px) and (max-width: 960px) {
+  header:has(> .today-chip:not(.hidden)) .brand { display: none; }
 }
 
 @media (max-width: 860px) {
@@ -1568,19 +1580,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   .modes { order: 8; flex: none; }
   header input[type="search"] { order: 9; flex: 1 1 120px; min-width: 90px; }
 }
-/* Up to 1180px a one-row header has no room left for Today's chip (the search box is already squeezed), so
-   while the chip shows the header takes the two-row layout above. */
-@media (min-width: 861px) and (max-width: 1180px) {
-  header:has(> .today-chip:not(.hidden)) { flex-wrap: wrap; row-gap: 0; padding: 10px 12px; }
-  header:has(> .today-chip:not(.hidden))::after { content: ""; flex: 0 0 100%; height: 8px; order: 7; }
-  header:has(> .today-chip:not(.hidden)) :is(.brand, .ws-div, .ws-chip) { order: 1; }
-  header:has(> .today-chip:not(.hidden)) .spacer { order: 4; }
-  header:has(> .today-chip:not(.hidden)) :is(.count, .today-chip) { order: 5; }
-  header:has(> .today-chip:not(.hidden)) :is(#refresh, #termbtn, #setbtn, #logout) { order: 6; }
-  header:has(> .today-chip:not(.hidden)) .modes { order: 8; flex: none; }
-  header:has(> .today-chip:not(.hidden)) input[type="search"] { order: 9; flex: 1 1 120px; min-width: 90px; }
-}
-
 @media (max-width: 700px) {
   /* The running total is repeated on every column head anyway. */
   .count { display: none; }

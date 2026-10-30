@@ -988,6 +988,17 @@ just: count of open tasks, **↻ Refresh**, Terminal, **⚙ Settings**, Sign out
 (phone: search + ↻ + ⚙). Refresh moved back out of the sheet into the header on
 2026-09-30. Ben uses it constantly. `#setsheet` is a modal with one section per old popover (Workspace, Filter by
 folder, Columns, Appearance) plus a footer with Sign out.
+
+**The desktop header is one row from 861px up (2026-10-30).** With Terminal, Today's chip and "Clear all filters" all
+showing it needs about 1340px, so it gives way in steps (the "Responsive" header block in `styles.css`): at ≤ 1280px
+Sign out leaves the header (the sheet's `#logout-sheet` is the way out) and Settings is just its gear (`aria-label`
+keeps the name); at 861–1366px a filter's "Clear all filters" takes the count's place; at 861–1100px the count and
+divider go, "Clear all filters" reads "Clear" (`.cf-more`; `aria-label` keeps the full name), the gaps close to 8px
+and the workspace name is cut at 14ch; at 861–960px a running Pomodoro chip also hides the wordmark. Below 861px it
+wraps to two rows. Only the search box shrinks (`flex: 0 1 260px`, min 110px, 80px under 1101px); every other
+control is `flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
+hides `#termbtn`: a header-fit check that doesn't unhide it misses about 50px. `/opt/vault/look-check/t2.js` runs the
+matrix (880–1600px × Board/KB/Files/Today × Terminal, search, chip) and must stay green after any header change.
 The sections kept the popovers' element ids (`filter-list`, `cols-list`,
 `ws-list`, `segTheme`…), so their render functions are unchanged; the old
 `$('xpop').classList.contains('open')` gates became `secOpen('folders'|'cols'|'ws')`.
