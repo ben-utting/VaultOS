@@ -11,7 +11,7 @@
 //     wsLabel       the workspace's display name, passed through on board picks
 //   Next is one of
 //     { kind: 'today', text, target: 'task:' + text }
-//     { kind: 'board', title, path, wsLabel, needsYou, target: 'task: ' + title }
+//     { kind: 'board', title, path, wsLabel, needsYou, target: 'board: ' + title }
 //     { kind: 'clear' }
 // Order: the first open (not done, not moved) today task; else, on today only,
 // an in-progress board task, one whose agent needs you first, then the newest.
@@ -34,7 +34,7 @@
     // Needs-you first, then newest mtime; Array.sort is stable, so ties keep board order.
     live.sort((a, b) => (needs(b) - needs(a)) || ((b.mtime || 0) - (a.mtime || 0)));
     const t = live[0];
-    return { kind: 'board', title: t.title, path: t.path, wsLabel, needsYou: needs(t), target: 'task: ' + t.title };
+    return { kind: 'board', title: t.title, path: t.path, wsLabel, needsYou: needs(t), target: 'board: ' + t.title };
   }
 
   return { pickNext };

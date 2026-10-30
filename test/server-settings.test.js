@@ -136,6 +136,21 @@ test('Today off, on, off', async (t) => {
   assert.equal((await call(s.base, 'GET', '/api/today', { cookie: s.cookie })).status, 404);
 });
 
+test('POST /api/today/timer takes a board: target (Next on a Board task) and checks it', async (t) => {
+  const s = await ready(t);
+  await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { today: true } });
+  assert.equal((await call(s.base, 'GET', '/api/today', { cookie: s.cookie })).status, 200);
+  const start = (target) => call(s.base, 'POST', '/api/today/timer', { cookie: s.cookie, body: { action: 'start', target } });
+  for (const bad of ['board: ', 'board: a\nb', 'board: ' + 'x'.repeat(201), 'task: not on today\'s list']) {
+    assert.equal((await start(bad)).status, 400, JSON.stringify(bad));
+  }
+  const r = await start('board: Ship it');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.timer.state, 'running');
+  assert.equal(r.body.timer.targetLabel, 'Ship it');
+  assert.equal((await call(s.base, 'POST', '/api/today/timer', { cookie: s.cookie, body: { action: 'reset' } })).status, 200);
+});
+
 test('a new install has no habits; the app adds them, and only when signed in', async (t) => {
   const s = await ready(t);
   await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { today: true } });

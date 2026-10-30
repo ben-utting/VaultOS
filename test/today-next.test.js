@@ -36,7 +36,7 @@ test('board fallback takes in-progress only', () => {
   assert.equal(n.kind, 'board');
   assert.equal(n.title, 'P');
   assert.equal(n.path, 'p.md');
-  assert.equal(n.target, 'task: P');
+  assert.equal(n.target, 'board: P');
   assert.equal(n.wsLabel, 'Work');
 });
 

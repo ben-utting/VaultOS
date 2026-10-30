@@ -235,6 +235,31 @@ test('bad target 400, open task target accepted, pause then stale completion ign
   assert.match(readNote(t, '2026-10-11'), /- 08:00 25m task: write report\n/);
 });
 
+// Next's Start on a Board task: the target is 'board: <title>', not a line of today's list.
+test('board: target starts with its title as the label, and logs as board: <title>', async () => {
+  const t = mkTimer(); seedNote(t, '2026-10-11', { tasks: ['- [ ] write report'] });
+  await t.svc.payload(undefined, { canWrite: true });
+  const p = await t.svc.timer('start', 'board:   Ship it ');
+  assert.equal(p.timer.state, 'running');
+  assert.equal(p.timer.target, 'board: Ship it');
+  assert.equal(p.timer.targetLabel, 'Ship it');
+  await t.armed.cur.fn();
+  assert.match(readNote(t, '2026-10-11'), /- 08:00 25m board: Ship it\n/);
+  const after = await t.svc.payload();
+  assert.equal(after.day.focus[0].label, 'Ship it');
+  assert.equal(after.timer.lastEvent.text, 'Session logged: 25 min on Ship it.');
+});
+test('board: target refused when empty, multi-line or over 200 characters; task: rule unchanged', async () => {
+  const t = mkTimer(); seedNote(t, '2026-10-11', { tasks: ['- [ ] write report'] });
+  await t.svc.payload(undefined, { canWrite: true });
+  for (const bad of ['board:', 'board:   ', 'board: a\nb', 'board: a\rb', 'board: ' + 'x'.repeat(201), 'task: not in the list']) {
+    await assert.rejects(t.svc.timer('start', bad), (e) => e.status === 400, JSON.stringify(bad));
+  }
+  assert.equal((await t.svc.payload()).timer.state, 'idle');
+  const ok = await t.svc.timer('start', 'board: ' + 'x'.repeat(200));
+  assert.equal(ok.timer.targetLabel, 'x'.repeat(200));
+});
+
 test('a slow lazy load cannot overwrite state set by boot', async () => {
   const t = mkTimer({ now: new Date('2026-10-11T08:00:00Z') });
   const started = Date.parse('2026-10-11T07:00:00Z');

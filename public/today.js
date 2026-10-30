@@ -807,6 +807,7 @@ const Today = (() => {
     const open = d.tasks.filter((t) => !t.done && !t.moved);
     // Next's Start on a target the list doesn't have (a Board task) adds it as a one-off option under Board.
     // It stays while it's picked or the session runs on it, and goes once the picker moves on.
+    if (!extra && tm && /^board:/.test(tm.target) && pick === tm.target) extra = { value: tm.target, label: tm.targetLabel };   // started elsewhere
     if (extra && extra.value !== pick && !(tm && tm.state !== 'idle' && tm.target === extra.value)) extra = null;
     const listed = (v) => v === 'focus' || goals.some((h) => h.id === v) || open.some((t) => `task:${t.text}` === v);
     const one = extra && !listed(extra.value) ? extra : null;
