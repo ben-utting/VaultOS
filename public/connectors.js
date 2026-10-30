@@ -201,14 +201,64 @@
       + `<div class="ap-btns">${btn('azure-start', 'Sign in', ' primary')}</div>${errP(st, 'azure')}`;
   }
 
+  // GitHub: one card for a token. `replacing` shows it over a connected panel.
+  function githubTokenCard(c, st, replacing) {
+    const help = httpsUrl(c.tokenHelp);
+    return '<div class="cx-opts"><div class="cx-opt main"><h5>Paste a GitHub token</h5>'
+      + '<p>Create a token on GitHub and paste it here. VaultOS checks it with GitHub before saving it. Agents can do what the token allows, so a fine-grained token limited to the repos you choose keeps it tight.</p>'
+      + '<div class="su-field"><label for="cx-gh-token">Personal access token</label>'
+      + `<input id="cx-gh-token" class="su-input" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the token" value="${esc(st.ghToken)}"></div>`
+      + `<div class="ap-btns">${btn('gh-token', 'Save token', ' primary')}${help ? `<a class="cx-link" href="${esc(help.href)}" target="_blank" rel="noopener noreferrer">Create a token</a>` : ''}`
+      + `${replacing ? btn('gh-keep', 'Keep my current token') : ''}</div>${errP(st, 'ghtoken')}</div></div>`;
+  }
+
+  function testedLine(c, now, who) {
+    const t = c.lastTest;
+    return t ? (t.ok ? `Tested ${ago(t.at, now)}: ${who} answered with ${t.tools} tools` : `Tested ${ago(t.at, now)}: it didn't answer`) : '';
+  }
+
+  function githubBody(c, st, now) {
+    const connectedLike = c.state === 'connected' || c.state === 'error';
+    const intro = '<li>Repos, issues and pull requests, through GitHub\'s own hosted server</li>';
+    if (!connectedLike) {
+      const lead = c.state === 'needs-sign-in' ? '<p class="su-err cx-err" role="alert">GitHub no longer accepts your token. Paste a new one.</p>' : '';
+      return `<ul class="ap-facts">${intro}</ul>${lead}${c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : ''}${githubTokenCard(c, st, false)}`;
+    }
+    if (st.options.github) return `<ul class="ap-facts">${intro}</ul>${githubTokenCard(c, st, true)}`;
+    const tested = testedLine(c, now, 'GitHub');
+    return `<ul class="ap-facts">${intro}<li>${esc(c.account ? `Signed in as ${c.account}` : 'Signed in with a token')}</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
+      + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+      + agentRowsHtml(c)
+      + `<div class="ap-btns">${btn('test', 'Test again')}${btn('gh-replace', 'Replace token')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}`
+      + '<p class="cx-muted">Signing out here doesn\'t delete the token on GitHub.</p>';
+  }
+
+  function mslearnBody(c, st, now) {
+    const on = c.state === 'connected' || c.state === 'error';
+    if (!on) {
+      return '<ul class="ap-facts"><li>Microsoft\'s documentation and code samples. No sign-in.</li></ul>'
+        + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+        + `<div class="ap-btns">${btn('ms-on', 'Turn on', ' primary')}</div>${errP(st, 'actions')}`;
+    }
+    const t = c.lastTest;
+    const line = t && t.ok ? `Connected · ${t.tools} tools` : 'Connected';
+    const stale = t && !t.ok ? `Tested ${ago(t.at, now)}: it didn't answer` : '';
+    return `<ul class="ap-facts"><li>${esc(line)}</li>${stale ? `<li>${esc(stale)}</li>` : ''}</ul>`
+      + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+      + agentRowsHtml(c)
+      + `<div class="ap-btns">${btn('test', 'Test again')}${btn('ms-off', 'Turn off')}</div>${errP(st, 'actions')}`;
+  }
+
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, github: githubBody, mslearn: mslearnBody };
+
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', options: {}, azure: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', options: {}, azure: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
     const s2 = { ...st, picked: picked && picked.id };
     const detail = !picked ? '' : (() => {
-      const body = picked.id === 'atlassian' ? atlassianBody(picked, s2, now) : azureBody(picked, s2, now);
+      const body = (BODIES[picked.id] || azureBody)(picked, s2, now);
       return `<div class="ap-detail cx-detail" aria-live="polite">${mark(picked.id, ' big')}<div class="ap-dbody">`
         + `<h4 class="ap-dname">${esc(picked.label)} ${chipHtml(stateChip(picked.state))}</h4>${body}</div></div>`;
     })();
@@ -229,7 +279,7 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', waiting: false, azure: null, options: {}, canTerm: true };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', waiting: false, azure: null, options: {}, canTerm: true };
     let lastKey = '';
     let seq = 0;
     let busy = false;
@@ -352,7 +402,9 @@
       busy = true;
       st.err[region] = '';
       let ok = true;
-      try { await f(); } catch (e) { ok = false; st.err[region] = (e && e.message) || 'Something went wrong.'; } finally { busy = false; }
+      const btns = el.querySelectorAll ? Array.from(el.querySelectorAll('button[data-act]')) : [];
+      btns.forEach((b) => { b.disabled = true; });
+      try { await f(); } catch (e) { ok = false; st.err[region] = (e && e.message) || 'Something went wrong.'; } finally { busy = false; btns.forEach((b) => { b.disabled = false; }); }
       render(!ok);
       return ok;
     }
@@ -402,6 +454,19 @@
           await refresh();
         });
       }
+      if (act === 'gh-token') {
+        return run('ghtoken', async () => {
+          const token = st.ghToken.trim();
+          if (!token) throw new Error('Paste the GitHub token first.');
+          await call('POST', '/api/connectors/github/token', { token });
+          st.ghToken = ''; delete st.options.github;
+          await refresh();
+        });
+      }
+      if (act === 'gh-replace') { st.options.github = true; st.err.ghtoken = ''; render(); return; }
+      if (act === 'gh-keep') { delete st.options.github; st.err.ghtoken = ''; st.ghToken = ''; render(); return; }
+      if (act === 'ms-on') return run('actions', async () => { await call('POST', '/api/connectors/mslearn/enable'); await refresh(); });
+      if (act === 'ms-off') return run('actions', async () => { await call('POST', '/api/connectors/mslearn/disconnect'); await refresh(); });
       if (act === 'switch') { st.options.atlassian = true; st.err.actions = ''; render(); return; }
       if (act === 'keep') { delete st.options.atlassian; render(); return; }
       if (act === 'test') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/test`); await refresh(); });
@@ -437,6 +502,7 @@
     el.addEventListener('input', (e) => {
       if (e.target.id === 'cx-email') st.email = e.target.value;
       else if (e.target.id === 'cx-token') st.token = e.target.value;
+      else if (e.target.id === 'cx-gh-token') st.ghToken = e.target.value;
     });
     el.addEventListener('change', (e) => {
       if (e.target.id === 'cx-allow') {
@@ -450,6 +516,7 @@
       }
     });
     el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.id === 'cx-gh-token') { e.preventDefault(); onAct('gh-token'); return; }
       if (e.key === 'Enter' && (e.target.id === 'cx-email' || e.target.id === 'cx-token')) { e.preventDefault(); onAct('token'); return; }
       const tile = e.target.closest && e.target.closest('.cx-ready .ap-tile');
       if (!tile || !st.view) return;

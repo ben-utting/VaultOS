@@ -3370,6 +3370,8 @@ body.su::before {
 .cx-title { margin: 0; font-size: 18px; font-weight: 600; }
 .cx > .su-hint { margin: 0 0 6px; max-width: 70ch; }
 .cx .ap-tiles, .cx .ap-detail { margin-bottom: 0; }
+.cx-ready { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 420px) { .cx-ready { grid-template-columns: minmax(0, 1fr); } }
 .cx-planned { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 .cx-later { grid-template-columns: 32px minmax(0, 1fr); padding: 7px 10px; background: transparent; border-style: dashed; cursor: default; }
 .cx-later:hover { border-color: var(--line); }

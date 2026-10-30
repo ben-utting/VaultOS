@@ -173,3 +173,78 @@ test('a poll tick is skipped while the last poll is still in flight', async (t) 
   assert.equal(gets - base, 2);
   m.stop();
 });
+
+const FOUR = [
+  { id: 'atlassian', label: 'Atlassian', by: 'Jira', state: 'not-connected', agents: [] },
+  { id: 'azure', label: 'Azure', by: 'az', state: 'not-connected', agents: [] },
+  { id: 'github', label: 'GitHub', by: 'Repos · issues · pull requests', state: 'not-connected', tokenHelp: 'https://github.com/settings/personal-access-tokens/new', agents: [] },
+  { id: 'mslearn', label: 'Microsoft Learn', by: 'Microsoft docs and code samples', state: 'not-connected', agents: [] },
+];
+const PLANNED5 = ['notion', 'homeassistant', 'n8n', 'linear', 'sentry'].map((id) => ({ id, label: id, by: 'x', mono: id[0].toUpperCase() }));
+const withRow = (id, over) => ({ connectors: FOUR.map((c) => (c.id === id ? { ...c, ...over } : c)), planned: PLANNED5 });
+
+test('paneHtml shows four Ready tiles and five Planned', () => {
+  const html = C.paneHtml({ view: { connectors: FOUR, planned: PLANNED5 } });
+  assert.equal((html.match(/class="ap-tile cx-tile" data-id=/g) || []).length, 4);
+  assert.equal((html.match(/cx-later/g) || []).length, 5);
+  for (const n of ['Atlassian', 'Azure', 'GitHub', 'Microsoft Learn']) assert.ok(html.includes(`>${n}</span>`));
+});
+
+test('github not connected shows the token card copy and a password input', () => {
+  const html = C.paneHtml({ view: withRow('github', {}), picked: 'github' });
+  assert.match(html, /Paste a GitHub token/);
+  assert.match(html, /Create a token on GitHub and paste it here\. VaultOS checks it with GitHub before saving it\. Agents can do what the token allows, so a fine-grained token limited to the repos you choose keeps it tight\./);
+  assert.match(html, /<label for="cx-gh-token">Personal access token<\/label>/);
+  assert.match(html, /id="cx-gh-token"[^>]*type="password"|type="password"[^>]*id="cx-gh-token"/);
+  assert.match(html, /data-act="gh-token"[^>]*>Save token</);
+  assert.match(html, /href="https:\/\/github\.com\/settings\/personal-access-tokens\/new"[^>]*>Create a token</);
+});
+
+test('github connected shows Signed in as, Replace token, Sign out and the sign-out note', () => {
+  const row = { state: 'connected', method: 'token', account: 'alex-example', lastTest: { ok: true, tools: 41, at: new Date().toISOString() },
+    agents: [{ id: 'claude', label: 'Claude Code', chip: 'Added' }] };
+  const html = C.paneHtml({ view: withRow('github', row), picked: 'github' });
+  assert.match(html, /Signed in as alex-example/);
+  assert.match(html, /Tested just now: GitHub answered with 41 tools/);
+  assert.match(html, /Claude Code/);
+  for (const a of ['test', 'gh-replace', 'disconnect']) assert.match(html, new RegExp(`data-act="${a}"`));
+  assert.match(html, />Test again</); assert.match(html, />Replace token</); assert.match(html, />Sign out</);
+  assert.match(html, /Signing out here doesn't delete the token on GitHub\./);
+  assert.doesNotMatch(html, /cx-gh-token/);
+  const replacing = C.paneHtml({ view: withRow('github', row), picked: 'github', options: { github: true } });
+  assert.match(replacing, /cx-gh-token/);
+  assert.match(replacing, /data-act="gh-keep"[^>]*>Keep my current token</);
+});
+
+test('mslearn not connected shows Turn on; connected shows Connected · 3 tools and Turn off', () => {
+  const off = C.paneHtml({ view: withRow('mslearn', {}), picked: 'mslearn' });
+  assert.match(off, /Microsoft's documentation and code samples\. No sign-in\./);
+  assert.match(off, /data-act="ms-on"[^>]*>Turn on</);
+  const on = C.paneHtml({ view: withRow('mslearn', { state: 'connected', lastTest: { ok: true, tools: 3, at: new Date().toISOString() },
+    agents: [{ id: 'cursor', label: 'Cursor CLI', chip: 'Added' }] }), picked: 'mslearn' });
+  assert.match(on, /Connected · 3 tools/);
+  assert.match(on, /Cursor CLI/);
+  assert.match(on, /data-act="test"/);
+  assert.match(on, /data-act="ms-off"[^>]*>Turn off</);
+  assert.doesNotMatch(on, /data-act="ms-on"/);
+});
+
+test('markup in a github login is escaped', () => {
+  const html = C.paneHtml({ view: withRow('github', { state: 'connected', account: '<img src=x onerror=1>', agents: [{ id: 'claude', label: '<b>x</b>', chip: 'Added' }] }), picked: 'github' });
+  assert.doesNotMatch(html, /<img|<b>x/);
+  assert.match(html, /&lt;img src=x onerror=1&gt;/);
+});
+
+test('github save posts the trimmed token; mslearn buttons hit enable and disconnect', async () => {
+  const calls = [];
+  let view = withRow('github', {});
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const ui = { api: async (m, u, b) => { calls.push([m, u, b]); return m === 'GET' ? view : {}; } };
+  const pane = C.mountConnectors(el, ui);
+  await pane.refresh();
+  els.input({ target: { id: 'cx-gh-token', value: '  ghp_abc\n' } });
+  await els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'gh-token' } } : null) } });
+  assert.deepEqual(calls.find((c) => c[0] === 'POST'), ['POST', '/api/connectors/github/token', { token: 'ghp_abc' }]);
+  pane.stop();
+});
