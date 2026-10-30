@@ -260,7 +260,7 @@ test('only the mode pill and primary buttons fill with gold', () => {
   // The selected day's score bar on Today is brand-coloured on purpose (the brief for this change).
   const allowed = new Set([...IDENTITY_AND_ACTION, ...ASKED_ABOUT, '.td-bar.sel .td-col']);
   const found = goldFilled();
-  for (const s of ['.seg button.on', '.viewseg button.on', '.td-tick[aria-pressed="true"]', '.td-cell.on', '.td-tchk[aria-pressed="true"]']) {
+  for (const s of ['.seg button.on', '.more-menu [role="menuitemradio"][aria-checked="true"]', '.td-tick[aria-pressed="true"]', '.td-cell.on', '.td-tchk[aria-pressed="true"]']) {
     assert.ok(!found.has(s), `${s} must not fill with gold`);
   }
   const extra = [...found].filter((s) => !allowed.has(s));
@@ -271,7 +271,8 @@ test('only the mode pill and primary buttons fill with gold', () => {
 
 // The shared selected rule: a gold tint on the --panel-2 track, no ring. Every selector that joins it
 // (later ones too, e.g. a menuitemradio) is listed here and must declare the same percentage.
-const SELECTED = ['.seg button.on', '.viewseg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]',
+const SELECTED = ['.seg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]',
+  '.more-menu [role="menuitemradio"][aria-checked="true"]',   // the view radios in the drawer's More menu
   '.td-hf-icon[aria-checked="true"]', '.ap-tile[aria-checked="true"]'];   // the icon picker and the agent cards
 const TINT = /^color-mix\(in srgb, var\(--accent\) (\d+)%, var\(--panel-2\)\)$/;
 const lastDecl = (s, prop) => BLOCKS.filter((b) => topLevel(b) && sel(b).includes(s)).flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();

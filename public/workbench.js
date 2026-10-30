@@ -1057,14 +1057,14 @@ window.addEventListener('focus', () => {
 });
 
 // ---------- Task drawer: Show in Files / Terminal here ----------
-// Two icon buttons in the drawer header. Their tooltips name the actual folder,
-// so hovering tells you exactly where you're about to land.
+// Show in Files is an item in the drawer's More menu and Start agent a labelled button; Show in Files' tooltip
+// names the actual folder, so hovering tells you exactly where you're about to land.
 let DRAWER_TASK = null;
 function renderWorkbenchLinks(t) {
   DRAWER_TASK = t;
   const dir = dirOf(t.path);
   const short = dir.split('/').slice(-2).join('/');
-  $('d-files').dataset.tip = `Show in Files\nOpens ${short}/ in the file tree, with task.md in a tab`;
+  $('d-files').title = `Opens ${short}/ in the file tree, with task.md in a tab`;   // a menu item: the native tooltip, not [data-tip]
   renderDrawerAgent();
 }
 // The drawer's agent button: "Start agent" until a terminal is working this

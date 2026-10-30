@@ -603,30 +603,19 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
   background: var(--panel); border-bottom: 1px solid var(--line);
 }
 .drawer-head h2 { margin: 0; font-size: var(--t-xl); }
+.drawer-head > div:first-child { flex: 1; min-width: 0; }   /* the title takes what the buttons leave */
 
-/* Refresh and Close are the pair that has to stay reachable, so they're one
-   matched set: identical square boxes (em-sized, so the font-scale setting
-   still moves them), icons drawn at the same optical size. Lucide's stock X
-   sits in a 12/24 box against the refresh arrow's 18/24 and reads visibly
-   smaller at this size — index.html draws it at 16/24 instead. */
-#d-refresh, #d-close, .d-act {
+/* The header is Agent (labelled), More (⋯) and Close. More and Close are the pair that has to stay reachable, so
+   they're one matched set: identical square boxes (em-sized, so the font-scale setting still moves them), icons
+   drawn at the same optical size, and Agent is the same height. Lucide's stock X sits in a 12/24 box against the
+   arrow's 18/24 and reads visibly smaller at this size — index.html draws it at 16/24 instead. */
+#d-more, #d-close, #d-agent {
   flex: none; display: inline-flex; align-items: center; justify-content: center;
   width: 2.3em; height: 2.3em; padding: 0;
 }
-#d-refresh .icon, #d-close .icon, .d-act .icon { width: 1.25em; height: 1.25em; vertical-align: 0; }
-
-/* Side / centre / full switcher, styled like the Board ⇄ KB mode toggle. */
-.viewseg {
-  display: flex; gap: 2px; margin-left: auto; flex: none;
-  background: var(--panel-2); border: 1px solid var(--line);
-  border-radius: var(--radius-md); padding: 2px;
-}
-.viewseg button {
-  background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-sm);
-  padding: 5px 8px; font-size: var(--t-md); line-height: 1; cursor: pointer;
-  transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
-}
-.viewseg button:hover { color: var(--text); }
+#d-more .icon, #d-close .icon, #d-agent .icon { width: 1.25em; height: 1.25em; vertical-align: 0; }
+#d-agent { width: auto; gap: 7px; padding: 0 12px 0 10px; }
+.d-agent-label { font-size: var(--t-md); font-weight: 500; line-height: 1; }
 .path { color: var(--muted); font-family: var(--mono-font); font-size: var(--t-xs); margin-top: 4px; word-break: break-all; }
 .d-meta { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0 6px; }
 
@@ -769,7 +758,7 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
 @keyframes fade-in { from { opacity: 0; } }
 
 /* ---------- Drawer header actions ---------- */
-#d-refresh, .d-act { font-size: var(--t-lg); line-height: 1; }
+#d-more, #d-agent { font-size: var(--t-lg); line-height: 1; }
 
 /* ---------- Scrollbars match the surface ---------- */
 .board, .drawer, .kb-list-items, .kb-reader {
@@ -958,13 +947,14 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    16% is the smallest tint that steps 1.2:1 off the track in both themes (look-tokens.test.js checks it, and
    --text on it). Later selectors (a menuitemradio, an icon tile) join this list and use the same percentage.
    Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
-.seg button.on, .viewseg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"] {
+.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"] {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); color: var(--text); box-shadow: none;
 }
-/* The tint is the selected cue; in the menu the item is also bolder, and hover or keyboard focus keep the tint
+/* The tint is the selected cue; in a menu the item is also bolder, and hover or keyboard focus keep the tint
    (focus adds its own ring) so a focused item still reads as selected when it is. */
-.ws-menu [aria-checked="true"] { font-weight: 600; }
-.ws-menu button[aria-checked="true"]:hover, .ws-menu button[aria-checked="true"]:focus-visible {
+.ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"] { font-weight: 600; }
+.ws-menu button[aria-checked="true"]:hover, .ws-menu button[aria-checked="true"]:focus-visible,
+.more-menu [role="menuitemradio"][aria-checked="true"]:hover, .more-menu [role="menuitemradio"][aria-checked="true"]:focus-visible {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel-2));
 }
 
@@ -1638,7 +1628,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
     border: 0; border-radius: 0; box-shadow: none;
     padding: 0 16px 32px;
   }
-  .viewseg { display: none; }
   /* The sticky head and its bleed are the base rule's job now; the phone sheet
      only trims what it holds. */
   .drawer-head { padding-block: 14px 12px; }
@@ -1773,8 +1762,8 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   .drawer-head { flex-wrap: wrap; gap: 8px; padding-block: 10px 12px; }
   .drawer-head > div:first-child { order: 2; flex: 0 0 100%; }
   #d-close { order: 0; }
-  #d-files { order: 1; margin-left: auto; }
-  #d-agent, #d-refresh { order: 1; }
+  #d-agent { order: 1; margin-left: auto; }
+  #d-more { order: 1; }
   .drawer-head h2 { font-size: var(--t-lg); line-height: 1.3; }
 }
 
@@ -1867,10 +1856,11 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   .ws-menu button { min-height: 40px; }
   /* ...but the drawer's pair stays square — a 40px-tall, 12px-padded pill would
      unbalance them against each other again. */
-  #d-refresh, #d-close, .d-act { width: 40px; height: 40px; min-height: 40px; padding: 0; }
+  #d-more, #d-close { width: 40px; height: 40px; min-height: 40px; padding: 0; }
+  #d-agent { height: 40px; min-height: 40px; }
+  .more-menu button { min-height: 40px; }
   header input[type="search"] { min-height: 40px; }
   .mode { padding-top: 9px; padding-bottom: 9px; }
-  .viewseg button { padding: 9px 11px; }
   .seg button, .stepper button { padding: 12px 8px; }
   .filter-item { padding: 10px 6px; }
   .filter-item input[type="checkbox"], .ws-row input[type="radio"] { width: 17px; height: 17px; }
@@ -2043,6 +2033,13 @@ body.fx-resizing { cursor: ns-resize; user-select: none; }
 .fx-menu .icon, .tw-menu .icon { width: 15px; height: 15px; color: var(--muted); }
 .tw-menu button:disabled { color: var(--muted-2); cursor: default; background: none; }
 .tw-menu small { margin-left: auto; padding-left: 14px; font-size: var(--t-xs); color: var(--muted-2); }
+/* A "⋯" More menu (more-menu.js): the same surface, opened from a button. Keyboard focus is a ring inside the
+   item (the items fill the menu's width), so it never reads as the selected tint. Items are labelled, with the icon first. */
+.more-menu { min-width: 190px; }
+.more-menu .icon { flex: none; }
+.more-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.more-menu .more-label { padding: 6px 10px 3px; font-size: var(--t-xs); color: var(--muted); }
+.more-menu .more-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
 /* Drag files in from the desktop */
 .fx-row.fx-drop, .fx-tree.fx-drop, .fx-view.fx-drop {
@@ -2210,7 +2207,7 @@ html[data-font="dyslexic"] .fx-md { font-family: var(--read-font); letter-spacin
   opacity: 1; transform: none; transition-delay: 250ms;
 }
 @media (hover: none) { [data-tip]::after { display: none; } }
-.d-act:hover { color: var(--accent); border-color: var(--accent); }
+.d-agent:hover { color: var(--accent); border-color: var(--accent); }
 
 /* ---------- Terminal dock ---------- */
 .term-dock {
@@ -2528,7 +2525,7 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 /* Drawer "Start agent" / "Go to agent": the linked terminal's state as a dot
    on the button's corner. */
 #d-agent { position: relative; }
-#d-agent .agent-dot { position: absolute; top: 4px; right: 4px; }
+#d-agent .agent-dot { margin-left: -1px; }
 
 /* ---------- Spreadsheets: the .csv / .xlsx grid in Files (sheet-grid.js) ----------
    An .xlsx is drawn on white paper in both themes — its fills, fonts and borders

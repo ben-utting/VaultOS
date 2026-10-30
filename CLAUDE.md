@@ -544,11 +544,16 @@ printed in it are clickable and open as tabs. Code: `public/workbench.js` (Files
   (a hand-over can remove it mid-drag). For the same reason double-click-to-even is timed by hand (400ms,
   `W.lastSplitDown`): a real `dblclick` never lands, and `pointerdown`'s `e.detail` is always 0. Test it
   with two separate `mouse.click`s, not Puppeteer's `clickCount: 2`, which sends a single press.
-- **Drawer header icons** `#d-files` (Show in Files) and `#d-agent` (Start agent / Go to agent; it replaced
-  `#d-term` "Terminal here" on 2026-10-03) sit beside Refresh and
-  share its square-button rules. They use the app's `[data-tip]` tooltip (CSS-only, `\n` for a second
-  line, naming the real folder). It is hidden under `@media (hover: none)`, and headless Chrome reports
-  `hover: none`, so a screenshot needs `[data-tip]::after{display:block !important}` injected to show it.
+- **Drawer header (round 2, 2026-10-30):** a labelled `#d-agent` (Start agent / Go to agent; it replaced `#d-term`
+  on 2026-10-03; the "Agent" label is fixed, the tooltip names the real agent and folder), then `#d-more` (⋯) and
+  `#d-close`. The side/centre/full switch, `#d-files` (Show in Files) and `#d-refresh` are items in `#d-more-menu`, a
+  `MoreMenu` (`public/more-menu.js`: arrows, Home/End, Enter/Space, Escape back to the button, Tab, outside click,
+  resize; `attach()` moves the menu to `<body>` because a transformed ancestor, the drawer mid slide-in, makes
+  `position: fixed` relative to it, and it closes itself if its button stops rendering). The three view radios are
+  `[role=menuitemradio]` with `data-v`, selected by `aria-checked` (the shared selected rule). Refresh task's spin and
+  done pulse go on `#d-more`, since the menu has closed. `closeDrawer()` closes the menu. `#d-agent` is hidden when
+  there is no default agent (the preview has none: `ME.agent = {...}; applyMe()` shows it). `[data-tip]` tooltips are
+  hidden under `@media (hover: none)`, which headless Chrome reports, so a screenshot needs `[data-tip]::after{display:block !important}`.
 - **Show in Files → back to Board reopens the task.** `#d-files` stores `RETURN_TASK` (path, workspace,
   drawer scroll). The next click on `#mode-board` reopens it via `openTask()` and restores the scroll, once.
   It's skipped if the workspace changed in between.

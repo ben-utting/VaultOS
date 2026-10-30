@@ -350,16 +350,23 @@
         <h2 id="d-title"></h2>
         <div id="d-path" class="path"></div>
       </div>
-      <div class="viewseg" role="group" aria-label="Task view">
-        <button data-v="side" title="Side peek" aria-label="Side peek"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="14" y1="3" x2="14" y2="21"/></svg></button>
-        <button data-v="center" title="Centre peek" aria-label="Centre peek"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg></button>
-        <button data-v="full" title="Full page" aria-label="Full page"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
-      </div>
-      <!-- Workbench: jump from a task to its folder. Icon-only; the tooltip says what each will do. -->
-      <button id="d-files" class="ghost d-act" type="button" aria-label="Show in Files" data-tip="Show in Files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg></button>
-      <button id="d-agent" class="ghost d-act" type="button" aria-label="Start agent" data-tip="Start agent"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg><span class="agent-dot hidden"></span></button>
-      <button id="d-refresh" class="ghost" title="Re-read task.md from disk" aria-label="Refresh task"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <!-- Start agent / Go to agent: labelled, with the linked terminal's state as a dot. The tooltip says what it will do. -->
+      <button id="d-agent" class="ghost d-agent" type="button" aria-label="Start agent" data-tip="Start agent"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg><span class="d-agent-label">Agent</span><span class="agent-dot hidden"></span></button>
+      <!-- Everything else the drawer can do is in the More menu (more-menu.js): the task view, Show in Files, Refresh.
+           The items keep their ids / data-v, so their handlers (app.js, workbench.js) are bound the same way. -->
+      <button id="d-more" class="ghost" type="button" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" aria-controls="d-more-menu" data-tip="More"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
       <button id="d-close" class="ghost" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4 4 20"/><path d="m4 4 16 16"/></svg></button>
+      <div id="d-more-menu" class="fx-menu more-menu hidden" role="menu" aria-label="Task actions">
+        <div class="more-label" id="d-view-label" role="presentation">View as</div>
+        <div role="group" aria-labelledby="d-view-label">
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="side"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="14" y1="3" x2="14" y2="21"/></svg>Side panel</button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="center"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>Centred</button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="full"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Full screen</button>
+        </div>
+        <div class="more-sep" role="separator"></div>
+        <button id="d-files" type="button" role="menuitem"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>Show in Files</button>
+        <button id="d-refresh" type="button" role="menuitem" title="Re-read task.md from disk"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Refresh task</button>
+      </div>
     </div>
     <!-- Back to the task this one's `batch:` points at. Hidden for a standalone task and
          for a batch with no parent task.md. -->
@@ -454,6 +461,7 @@
   <script src="term.js"></script>
   <script src="agent-marks.js"></script>
   <script src="agent-form.js"></script>
+  <script src="more-menu.js"></script>
   <script src="connectors.js"></script>
   <script src="termtree.js"></script>
   <script src="termside.js"></script>

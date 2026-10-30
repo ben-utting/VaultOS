@@ -910,14 +910,18 @@ function applyTaskView(v) {
   localStorage.setItem('vaultboard.taskview', TASKVIEW);
   const d = $('drawer');
   for (const view of TASK_VIEWS) d.classList.toggle('view-' + view, view === TASKVIEW);
-  for (const b of document.querySelectorAll('.viewseg button')) {
-    b.classList.toggle('on', b.dataset.v === TASKVIEW);
+  // The three radios in the drawer's More menu (index.html); aria-checked is the selected state the CSS reads.
+  for (const b of document.querySelectorAll('#d-more-menu [data-v]')) {
+    b.setAttribute('aria-checked', String(b.dataset.v === TASKVIEW));
   }
 }
 applyTaskView(TASKVIEW);
-for (const b of document.querySelectorAll('.viewseg button')) {
+for (const b of document.querySelectorAll('#d-more-menu [data-v]')) {
   b.addEventListener('click', () => applyTaskView(b.dataset.v));
 }
+// The drawer's More button (more-menu.js). The menu closes itself on an item, Escape, Tab and an outside click;
+// closeDrawer closes it when the drawer goes, so a menu is never left open on a hidden drawer.
+const DRAWER_MORE = MoreMenu.attach($('d-more'), $('d-more-menu'));
 
 async function openTask(p) {
   let t;
@@ -1142,6 +1146,7 @@ function showTask(t, { keepScroll = false } = {}) {
 }
 
 function closeDrawer() {
+  DRAWER_MORE.close({ focus: false });
   $('drawer').classList.add('hidden');
   $('scrim').classList.add('hidden');
 }
@@ -1155,9 +1160,10 @@ document.addEventListener('keydown', (e) => {
   closeDrawer();
 });
 
+// Refresh task is a menu item, and the menu closes on it, so the spin and the done pulse go on the More button.
 $('d-refresh').addEventListener('click', () => {
   if (!OPEN) return;
-  withRefreshFeedback($('d-refresh'), async () => {
+  withRefreshFeedback($('d-more'), async () => {
     showTask(await api(ws('/api/task?path=' + encodeURIComponent(OPEN.path))), { keepScroll: true });
   });
 });
