@@ -124,6 +124,35 @@ test('muted text meets 4.5:1 in both themes', () => {
   assert.deepEqual(misses, [], `below 4.5:1:\n  ${misses.join('\n  ')}`);
 });
 
+// The spreadsheet's chrome has its own colour tokens. Its exemption from the type scale covers sizes only,
+// so each text colour must still clear 4.5:1 on the surface it sits on.
+function mix(a, b, p) {   // color-mix(in srgb, a p, b)
+  const ch = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [ch(a), ch(b)];
+  return `#${x.map((v, i) => Math.round(v * p + y[i] * (1 - p)).toString(16).padStart(2, '0')).join('')}`;
+}
+test('sheet text meets 4.5:1 in both themes', () => {
+  const misses = [];
+  for (const [name, theme] of [['dark', DARK], ['sepia', SEPIA]]) {
+    const pairs = [
+      ['--sheet-ink', '--sheet-paper', theme['--sheet-paper']],                // .xlsx cells
+      ['--sheet-head-fg', '--sheet-head-bg', theme['--sheet-head-bg']],        // row numbers, column letters
+      ['--text', '--sheet-head-sel-bg', theme['--sheet-head-sel-bg']],         // a selected header (.sg-hsel)
+      ['--sheet-changed', '--sheet-head-bg', theme['--sheet-head-bg']],        // an inserted row's number (.sg-newrow)
+      ['--sheet-changed', '--sheet-head-sel-bg', theme['--sheet-head-sel-bg']],
+      // a spare header (.sg-spare): color-mix(in srgb, --sheet-head-bg 55%, --bg)
+      ['--muted-2', 'spare header', theme['--sheet-head-bg'] && theme['--bg'] && mix(theme['--sheet-head-bg'], theme['--bg'], 0.55)],
+    ];
+    for (const [fg, bgName, bg] of pairs) {
+      assert.match(theme[fg] || '', HEX, `${name} ${fg} should be a hex colour`);
+      assert.match(bg || '', HEX, `${name} ${bgName} should be a hex colour`);
+      const r = ratio(theme[fg], bg);
+      if (r < 4.5) misses.push(`${name} ${fg} ${theme[fg]} on ${bgName} ${bg}: ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(misses, [], `below 4.5:1:\n  ${misses.join('\n  ')}`);
+});
+
 // ---------- the type scale ----------
 const TYPE_TOKEN = /^--t-[a-z0-9]+$/;
 const px = (v) => { const m = /^(\d*\.?\d+)px$/.exec(v.trim()); return m ? Number(m[1]) : NaN; };

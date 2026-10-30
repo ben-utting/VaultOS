@@ -2509,9 +2509,11 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 }
 :root[data-theme="light"] {
   --sheet-paper: #ffffff; --sheet-ink: #000000; --sheet-gridline: #d9dce0;
-  --sheet-head-bg: #ece0c6; --sheet-head-fg: #7d6c51; --sheet-head-sel-bg: #d3dcc0;
+  --sheet-head-bg: #ece0c6; --sheet-head-fg: #605039; --sheet-head-sel-bg: #d3dcc0;   /* fg = --muted: 5.93:1 */
   --sheet-sel: #107c41; --sheet-sel-tint: rgba(16, 124, 65, .13);
-  --sheet-changed: #b07d1c; --sheet-changed-tint: rgba(176, 125, 28, .18);
+  /* --sheet-changed is also the inserted-row number's text, so it is a darker gold than the tint's
+     (5.07:1 on --sheet-head-bg, 4.66:1 on --sheet-head-sel-bg; #b07d1c was 2.77). */
+  --sheet-changed: #7a5610; --sheet-changed-tint: rgba(176, 125, 28, .18);
   /* The changed corner keeps the dark theme's lighter gold: its job is contrast with the cell's fill, and a
      sepia-dark gold would be lost on red (see .sg-changed). */
   --sheet-changed-corner: #d7b46a; --sheet-changed-edge: #1a1408;
