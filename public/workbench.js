@@ -597,7 +597,7 @@ function fxWelcome() {
   const top = FX.recent.slice(0, 6);
   return `<div class="fx-welcome">
     <h2>Files</h2>
-    <p>The whole vault, read-only. Click a file for a preview tab, double-click to keep it open. Paths the agent prints in the terminal are clickable and land here.</p>
+    <p>The whole vault. Click a file for a preview tab, double-click to keep it open; text files can be edited. Paths the agent prints in the terminal are clickable and land here.</p>
     ${top.length ? `<h3>Just changed</h3><div class="fx-welcome-list">${top.map((r) =>
       `<button type="button" data-path="${esc(r.path)}"><span class="fx-ico">${fileIcon(r.kind)}</span><span class="fx-name">${esc(r.name)}<small>${esc(dirOf(r.path))}</small></span><span class="fx-recent-when">${ago(r.mtime)}</span></button>`).join('')}</div>` : ''}
     <p class="fx-hint">${termOn() ? '<kbd>Ctrl</kbd>+<kbd>`</kbd> terminal · ' : ''}type in the search box to find a file by name</p>

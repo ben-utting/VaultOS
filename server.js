@@ -157,9 +157,10 @@ function parseFrontmatter(raw) {
     // A quoted scalar's content is verbatim between the matching quotes — it must never
     // go through comment-stripping, or a title/value that legitimately contains '#'
     // (a ticket number in parens, a hex colour, ...) gets silently truncated.
-    const qm = /^"([^"]*)"|^'([^']*)'/.exec(rawVal);
+    // Double quotes honour the \" and \\ escapes; single quotes honour ''.
+    const qm = /^"((?:[^"\\]|\\.)*)"|^'((?:[^']|'')*)'/.exec(rawVal);
     if (qm) {
-      meta[kv[1]] = qm[1] !== undefined ? qm[1] : qm[2];
+      meta[kv[1]] = qm[1] !== undefined ? qm[1].replace(/\\(["\\])/g, '$1') : qm[2].replace(/''/g, "'");
       continue;
     }
     const v = rawVal.replace(/\s+#.*$/, '').trim();
@@ -369,7 +370,7 @@ function articleExcerpt(body) {
     }
   }
   return text.replace(/\*\*|__|`|\[\[|\]\]/g, '').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/^TL;DR\s*[—-]\s*/i, '').trim().slice(0, 220);
+    .replace(/^TL;DR\s*[:—–-]?\s*/i, '').trim().slice(0, 220);
 }
 
 // Targets referenced by [[...]] in a body (raw target strings, before the `|`).
@@ -789,7 +790,8 @@ function setFrontmatterField(raw, key, value) {
   if (!m) throw new Error('No frontmatter block');
   const re = new RegExp(`^(${key}:[ \\t]*).*$`, 'm');
   let fm = m[2];
-  const quoted = /[:#]/.test(value) ? `"${value}"` : value;
+  const quoted = /[:#"\\]/.test(value) || value !== value.trim()
+    ? `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : value;
   fm = re.test(fm) ? fm.replace(re, `$1${quoted}`) : `${fm}\n${key}: ${quoted}`;
   return raw.slice(0, m[1].length) + fm + raw.slice(m[1].length + m[2].length);
 }
@@ -2393,7 +2395,7 @@ async function walkRecent(dir, since, out) {
     if (e.name.startsWith('.') || FS_SKIP.has(e.name)) return;
     const full = path.join(dir, e.name);
     if (e.isDirectory()) return walkRecent(full, since, out);
-    if (!e.isFile() || e.name === 'Board.md' || e.name.includes('.tmp-')) return;
+    if (!e.isFile() || e.name === 'Board.md' || e.name.includes('.tmp-') || /^core(\.\d+)?$/.test(e.name)) return;
     try {
       const st = await fsp.stat(full);
       if (st.mtimeMs >= since) out.push({ path: relOf(full), name: e.name, kind: fsKind(e.name), mtime: st.mtimeMs });
@@ -3362,7 +3364,10 @@ async function boot() {
   if (svc) svc.boot().catch((err) => console.error('Today boot failed:', err.message));
 }
 
-boot().then(() => {
+// Required (by a test) rather than run: expose the pure frontmatter helpers and don't boot.
+if (require.main !== module) module.exports = { parseFrontmatter, setFrontmatterField };
+
+if (require.main === module) boot().then(() => {
   const server = app.listen(PORT, () => console.log(`vault-board listening on :${PORT}`));
   if (TERMINAL_ENV) mountTerminal(server);
   connectors.init().catch((err) => console.error('connectors init failed:', err && err.message));
