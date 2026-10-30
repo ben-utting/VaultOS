@@ -286,9 +286,9 @@ SCEN.F5 = async () => {
     && document.getElementById('mode-today').getClientRects().length > 0, 15000), await visible(P, '#mode-today'));
   if (!await ev(P, () => document.getElementById('mode-today').classList.contains('active'))) await tap(P, '#mode-today');
   check('F5 Today renders', await waitFor(P, () => {
-    const d = document.getElementById('td-dow');
+    const d = document.getElementById('td-next-date');
     return !!d && d.textContent.trim() !== '' && document.getElementById('today-view').getClientRects().length > 0;
-  }, 15000), [await text(P, '#td-dow'), await text(P, '#td-err')]);
+  }, 15000), [await text(P, '#td-next-date'), await text(P, '#td-err')]);
   await shot(P, 'f5-today');
 };
 

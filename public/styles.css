@@ -283,7 +283,7 @@ header button.ws-chip {
 .ws-chip-chev { width: 12px; height: 12px; flex: none; }   /* currentColor: --muted, --text on hover */
 .ws-chip-single { cursor: default; }
 .ws-chip-single .ws-chip-chev { display: none; }
-.ws-chip-off .ws-chip-label { color: var(--muted); }   /* Today and Files: not the workspace you are looking at */
+.ws-chip-off .ws-chip-label { color: var(--muted); }   /* Files: not the workspace you are looking at */
 .spacer { flex: 1; }
 .count { color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
 /* Today's running timer, in every mode (today.js). Gold for focus, blue for a break, quiet when paused.
@@ -2942,8 +2942,8 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
    follows. #today-view is a size container, so the cards in #td-main can
    fold on its width rather than the window's. */
 #today-view { container: today / inline-size; padding-bottom: var(--dock-space); }
-/* Nothing on screen until the first payload: an empty date card reads as broken. */
-#today-view:not([data-ready]) .td-hero { visibility: hidden; }
+/* Nothing on screen until the first payload: an empty Next strip or quote reads as broken. */
+#today-view:not([data-ready]) :is(.td-next, .td-quote) { visibility: hidden; }
 .td-page { max-width: 1240px; margin: 0 auto; padding: 18px; display: grid; gap: 16px; }
 .td-err { margin: 0; color: var(--danger-fg); font-size: var(--t-sm); }
 .td-card {
@@ -2951,16 +2951,36 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-xl);
   box-shadow: var(--edge-highlight), var(--shadow-1);
 }
-.td-hero { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 16px; }
-
-/* Date card: ‹ weekday / date / week and day of year › */
-.td-date { display: flex; align-items: center; gap: 10px; }
-.td-d { flex: 1; min-width: 0; }
-.td-dow { font-size: var(--t-sm); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
-.td-dnum { font-family: var(--brand-font); font-weight: 600; font-size: var(--t-3xl); line-height: 1.15; }
-.td-dmeta { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* Next: the first block, full width. Its header is the day stepper (‹ date ›, one line, "day N of 365" as
+   the date's title); its body is what to do now (a label, the text clamped to two lines) with Start, the
+   screen's one primary, and Open. "clear" has no actions, only the day's summary. */
+.td-next { display: grid; gap: 10px; }
+.td-next-h { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.td-next-date {
+  margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.td-next[data-day="today"] .td-next-date { color: var(--brand); }   /* gold label: the current day */
+.td-next-b { display: flex; align-items: center; gap: 12px 20px; min-width: 0; }
+.td-next-what { flex: 1; min-width: 0; }
+.td-next-l { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; font-size: var(--t-xs); color: var(--muted); }
+.td-next-l > span:first-child:empty { display: none; }
+.td-next-needs { margin: 0; cursor: default; color: var(--text); }
+.td-next-needs:hover { border-color: color-mix(in srgb, var(--review) 55%, transparent); }
+.td-next-t {
+  margin: 4px 0 0; font-family: var(--brand-font); font-size: var(--t-xl); font-weight: 600; line-height: 1.3;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.td-next-sum { margin: 4px 0 0; font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.td-next-acts { flex: none; flex-wrap: nowrap; }
+.td-next[data-kind="clear"] .td-next-acts { display: none; }
+.td-next[data-kind="clear"] .td-next-l { display: none; }
+.td-next[data-kind="clear"] .td-next-t { margin-top: 0; font-size: var(--t-lg); }
+#td-next-start { font-variant-numeric: tabular-nums; }
+.td-btn.td-ghost { background: transparent; }
+.td-back-s { display: none; }
 .td-back {
-  margin-top: 6px; padding: 2px 10px; cursor: pointer;
+  margin-left: auto; padding: 2px 10px; cursor: pointer; white-space: nowrap; flex: none;
   font: inherit; font-size: var(--t-xs); color: var(--accent);
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-full);
   transition: border-color var(--dur-micro) var(--ease-out);
@@ -3180,9 +3200,13 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
   #today-view { padding-bottom: calc(var(--mnav-h) + 24px); }
   .td-page { padding: 12px; gap: 12px; }
   .td-cols, .td-side { gap: 12px; }
-  .td-hero { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .td-main { gap: 12px; }
-  .td-dnum { font-size: var(--t-2xl); }
+  .td-next { padding: 12px; gap: 8px; }
+  .td-next-b { flex-direction: column; align-items: stretch; }
+  .td-next-t { font-size: var(--t-lg); }
+  .td-next-acts > .td-btn { flex: 1; justify-content: center; }
+  .td-back-l { display: none; }
+  .td-back-s { display: inline; }
   .td-hrow { grid-template-columns: 40px minmax(0, 1fr) 48px; grid-template-areas: "tick main streak" "tick cells streak"; row-gap: 6px; column-gap: 10px; }
   .td-head { grid-template-columns: 40px minmax(0, 1fr) 48px; grid-template-areas: ". cells streak"; column-gap: 10px; }
   .td-dl { width: 18px; }

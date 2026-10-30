@@ -1188,11 +1188,12 @@ function setMode(mode) {
   $('search').value = { kb: STATE.kb.query, files: FX.query }[mode] ?? STATE.query;
   $('search').classList.toggle('hidden', mode === 'today');   // nothing to search on Today
   document.body.dataset.mode = mode;
-  // Today and Files cover the whole vault, so the workspace chip still shows where Board and KB are but
-  // reads as not applying here. It stays clickable: picking one is how you choose where you land next.
-  const wsOff = mode === 'today' || mode === 'files';
+  // Files covers the whole vault, so the workspace chip still shows where Board and KB are but reads as not
+  // applying there. It stays clickable: picking one is how you choose where you land next. On Today it is
+  // live: Next's Board fallback is that workspace's In Progress task.
+  const wsOff = mode === 'files';
   $('ws-chip').classList.toggle('ws-chip-off', wsOff);
-  $('ws-chip').title = wsOff ? 'Today and Files cover the whole vault' : '';
+  $('ws-chip').title = wsOff ? 'Files covers the whole vault' : '';
   closeWsMenu({ focus: false });
   closeSheet();   // its folder/column sections depend on the mode (see secAvailable)
   updateFilterBadge();
@@ -2096,7 +2097,7 @@ window.addEventListener('focus', pollBoard);
 // ---------- Workspace switcher ----------
 // The chip in the header (#ws-chip) names the workspace Board and Knowledge Base are showing and opens a
 // menu of the visible ones; Settings → Workspaces has the same pick plus renaming, reordering and hiding.
-// The chip is always present, dimmed on Today and Files (they cover the whole vault, see setMode), precisely
+// The chip is always present, dimmed on Files (it covers the whole vault, see setMode), precisely
 // so the header is the same shape in every mode. With one workspace there is nothing to pick: it names it
 // and opens nothing. The full registry comes from /api/workspaces, the hidden ones left out.
 let WORKSPACE_LIST = [];
@@ -2244,6 +2245,7 @@ function setWorkspace(key) {
   window.scrollTo(0, 0);
 
   if (STATE.mode === 'kb') loadKB(); else load();
+  if (STATE.mode === 'today') Today.onWorkspace();   // Next's Board fallback follows the chip
   KbMorning.check();   // a workspace with nothing to read earlier may have one
 }
 

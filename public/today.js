@@ -1,11 +1,11 @@
 'use strict';
 
 // ========================================================================
-// Today — the landing mode: the date card and the day's quote across the
-// top, and the day's other cards in #td-main below them.
+// Today — the landing mode: Next across the top (the date line, then the one
+// thing to do now), the day's other cards in #td-main, and the quote last.
 // Loaded after app.js and shares its globals ($, api, svg, toast, setMode,
-// segSet, STATE) and termtoast.js's TermToast. One global,
-// Today = { init, show, hide, reload }.
+// segSet, STATE, WORKSPACE_LIST, TASK_AGENTS, openTask, esc), termtoast.js's TermToast
+// and today-next.js's TodayNext. One global, Today = { init, show, hide, onWorkspace, reload }.
 //
 // The Pomodoro belongs to the server. This file counts its time down locally,
 // and keeps the header chip, the tab title and the completion toasts going in
@@ -151,26 +151,25 @@ const Today = (() => {
     $('today-view').innerHTML = `
       <div class="td-page">
         <p class="td-err hidden" id="td-err" role="alert"></p>
-        <div class="td-hero">
-          <section class="td-card td-date" aria-label="Date">
+        <section class="td-card td-next" id="td-next" data-kind="clear" aria-labelledby="td-next-date">
+          <div class="td-next-h">
             <button type="button" class="td-nav" id="td-prev" aria-label="Previous day" title="Previous day">${ICON.prev}</button>
-            <div class="td-d">
-              <div class="td-dow" id="td-dow"></div>
-              <div class="td-dnum" id="td-dnum"></div>
-              <div class="td-dmeta" id="td-dmeta"></div>
-              <button type="button" class="td-back hidden" id="td-back">Back to today</button>
+            <h2 class="td-next-date" id="td-next-date"></h2>
+            <button type="button" class="td-nav" id="td-nextday" aria-label="Next day" title="Next day" disabled>${ICON.next}</button>
+            <button type="button" class="td-back hidden" id="td-back" aria-label="Back to today"><span class="td-back-l">Back to today</span><span class="td-back-s">Today</span></button>
+          </div>
+          <div class="td-next-b">
+            <div class="td-next-what">
+              <div class="td-next-l"><span id="td-next-label"></span><span class="card-agent td-next-needs hidden" id="td-next-needs" data-agent="blocked"><span class="agent-dot" data-agent="blocked"></span>needs you</span></div>
+              <p class="td-next-t" id="td-next-text"></p>
+              <p class="td-next-sum hidden" id="td-next-sum"></p>
             </div>
-            <button type="button" class="td-nav" id="td-next" aria-label="Next day" title="Next day" disabled>${ICON.next}</button>
-          </section>
-          <figure class="td-card td-quote">
-            <div class="td-qt">
-              <blockquote class="td-qtext" id="td-quote-text"></blockquote>
-              <figcaption class="td-qcap"><span id="td-quote-by"></span><span id="td-quote-from"></span></figcaption>
-              <a class="td-zq" href="https://zenquotes.io/" target="_blank" rel="noopener">Quotes from ZenQuotes</a>
+            <div class="td-btns td-next-acts">
+              <button type="button" class="td-btn primary" id="td-next-start"></button>
+              <button type="button" class="td-btn td-ghost" id="td-next-open">Open</button>
             </div>
-            <button type="button" class="td-ibtn hidden" id="td-shuffle" aria-label="Show another quote" title="Show another quote">${ICON.shuffle}</button>
-          </figure>
-        </div>
+          </div>
+        </section>
         <div class="td-main" id="td-main"><div class="td-cols">
           <section class="td-card td-habits" id="td-habits-card" aria-labelledby="td-habits-h">
             <div class="td-card-h"><h2 id="td-habits-h">Habits</h2><span class="td-hcount" id="td-hcount"></span><span class="td-hrange" id="td-hrange"></span></div>
@@ -233,6 +232,14 @@ const Today = (() => {
             </section>
           </div>
         </div></div>
+        <figure class="td-card td-quote">
+          <div class="td-qt">
+            <blockquote class="td-qtext" id="td-quote-text"></blockquote>
+            <figcaption class="td-qcap"><span id="td-quote-by"></span><span id="td-quote-from"></span></figcaption>
+            <a class="td-zq" href="https://zenquotes.io/" target="_blank" rel="noopener">Quotes from ZenQuotes</a>
+          </div>
+          <button type="button" class="td-ibtn hidden" id="td-shuffle" aria-label="Show another quote" title="Show another quote">${ICON.shuffle}</button>
+        </figure>
       </div>`;
   }
 
@@ -245,10 +252,13 @@ const Today = (() => {
     const year = t.getUTCFullYear();
     $('today-view').dataset.ready = '1';
     $('td-err').classList.add('hidden');
-    $('td-dow').textContent = onToday ? `Today · ${weekday(p.date)}` : weekday(p.date);
-    $('td-dnum').textContent = `${t.getUTCDate()} ${MONTHS[t.getUTCMonth()]}${year === utc(p.today).getUTCFullYear() ? '' : ` ${year}`}`;
-    $('td-dmeta').textContent = `Week ${isoWeek(p.date)} · day ${dayOfYear(p.date)} of ${isLeap(year) ? 366 : 365}`;
-    $('td-next').disabled = onToday;
+    // One line in Next's header: "Fri 30 Oct · week 44" (the year too when it isn't this one).
+    const nd = $('td-next-date');
+    nd.textContent = `${shortDay(p.date)} ${t.getUTCDate()} ${MONTHS[t.getUTCMonth()].slice(0, 3)}`
+      + `${year === utc(p.today).getUTCFullYear() ? '' : ` ${year}`} · week ${isoWeek(p.date)}`;
+    nd.title = `day ${dayOfYear(p.date)} of ${isLeap(year) ? 366 : 365}`;
+    $('td-next').dataset.day = onToday ? 'today' : 'other';
+    $('td-nextday').disabled = onToday;
     $('td-back').classList.toggle('hidden', onToday);
 
     const q = p.day.quote;
@@ -262,6 +272,103 @@ const Today = (() => {
     paintHabits(p);
     paintTasks(p);
     absorb(p);
+    paintNext();
+  }
+
+  // ---------- Next: the one thing to do now (TodayNext.pickNext picks it) ----------
+  // The day's first open task; on today, else the In Progress task of the header chip's workspace; else
+  // "clear". Board tasks are fetched per workspace (show, onWorkspace, Today's own refresh; no polling), kept
+  // under the workspace they were fetched for, and an answer for a workspace that's no longer current, or one
+  // a newer fetch overtook, is dropped. No answer yet, or a failed one, is null: Next goes to clear, never an error.
+  const boardBy = Object.create(null);    // workspace key → its last good /api/tasks list
+  const boardSeq = Object.create(null);   // workspace key → the latest fetch's number
+  let next = null;        // the Next on screen
+  let extra = null;       // a one-off "Working on" option for a target that isn't in the list: { value, label }
+  async function loadBoard() {
+    const key = STATE.workspace;
+    const n = (boardSeq[key] = (boardSeq[key] || 0) + 1);
+    paintNext();
+    let tasks = null;
+    try {
+      const d = await api('/api/tasks?ws=' + encodeURIComponent(key));
+      tasks = d && Array.isArray(d.tasks) ? d.tasks : null;
+    } catch { /* Next never shows an error: no list means clear */ }
+    if (key !== STATE.workspace || n !== boardSeq[key]) return;
+    if (tasks) boardBy[key] = tasks; else delete boardBy[key];
+    paintNext();
+  }
+  const wsName = () => {
+    const w = (WORKSPACE_LIST || []).find((x) => x.key === STATE.workspace);
+    return w ? w.label : STATE.workspace;
+  };
+  const daySummary = () => (!sum ? '' : `${sum.total ? `${sum.done}/${sum.total} habits · ` : ''}${fmtMin(sum.focusMin)} focus`);
+
+  function paintNext() {
+    if (!P) return;
+    const onToday = P.date === P.today;
+    next = TodayNext.pickNext({
+      todayTasks: P.day.tasks || [],
+      boardTasks: boardBy[STATE.workspace] || null,
+      agentState: (path) => (TASK_AGENTS[path] || {}).state,
+      viewingToday: onToday,
+      wsLabel: wsName(),
+    });
+    const k = next.kind;
+    $('td-next').dataset.kind = k;
+    $('td-next-label').textContent = k === 'today' ? (onToday ? "Today's tasks" : `Tasks · ${dayLabel(P.date)}`)
+      : k === 'board' ? `Board · ${next.wsLabel}` : '';
+    $('td-next-needs').classList.toggle('hidden', !(k === 'board' && next.needsYou));
+    $('td-next-text').textContent = k === 'today' ? next.text : k === 'board' ? next.title
+      : onToday ? "You're clear for today" : 'Nothing left open that day';
+    const s = $('td-next-sum');
+    s.textContent = k === 'clear' && onToday ? daySummary() : '';
+    s.classList.toggle('hidden', !s.textContent);
+    $('td-next-open').setAttribute('aria-label', k === 'board' ? `Open ${next.title} on the Board` : k === 'today' ? `Show ${next.text} in the list` : 'Open');
+    // One solid-gold action on the screen: Next's Start while it has an item, Focus's own Start otherwise.
+    $('td-go').classList.toggle('primary', k === 'clear');
+    paintNextStart();
+  }
+  // Start, by the timer: Running · 12:34 (disabled) while a session runs, Paused while paused, disabled in a
+  // break (Start would start the break). The strip never starts a second session.
+  function paintNextStart() {
+    const b = $('td-next-start');
+    if (!b || !next || next.kind === 'clear') return;
+    let label = 'Start';
+    let why = next.kind === 'board' ? `Focus on ${next.title}` : `Focus on ${next.text}`;
+    if (tm && tm.state === 'running') { label = `Running · ${clock(leftMs())}`; why = `${PHASES[tm.phase] || 'Focus'} is running`; }
+    else if (tm && tm.state === 'paused') { label = `Paused · ${clock(leftMs())}`; why = 'Resume or reset it in Focus'; }
+    else if (tm && tm.phase !== 'focus') why = 'A break is next: start or skip it in Focus';
+    const off = !tm || tm.state !== 'idle' || tm.phase !== 'focus';
+    if (b.dataset.label !== label) {
+      b.dataset.label = label;
+      b.innerHTML = (off && tm && tm.state !== 'idle' ? '' : ICON.play) + esc(label);
+    }
+    b.disabled = off;
+    b.title = why;
+  }
+  function onNextStart() {
+    if (!next || next.kind === 'clear' || !tm || timerBusy || tm.state !== 'idle' || tm.phase !== 'focus') return;
+    const sel = $('td-target');
+    if (![...sel.options].some((o) => o.value === next.target)) {
+      extra = { value: next.target, label: next.kind === 'board' ? next.title : next.text };
+    }
+    aim(next.target);
+    timerOp('start');
+  }
+  function onNextOpen() {
+    if (!next || next.kind === 'clear') return;
+    if (next.kind === 'board') {
+      const path = next.path;
+      setMode('board');
+      openTask(path);
+      return;
+    }
+    const t = (P.day.tasks || []).find((x) => !x.done && !x.moved && x.text === next.text);
+    const row = t && $('td-tasks').querySelector(`.td-trow[data-index="${t.index}"]`);
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    (row || $('td-tasks')).closest('.td-card').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+    const chk = row && row.querySelector('.td-tchk');
+    if (chk) chk.focus({ preventScroll: true });
   }
 
   // ---------- Habits card ----------
@@ -624,7 +731,7 @@ const Today = (() => {
   // #count is Today's while it's showing: today's habits and focus, whichever day is on screen.
   function paintCount() {
     if (!shown) return;
-    $('count').textContent = !sum ? '' : `${sum.total ? `${sum.done}/${sum.total} habits · ` : ''}${fmtMin(sum.focusMin)} focus`;
+    $('count').textContent = daySummary();
   }
 
   function syncShuffle() {
@@ -689,6 +796,7 @@ const Today = (() => {
     }
     paintPicker();
     paintLog();
+    paintNextStart();
   }
 
   // Working on: the goal habits with today's minutes, today's open tasks, then Just focus. Locked in a break.
@@ -697,13 +805,19 @@ const Today = (() => {
     const d = todayDay || { habits: [], tasks: [], byHabit: {} };
     const goals = d.habits.filter((h) => h.goal);
     const open = d.tasks.filter((t) => !t.done && !t.moved);
-    const key = JSON.stringify([goals.map((h) => [h.id, h.name, d.byHabit[h.id] || 0, h.goal]), open.map((t) => t.text)]);
+    // Next's Start on a target the list doesn't have (a Board task) adds it as a one-off option under Board.
+    // It stays while it's picked or the session runs on it, and goes once the picker moves on.
+    if (extra && extra.value !== pick && !(tm && tm.state !== 'idle' && tm.target === extra.value)) extra = null;
+    const listed = (v) => v === 'focus' || goals.some((h) => h.id === v) || open.some((t) => `task:${t.text}` === v);
+    const one = extra && !listed(extra.value) ? extra : null;
+    const key = JSON.stringify([goals.map((h) => [h.id, h.name, d.byHabit[h.id] || 0, h.goal]), open.map((t) => t.text), one && [one.value, one.label]]);
     if (key !== pickKey) {
       pickKey = key;
       const kids = [];
       const group = (label, opts) => { const g = document.createElement('optgroup'); g.label = label; g.append(...opts); return g; };
       if (goals.length) kids.push(group('Habits with a time goal', goals.map((h) => new Option(`${h.name} (${d.byHabit[h.id] || 0}/${h.goal})`, h.id))));
       if (open.length) kids.push(group("Today's tasks", open.map((t) => new Option(t.text, `task:${t.text}`))));
+      if (one) kids.push(group('Board', [new Option(one.label, one.value)]));
       kids.push(new Option('Just focus', 'focus'));
       sel.replaceChildren(...kids);
     }
@@ -752,6 +866,7 @@ const Today = (() => {
       $('td-ring-arc').setAttribute('stroke-dashoffset', (CIRC * (1 - (tm && tm.totalMs ? left / tm.totalMs : 1))).toFixed(2));
     }
     paintChip(left);
+    if (P) paintNextStart();
     const base = document.title.replace(CHIP_PREFIX, '');
     const title = tm && tm.state === 'running' && signedIn ? `${clock(left)} · ${base}` : base;
     if (document.title !== title) document.title = title;
@@ -916,7 +1031,9 @@ const Today = (() => {
     inited = true;
     build();
     $('td-prev').addEventListener('click', () => step(-1));
-    $('td-next').addEventListener('click', () => step(1));
+    $('td-nextday').addEventListener('click', () => step(1));
+    $('td-next-start').addEventListener('click', onNextStart);
+    $('td-next-open').addEventListener('click', onNextOpen);
     $('td-back').addEventListener('click', () => { if (P) { cur = P.today; load(null); } });
     $('td-shuffle').addEventListener('click', shuffle);
     $('td-habits').addEventListener('click', onHabitClick);
@@ -947,9 +1064,15 @@ const Today = (() => {
     shown = true;
     paintCount();
     reload();
+    loadBoard();
   }
   // Hiding Today leaves the countdown, the chip and the toasts running.
   function hide() { shown = false; }
+  // The header chip picked another workspace while Today shows: Next's Board fallback follows it.
+  function onWorkspace() {
+    if (!inited) return;
+    loadBoard();
+  }
 
-  return { init, show, hide, reload: () => reload() };
+  return { init, show, hide, onWorkspace, reload: () => { if (shown) loadBoard(); return reload(); } };
 })();

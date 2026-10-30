@@ -151,7 +151,7 @@ const modeBtn = (mode) => (DEFAULTS.phone ? `#mobile-nav button[data-for="mode-$
 async function painted(p) {
   for (let attempt = 1; attempt <= 2; attempt++) {
     const ok = await waitFor(p, () => {
-      const d = document.getElementById('td-dow');
+      const d = document.getElementById('td-next-date');
       return !!d && d.textContent.trim() !== '' && !document.getElementById('app').classList.contains('hidden');
     }, 15000);
     if (ok) return true;
@@ -180,9 +180,11 @@ SCEN.T0 = async () => {
   check('T0 #today-view visible', await visible(p, '#today-view') === true);
   check('T0 #board-view hidden', await visible(p, '#board-view') === false);
   const wd = londonWeekday();
-  const dow = await text(p, '#td-dow');
-  check(`T0 #td-dow contains ${wd}`, typeof dow === 'string' && dow.includes(wd), dow);
-  check('T0 #td-dmeta reads Week N · day D of 365|366', /^Week \d{1,2} · day \d{1,3} of 36[56]$/.test(await text(p, '#td-dmeta') || ''), await text(p, '#td-dmeta'));
+  const dow = await text(p, '#td-next-date');
+  check(`T0 #td-next-date starts with ${wd.slice(0, 3)}`, typeof dow === 'string' && dow.startsWith(wd.slice(0, 3)), dow);
+  check('T0 #td-next-date reads Fri 30 Oct · week N', /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}( \d{4})? · week \d{1,2}$/.test(dow || ''), dow);
+  const dayOf = await ev(p, () => document.getElementById('td-next-date').title);
+  check('T0 #td-next-date title reads day D of 365|366', /^day \d{1,3} of 36[56]$/.test(dayOf || ''), dayOf);
   const q = await text(p, '#td-quote-text');
   check('T0 #td-quote-text non-empty', typeof q === 'string' && q.length > 0, q);
   check('T0 ZenQuotes attribution link', await ev(p, () => {
@@ -191,7 +193,7 @@ SCEN.T0 = async () => {
   }) === true);
   check('T0 #count is the habits count', HABITS_COUNT.test(await text(p, '#count') || ''), await text(p, '#count'));
   check('T0 search box hidden on Today', await visible(p, '#search') === false);
-  check('T0 #td-next disabled on today', await ev(p, () => document.getElementById('td-next').disabled) === true);
+  check('T0 #td-nextday disabled on today', await ev(p, () => document.getElementById('td-nextday').disabled) === true);
   check('T0 #td-back hidden on today', await visible(p, '#td-back') === false);
   check('T0 no horizontal scroll', await ev(p, () => document.documentElement.scrollWidth <= window.innerWidth),
     await ev(p, () => [document.documentElement.scrollWidth, window.innerWidth]));
@@ -213,16 +215,16 @@ SCEN.T0 = async () => {
     const b = document.getElementById('td-back');
     return !!b && b.getClientRects().length > 0;
   }));
-  const pastDow = await text(p, '#td-dow');
-  check('T0 ‹ moves off today (#td-dow a weekday, not Today)', typeof pastDow === 'string' && /^[A-Z][a-z]+day$/.test(pastDow), pastDow);
-  check('T0 #td-next enabled on a past day', await ev(p, () => document.getElementById('td-next').disabled) === false);
+  const pastDay = await ev(p, () => document.getElementById('td-next').dataset.day);
+  check('T0 ‹ moves off today (#td-next[data-day] is other)', pastDay === 'other', pastDay);
+  check('T0 #td-nextday enabled on a past day', await ev(p, () => document.getElementById('td-nextday').disabled) === false);
   check('T0 shuffle hidden on a past day', await visible(p, '#td-shuffle') === false);
   check('T0 #count still today\'s habits on a past day', HABITS_COUNT.test(await text(p, '#count') || ''), await text(p, '#count'));
   await tap(p, '#td-back');
   check('T0 Back to today hides #td-back', await waitFor(p, () => {
     const b = document.getElementById('td-back');
-    return !!b && b.getClientRects().length === 0 && /^Today/.test(document.getElementById('td-dow').textContent);
-  }), await text(p, '#td-dow'));
+    return !!b && b.getClientRects().length === 0 && document.getElementById('td-next').dataset.day === 'today';
+  }), await ev(p, () => document.getElementById('td-next').dataset.day));
 
   // Board and back.
   await tap(p, modeBtn('board'));
@@ -369,7 +371,7 @@ SCEN.T2 = async () => {
   check('T2 D-1 shows the done task, ticked', await ev(p, () => !!document.querySelector('#td-tasks .td-trow.done .td-tchk[aria-pressed="true"]')) === true);
   await shot(p, `t2-${themeTag()}-${sizeTag()}-d1`);
   await tap(p, '#td-back');
-  check('T2 back on today', await waitFor(p, () => /^Today/.test(document.getElementById('td-dow').textContent) && document.querySelectorAll('#td-tasks .td-trow').length === 1));
+  check('T2 back on today', await waitFor(p, () => document.getElementById('td-next').dataset.day === 'today' && document.querySelectorAll('#td-tasks .td-trow').length === 1));
 
   // Stale toggle: the file changes under the page, then the old row is clicked.
   // (The note ends with "## Focus", so a bare append would land outside the Tasks section: add the line inside it.)
@@ -601,7 +603,7 @@ SCEN.T3 = async () => {
   check('T3 past day: no Focus link, no ▶', await waitFor(p, () => !document.getElementById('td-back').classList.contains('hidden'))
     && await ev(p, () => !document.querySelector('.td-hfocus') && !document.querySelector('.td-tfocus')) === true);
   await tap(p, '#td-back');
-  await waitFor(p, () => /^Today/.test(document.getElementById('td-dow').textContent));
+  await waitFor(p, () => document.getElementById('td-next').dataset.day === 'today');
 
   // The sound setting: Off is stored as 'off', On as 'on'.
   await tap(p, '#setbtn');
@@ -667,8 +669,8 @@ SCEN.T4 = async () => {
   check('T4 stale tick: no habit write sent', !sent.some((s) => s.startsWith('POST /api/today/habit')), sent);
   check('T4 stale tick: today\'s note unchanged', note(today) === before);
   check('T4 stale tick: the page reloaded today, once', sent.filter((s) => s === 'GET /api/today').length === 1, sent);
-  check('T4 stale tick: wake shows not ticked, card still on Today', await pressed('wake') === 'false' && /^Today/.test(await text(p, '#td-dow') || ''),
-    [await pressed('wake'), await text(p, '#td-dow')]);
+  check('T4 stale tick: wake shows not ticked, card still on Today', await pressed('wake') === 'false' && await ev(p, () => document.getElementById('td-next').dataset.day) === 'today',
+    [await pressed('wake'), await ev(p, () => document.getElementById('td-next').dataset.day)]);
 
   // (b) A task add on a stale "today": not sent, and the typed text stays in the box.
   await staleClock();
@@ -686,7 +688,7 @@ SCEN.T4 = async () => {
 
   // (c) A past day stepped to on purpose still takes writes on a stale clock.
   await tap(p, '#td-prev');
-  check('T4 stepped back a day', await waitFor(p, () => !document.getElementById('td-back').classList.contains('hidden') && !/^Today/.test(document.getElementById('td-dow').textContent)));
+  check('T4 stepped back a day', await waitFor(p, () => !document.getElementById('td-back').classList.contains('hidden') && !document.getElementById('td-next').dataset.day === 'today'));
   await settle();
   await staleClock();
   sent.length = 0;
@@ -700,7 +702,7 @@ SCEN.T4 = async () => {
   // (d) The clock back to normal: ticks and the task add work again.
   await ev(p, () => { Date.now = window.__realNow; });
   await tap(p, '#td-back');
-  check('T4 back on today', await waitFor(p, () => /^Today/.test(document.getElementById('td-dow').textContent)));
+  check('T4 back on today', await waitFor(p, () => document.getElementById('td-next').dataset.day === 'today'));
   await settle();
   await tap(p, '.td-hrow[data-id="wake"] .td-tick');
   check('T4 clock back: the wake tick shows', await waitFor(p, () => document.querySelector('.td-hrow[data-id="wake"] .td-tick').getAttribute('aria-pressed') === 'true'));
