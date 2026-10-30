@@ -47,6 +47,7 @@ const FX_ICONS = {
   terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
   locate: svg('<circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/>'),
   link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
+  more: svg('<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>'),
   refresh: svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>'),
   download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'),
   rename: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
@@ -504,9 +505,30 @@ function metaBlock(meta) {
     + '</dl></details>';
 }
 
+// The bar's More menu (more-menu.js). The bar is rebuilt with innerHTML on every render, so #fx-more is a new
+// button each time; the previous attach is detached first (that removes its listeners and the menu node it moved
+// to <body>), or a stale #fx-more-menu with the same id would pile up there. Also called when the bar is hidden
+// and when Files mode is left.
+let FX_MORE = null;
+function fxMoreDetach() {
+  if (FX_MORE) { FX_MORE.detach(); FX_MORE = null; }
+}
+function fxMoreAttach() {
+  const menu = $('fx-more-menu');
+  FX_MORE = MoreMenu.attach($('fx-more'), menu);
+  // The menu lives in <body>, outside #fx-bar, so its items don't reach the bar's click handler: they run the same
+  // dispatch from here. (Registered after MoreMenu's own click listener, so the menu has closed by now and an
+  // action that moves focus, Terminal here, keeps it.)
+  menu.addEventListener('click', (e) => {
+    const it = e.target.closest('[role=menuitem]');
+    if (it && FX.active) fxToolAction(it, FX.active);
+  });
+}
+
 function renderView({ keepScroll = false } = {}) {
   const view = $('fx-view');
   const bar = $('fx-bar');
+  fxMoreDetach();
   const p = FX.active;
   const f = p && FX.files.get(p);
   // .md: Rendered | Source. A spreadsheet is a grid; a .csv also has its text, so Grid | Source.
@@ -541,14 +563,16 @@ function renderView({ keepScroll = false } = {}) {
     ${views ? `<div class="seg fx-seg" role="group" aria-label="View">${views.map(([v, label]) => `<button data-v="${v}" class="${mode === v ? 'on' : ''}">${label}</button>`).join('')}</div>` : ''}
     ${grid ? SheetFiles.barHtml(p, f) : ''}
     ${TextEdit.barHtml(p, f, mode)}
-    <span class="fx-tools">
-    <button type="button" class="ghost fx-bar-btn" id="fx-locate" title="Show in the tree" aria-label="Show in the tree">${FX_ICONS.locate}</button>
-    ${f.source != null ? `<button type="button" class="ghost fx-bar-btn fx-copyall" id="fx-copyall" title="Copy the whole file (or Ctrl+A in the file, then Ctrl+C)">${ICONS.copy}<span>Copy file</span></button>` : ''}
-    <button type="button" class="ghost fx-bar-btn" id="fx-copy" title="Copy vault path" aria-label="Copy vault path">${FX_ICONS.link}</button>
-    <button type="button" class="ghost fx-bar-btn" id="fx-download" title="Download this file" aria-label="Download">${FX_ICONS.download}</button>
-    ${termOn() ? `<button type="button" class="ghost fx-bar-btn" id="fx-term" title="Open the terminal in this folder" aria-label="Terminal here">${FX_ICONS.terminal}</button>` : ''}
-    <button type="button" class="ghost fx-bar-btn" id="fx-reload" title="Re-read from disk" aria-label="Refresh file">${FX_ICONS.refresh}</button>
-    </span>`;
+    <button type="button" class="ghost fx-bar-btn fx-sheet-btn" id="fx-more" aria-label="More file actions" aria-controls="fx-more-menu" title="Show in the tree, copy, download, terminal, refresh">${FX_ICONS.more}<span class="fx-sheet-label">More</span></button>
+    <div id="fx-more-menu" class="fx-menu more-menu hidden" role="menu" aria-label="File actions">
+      <button type="button" role="menuitem" id="fx-locate" title="Show this file in the tree">${FX_ICONS.locate}Show in the tree</button>
+      ${f.source != null ? `<button type="button" role="menuitem" id="fx-copyall" title="Copy the whole file (or Ctrl+A in the file, then Ctrl+C)">${ICONS.copy}Copy file</button>` : ''}
+      <button type="button" role="menuitem" id="fx-copy" title="Copy the file's path in the vault">${FX_ICONS.link}Copy vault path</button>
+      <button type="button" role="menuitem" id="fx-download" title="Download this file">${FX_ICONS.download}Download</button>
+      ${termOn() ? `<button type="button" role="menuitem" id="fx-term" title="Open the terminal in this folder">${FX_ICONS.terminal}Terminal here</button>` : ''}
+      <button type="button" role="menuitem" id="fx-reload" title="Re-read from disk">${FX_ICONS.refresh}Refresh file</button>
+    </div>`;
+  fxMoreAttach();
 
   if (TextEdit.isEditing(p) && TextEdit.canEdit(f, mode)) {
     TextEdit.mount(view, p, f);
@@ -681,16 +705,29 @@ $('fx-bar').addEventListener('click', (e) => {
   if (!btn) return;
   if (TextEdit.onBar(btn, p)) return;
   if (window.SheetFiles && SheetFiles.onBar(btn, p)) return;
-  if (btn.id === 'fx-locate') { fxClearSearch(); fxReveal(p); if (window.matchMedia('(max-width: 900px)').matches) setFxSide(true); }
-  else if (btn.id === 'fx-copy') copyText(p).then(() => toast('Copied ' + p));
-  else if (btn.id === 'fx-copyall') {
-    const f = FX.files.get(p);
-    if (f && f.source != null) copyText(f.source).then(() => toast(`Copied ${baseOf(p)} (${f.source.split('\n').length} lines)`));
-  }
-  else if (btn.id === 'fx-download') fxDownload(p);
-  else if (btn.id === 'fx-term') termOpen({ cwd: dirOf(p) });
-  else if (btn.id === 'fx-reload') withRefreshFeedback(btn, () => fxShow(p, { keepScroll: true, refetch: true }));
+  fxToolAction(btn, p);
 });
+
+// The file tools (the More menu's items, and the ids they keep): one dispatch for the bar's delegated click
+// and for the menu, which sits in <body>. Returns whether it was one of them.
+function fxToolAction(btn, p) {
+  switch (btn.id) {
+    case 'fx-locate':
+      fxClearSearch(); fxReveal(p); if (window.matchMedia('(max-width: 900px)').matches) setFxSide(true);
+      return true;
+    case 'fx-copy': copyText(p).then(() => toast('Copied ' + p)); return true;
+    case 'fx-copyall': {
+      const f = FX.files.get(p);
+      if (f && f.source != null) copyText(f.source).then(() => toast(`Copied ${baseOf(p)} (${f.source.split('\n').length} lines)`));
+      return true;
+    }
+    case 'fx-download': fxDownload(p); return true;
+    case 'fx-term': termOpen({ cwd: dirOf(p) }); return true;
+    // The menu closes on the click, so the spin and the done pulse go on the More button (as the drawer's Refresh does).
+    case 'fx-reload': withRefreshFeedback($('fx-more') || btn, () => fxShow(p, { keepScroll: true, refetch: true })); return true;
+  }
+  return false;
+}
 
 // ---------- Download ----------
 // A plain <a download> click: the server answers with Content-Disposition:

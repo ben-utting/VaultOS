@@ -1175,6 +1175,8 @@ function setMode(mode) {
   if (mode === 'today' && !todayOn()) mode = 'board';   // Today is off: nothing to show (a Refresh's 'today' too)
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
   if (STATE.mode === 'files' && mode !== 'files' && window.SheetFiles) SheetFiles.beforeViewChange(null, null);
+  // ... and the Files bar's More menu, which lives in <body>, is detached rather than left there (workbench.js).
+  if (STATE.mode === 'files' && mode !== 'files') fxMoreDetach();
   // Back in KB mode with an article still being read: watch its end afresh. Hidden, the
   // observer saw it leave; shown again, a first report of "in view" is only where the page
   // happens to be (a short article, or a phone scroll clamped to its bottom), not reading.

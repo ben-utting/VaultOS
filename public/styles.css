@@ -2261,8 +2261,14 @@ body.term-popout .term-host { position: relative; }
 }
 @media (max-width: 700px) {
   .fx-doc { padding: 18px 16px 60px; }
-  .fx-bar { padding: 6px 8px; gap: 4px; flex-wrap: wrap; }
-  .fx-crumbs { flex-basis: 100%; }
+  /* One row: the path gives way (it loses its start, so the file's name stays), Edit and More stay. */
+  .fx-bar { padding: 6px 8px; gap: 4px; flex-wrap: nowrap; }
+  .fx-crumbs { flex: 1 1 0; justify-content: flex-end; }
+  .fx-crumb-last { flex: none; }
+  .fx-seg button { padding: 3px 7px; }
+  /* A text file with two actions (Save · Cancel, or Edit · Restore previous) next to the view switch and More:
+     their icons go, so the labels fit. */
+  .fx-bar:has(#fx-text-btns .fx-sheet-btn + .fx-sheet-btn) #fx-text-btns .icon { display: none; }
   /* A phone has no room to share: the dock is a full-screen sheet — see
      "Mobile: terminal" in the responsive block. */
   .term-resize { display: none; }
@@ -2733,8 +2739,8 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 
 /* Edit · Restore, and while editing Save (N) · Done, in the file bar (sheet-files.js). The wrapper is only there
    to be redrawn as one; the buttons are the bar's own flex items (on a phone the two groups wrap: see
-   "Mobile: spreadsheet grid"). .fx-tools (workbench.js) holds the file's own tools, Show in tree … Refresh. */
-.fx-sheet-btns, .fx-tools { display: contents; }
+   "Mobile: spreadsheet grid"). The file's own tools, Show in tree … Refresh, are in #fx-more-menu (workbench.js). */
+.fx-sheet-btns { display: contents; }
 .fx-sheet-btn { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-xs); white-space: nowrap; }
 .fx-sheet-btn:disabled { opacity: .5; cursor: not-allowed; }
 .fx-sheet-save:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
@@ -2796,13 +2802,10 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
   .sg-fbar { min-height: 32px; }
   .sg-name, .sg-fx { display: none; }
   .sg-fval { line-height: 23px; height: 31px; max-height: 123px; }   /* one line 31px, five at most */
-  /* The file bar of a spreadsheet: under the path, the sheet's own actions (Grid | Source, Edit · Restore or
-     Save (N) · Done) as one group on the left, then the file tools as one group on the right — on the same
-     row when they fit, else on the next, but never split one by one. "Restore previous version" says just
-     "Restore" here; its accessible name and the confirm still say it in full. */
-  .fx-bar:has(.fx-sheet-btns) .fx-sheet-btns,
-  .fx-bar:has(.fx-sheet-btns) .fx-tools { display: flex; flex-wrap: nowrap; gap: 4px; }
-  .fx-bar:has(.fx-sheet-btns) .fx-tools { margin-left: auto; }
+  /* The file bar of a spreadsheet: the sheet's own actions (Edit · Restore or Save (N) · Done) stay together as
+     one group. "Restore previous version" says just "Restore" here; its accessible name and the confirm still
+     say it in full. The bar itself is one row (see the 700px block): the path gives way. */
+  .fx-bar:has(.fx-sheet-btns) .fx-sheet-btns { display: flex; flex-wrap: nowrap; gap: 4px; flex: none; }
   .fx-sheet-long { display: none; }
 }
 @media (pointer: coarse) {
