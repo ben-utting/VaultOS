@@ -108,6 +108,7 @@
   --needs-decision: #c2649b;
   --review: #f59e0b;
   --done: #22c55e;
+  --done-ink: var(--done);        /* the check icon on a soft done tick (.td-tick); sepia darkens it to hold 3:1 */
   --bar-fill: #2e7d4e;            /* progress bar fill — dimmer than --done so it doesn't compete with tags */
 
   /* Semantic tokens so the Sepia theme can override the few hardcoded darks. */
@@ -158,6 +159,7 @@
   /* Sepia was the worse of the two: needs-decision sat ΔE 29 from done AND 26 from backlog.
      Plum keeps the magenta story in the muted register this palette uses. ΔE to done 29 -> 88. */
   --needs-decision: #b0428a; --review: #b07d1c; --done: #5f7a3a; --bar-fill: #7d9257;
+  --done-ink: color-mix(in srgb, var(--done) 70%, var(--text));   /* --done itself is 2.6:1 on the soft tick; this is 3.4:1 */
   --break-fg: #2f5a94;
 
   --on-accent: #ffffff;
@@ -830,7 +832,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   background: transparent; color: var(--text); font: inherit; font-size: var(--t-sm); cursor: pointer;
 }
 .ss-nav button:hover { background: var(--panel-2); }
-.ss-nav button.active { background: color-mix(in srgb, var(--accent) 14%, var(--panel-2)); color: var(--text); font-weight: 600; }
+.ss-nav button.active { font-weight: 600; }   /* the fill is the shared "selected" rule further down */
 .ss-nav button.hidden { display: none; }
 .ss-nav .ss-sub { flex-basis: 100%; font-size: var(--t-xs); font-weight: 400; color: var(--muted); }
 .ss-nav .n {
@@ -879,7 +881,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   font: inherit; font-size: var(--t-sm); font-weight: 600; cursor: pointer;
 }
 .seg button:hover, .stepper button:hover { border-color: var(--muted); }
-.seg button.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.seg button.on { border-color: transparent; }   /* the ring is the shared "selected" rule further down; no second outline */
 .stepper { display: flex; align-items: center; gap: 8px; }
 .stepper button { flex: none; width: 46px; font-size: var(--t-lg); line-height: 1; }
 .stepper .val { flex: 1; text-align: center; font-weight: 700; font-size: var(--t-md); }
@@ -906,11 +908,10 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .pop-hint b { color: var(--text); font-weight: 600; }
 .filter-item.muted-row { opacity: .55; }   /* nothing to hide on this board */
 /* Workspace rows: one radio pick, the whole row is the click target. The active
-   one carries the brand, the same "you are here" as the mode pill. */
-.ws-row input[type="radio"] { margin: 0; cursor: pointer; accent-color: var(--brand); }
+   one is "selected" like everywhere else (the shared rule below); gold stays with the mode pill. */
+.ws-row input[type="radio"] { margin: 0; cursor: pointer; accent-color: var(--accent); }
 .ws-pick { flex: 1; color: var(--text); }
-.ws-row.active { background: color-mix(in srgb, var(--brand) 14%, transparent); }
-.ws-row.active .ws-pick { color: var(--brand); font-weight: 600; }
+.ws-row.active .ws-pick { font-weight: 600; }
 /* The chip's dropdown. The same surface as the Files right-click menu. */
 .ws-menu {
   position: fixed; z-index: 70; min-width: 180px; max-width: calc(100vw - 16px); padding: 4px;
@@ -925,7 +926,13 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 }
 .ws-menu button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-menu button:hover, .ws-menu button:focus-visible { background: var(--panel-2); outline: none; }
-.ws-menu button[aria-checked="true"] { background: var(--panel-2); color: var(--text); }   /* Task 5 gives this the shared "selected" look */
+/* Keyboard focus is a ring outside the item, so it never reads as the selected ring inside it. */
+.ws-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The one "selected" look: a quiet fill and a 1px accent ring. Gold fills are for the mode pill and
+   primary buttons only. Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
+.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"] {
+  background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--accent);
+}
 
 /* Settings → Boards, Features, Agent and Password. The fields, switches and agent cards are the setup
    page's (.su-* under "Setup" below), so a setting looks the same in both places. */
@@ -2974,7 +2981,9 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-tick { grid-area: tick; width: 36px; height: 36px; padding: 0; cursor: pointer; border-radius: 10px; border: 2px solid var(--line); background: transparent; display: grid; place-items: center; color: transparent; transition: background var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out); }
 .td-tick .icon { width: 20px; height: 20px; stroke-width: 2.5; }
 .td-tick:hover { border-color: var(--done); }
-.td-tick[aria-pressed="true"], .td-cell.on { background: var(--done); border-color: var(--done); color: var(--bg); }
+.td-tick[aria-pressed="true"], .td-cell.on {
+  background: color-mix(in srgb, var(--done) 24%, var(--panel-2)); border-color: color-mix(in srgb, var(--done) 60%, transparent); color: var(--done-ink);
+}
 .td-hmain { grid-area: main; min-width: 0; display: grid; gap: 4px; }
 .td-hname { display: flex; align-items: center; gap: 8px; font-size: var(--t-lg); min-width: 0; }
 .td-hname .icon { flex: none; width: 17px; height: 17px; color: var(--muted); }
@@ -3035,8 +3044,8 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
 .td-score h3 { grid-column: 1 / -1; margin: 0; font-size: var(--t-xs); font-weight: 600; color: var(--muted); letter-spacing: .04em; }
 .td-bars { display: grid; grid-template-columns: repeat(7, minmax(18px, 1fr)); gap: 6px; height: 74px; align-items: end; max-width: 380px; }
 .td-bar { display: grid; grid-template-rows: 1fr auto; gap: 4px; height: 100%; }
-.td-col { align-self: end; background: var(--bar-fill); border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
-.td-bar.sel .td-col { background: var(--done); }
+.td-col { align-self: end; background: color-mix(in srgb, var(--done) 55%, var(--panel-2)); border-radius: 4px 4px 0 0; min-height: 2px; position: relative; }
+.td-bar.sel .td-col { background: var(--brand); }
 .td-lab { font-size: var(--t-xs); text-align: center; color: var(--muted-2); }
 .td-bar.sel .td-lab { color: var(--accent); font-weight: 600; }
 .td-val { position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%); font-size: var(--t-xs); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }

@@ -214,3 +214,107 @@ test('placeholders are themed', () => {
     && b.decls.some((d) => d.prop === 'color' && d.value === 'var(--muted)'));
   assert.ok(global, 'a global ::placeholder { color: var(--muted) } rule');
 });
+
+// ---------- gold means "VaultOS" or "act on me"; one way to show "selected" ----------
+const sel = (b) => b.prelude.split(',').map((s) => s.trim());
+const where = (b) => [...b.ancestors, b.prelude].join(' > ');
+const GOLD_FILL = /^var\(--(accent|brand)\)$/;
+// A selector counts once, however many blocks (or media queries) fill it.
+const goldFilled = () => {
+  const found = new Set();
+  for (const b of BLOCKS) {
+    if (!b.decls.some((d) => (d.prop === 'background' || d.prop === 'background-color') && GOLD_FILL.test(d.value))) continue;
+    for (const s of sel(b)) found.add(s);
+  }
+  return found;
+};
+
+test('only the mode pill and primary buttons fill with gold', () => {
+  // Written down from the file as it stood. The filled surfaces below are the identity (--brand) or an
+  // action (--accent): a mode pill, a primary button, or a small badge, dot or rule that is gold on purpose.
+  const IDENTITY_AND_ACTION = [
+    '.mode.active',                                    // the active mode pill: the one "you are here" in the shell
+    '.mobile-nav button.active::before',               // the same pill on the phone's bottom bar
+    '.login-card button', '.su-btn.primary', '.td-btn.primary',                  // primary buttons
+    '.fx-sheet-save:not(:disabled)', '.sg-note-warn .sg-note-acts button:first-child:not(:disabled)',
+    '.tw-compose-btns .tw-compose-send',
+    '.kb-eyebrow::before', '.km-eyebrow::before',      // the 18px brand rule before a heading
+    '.tw-prefix', '.fx-fresh', '.su-bar span.now',     // brand marks: tmux prefix, new file, current setup step
+    '#termbtn[data-n]:not([data-n=""])::after', '#mnav-term[data-n]:not([data-n=""])::after',   // "an agent wants you"
+    '.set-dot', '.ss-nav .n', '.cx-dots span',         // unsaved dot, count badge, working dots
+    '.tw-split[data-dir]::after',                      // the split-pane drop hint
+  ];
+  // Fills that read as "on" or "selected" rather than brand or action. Kept as they are, outside Task 5's
+  // file list; the report asks the controller whether they should go quiet too.
+  const ASKED_ABOUT = [
+    '.viewseg button.on', '.tw-keys button[aria-pressed="true"]', '.ap-chip.def',
+    '.su-switch:checked', '.td-fill', '.td-dots i.on',
+  ];
+  // The selected day's score bar on Today is brand-coloured on purpose (the brief for this change).
+  const allowed = new Set([...IDENTITY_AND_ACTION, ...ASKED_ABOUT, '.td-bar.sel .td-col']);
+  const found = goldFilled();
+  for (const s of ['.seg button.on', '.td-tick[aria-pressed="true"]', '.td-cell.on']) {
+    assert.ok(!found.has(s), `${s} must not fill with gold`);
+  }
+  const extra = [...found].filter((s) => !allowed.has(s));
+  const gone = [...allowed].filter((s) => !found.has(s));
+  assert.deepEqual(extra, [], `gold fills not on the allowlist:\n  ${extra.join('\n  ')}`);
+  assert.deepEqual(gone, [], `allowlisted but no longer gold (tidy the list):\n  ${gone.join('\n  ')}`);
+});
+
+test('selected states share one treatment', () => {
+  const want = [
+    ['background', 'var(--panel-2)'],
+    ['color', 'var(--text)'],
+    ['box-shadow', 'inset 0 0 0 1px var(--accent)'],
+  ];
+  const lacking = [];
+  for (const s of ['.seg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]']) {
+    const blocks = BLOCKS.filter((b) => topLevel(b) && sel(b).includes(s));
+    for (const [prop, value] of want) {
+      const last = blocks.flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();
+      if (!last || last.value !== value) lacking.push(`${s} { ${prop}: ${last ? last.value : '(none)'} } should be ${value}`);
+    }
+  }
+  assert.deepEqual(lacking, [], lacking.join('\n'));
+  // Radios follow the interaction colour, not the brand.
+  const radio = BLOCKS.find((b) => topLevel(b) && sel(b).includes('.ws-row input[type="radio"]') && b.decls.some((d) => d.prop === 'accent-color'));
+  assert.equal(radio && radio.decls.find((d) => d.prop === 'accent-color').value, 'var(--accent)');
+  // The menu item that has keyboard focus must not look like the selected one.
+  const outline = BLOCKS.filter((b) => topLevel(b) && sel(b).includes('.ws-menu button:focus-visible')).flatMap((b) => b.decls).filter((d) => d.prop === 'outline').pop();
+  assert.ok(outline && outline.value === '2px solid var(--accent)', '.ws-menu button:focus-visible keeps the 2px accent ring');
+});
+
+// A finished habit steps back from solid green: a soft green tick whose check is --done (--done-ink, which
+// is --done itself in dark and a darker mix in sepia, where --done is only 2.6:1 on the soft fill). The check
+// is a graphic, so it needs 3:1 on that fill. The quiet score bars are meant to recede (the value above each
+// one carries the number), so only the selected bar, the brand one, is held to 3:1.
+test('done ticks and score bars stay readable in both themes', () => {
+  const decl = (selector, prop) => {
+    const hit = BLOCKS.filter((b) => topLevel(b) && sel(b).includes(selector)).flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();
+    return hit && hit.value;
+  };
+  for (const s of ['.td-tick[aria-pressed="true"]', '.td-cell.on']) {
+    assert.equal(decl(s, 'background'), 'color-mix(in srgb, var(--done) 24%, var(--panel-2))', `${s} background`);
+    assert.equal(decl(s, 'border-color'), 'color-mix(in srgb, var(--done) 60%, transparent)', `${s} border-color`);
+    assert.equal(decl(s, 'color'), 'var(--done-ink)', `${s} check colour`);
+  }
+  assert.equal(decl('.td-bar.sel .td-col', 'background'), 'var(--brand)');
+  assert.equal(decl('.td-col', 'background'), 'color-mix(in srgb, var(--done) 55%, var(--panel-2))');
+  const misses = [];
+  for (const [name, t] of [['dark', DARK], ['sepia', SEPIA]]) {
+    const fill = mix(t['--done'], t['--panel-2'], 0.24);
+    // --done-ink is var(--done) or color-mix(in srgb, var(--done) 70%, var(--text)).
+    const inkSpec = t['--done-ink'];
+    const ink = inkSpec === 'var(--done)' ? t['--done']
+      : /^color-mix\(in srgb, var\(--done\) 70%, var\(--text\)\)$/.test(inkSpec) ? mix(t['--done'], t['--text'], 0.7) : null;
+    assert.ok(ink, `${name} --done-ink "${inkSpec}" is not a form this test can measure`);
+    const check = ratio(ink, fill);
+    if (check < 3) misses.push(`${name} check ${ink} on ${fill}: ${check.toFixed(2)}`);
+    for (const card of ['--panel', '--panel-2']) {
+      const r = ratio(t['--brand'], t[card]);
+      if (r < 3) misses.push(`${name} selected bar ${t['--brand']} on ${card}: ${r.toFixed(2)}`);
+    }
+  }
+  assert.deepEqual(misses, [], `below 3:1:\n  ${misses.join('\n  ')}`);
+});
