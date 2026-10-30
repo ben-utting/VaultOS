@@ -2261,14 +2261,18 @@ body.term-popout .term-host { position: relative; }
 }
 @media (max-width: 700px) {
   .fx-doc { padding: 18px 16px 60px; }
-  /* One row: the path gives way (it loses its start, so the file's name stays), Edit and More stay. */
+  /* One row: the folders give way (Show in the tree, in More, still reaches them), so the bar shows the file's
+     name alone. It ends in an ellipsis when it is squeezed and never gets narrower than 6 characters. Edit and
+     More stay. */
   .fx-bar { padding: 6px 8px; gap: 4px; flex-wrap: nowrap; }
-  .fx-crumbs { flex: 1 1 0; justify-content: flex-end; }
-  .fx-crumb-last { flex: none; }
-  .fx-seg button { padding: 3px 7px; }
-  /* A text file with two actions (Save · Cancel, or Edit · Restore previous) next to the view switch and More:
-     their icons go, so the labels fit. */
-  .fx-bar:has(#fx-text-btns .fx-sheet-btn + .fx-sheet-btn) #fx-text-btns .icon { display: none; }
+  .fx-crumbs { flex: 1 1 0; min-width: 6ch; }
+  .fx-crumbs .fx-crumb, .fx-crumbs .fx-sep { display: none; }
+  .fx-crumb-last { flex: 1 1 auto; min-width: 6ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 0; }
+  .fx-seg button { padding: 3px 5px; }
+  .fx-bar .fx-bar-btn { padding-left: 8px; padding-right: 8px; }   /* the touch padding is 12px: the height is the tap target, the width is spare */
+  /* A file with two actions (Save · Cancel or Done, Edit · Restore) next to the view switch and More: their
+     icons go, so the labels fit and the name keeps room. Every action stays labelled. */
+  .fx-bar:has(.fx-sheet-btns .fx-sheet-btn + .fx-sheet-btn) .fx-sheet-btns .icon { display: none; }
   /* A phone has no room to share: the dock is a full-screen sheet — see
      "Mobile: terminal" in the responsive block. */
   .term-resize { display: none; }
