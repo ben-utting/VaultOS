@@ -177,17 +177,18 @@ test('a poll tick is skipped while the last poll is still in flight', async (t) 
 const FOUR = [
   { id: 'atlassian', label: 'Atlassian', by: 'Jira', state: 'not-connected', agents: [] },
   { id: 'azure', label: 'Azure', by: 'az', state: 'not-connected', agents: [] },
+  { id: 'entra', label: 'Microsoft Entra', by: 'Users · groups · apps · sign-in logs', state: 'not-connected', agents: [] },
   { id: 'github', label: 'GitHub', by: 'Repos · issues · pull requests', state: 'not-connected', tokenHelp: 'https://github.com/settings/personal-access-tokens/new', agents: [] },
   { id: 'mslearn', label: 'Microsoft Learn', by: 'Microsoft docs and code samples', state: 'not-connected', agents: [] },
 ];
 const PLANNED5 = ['notion', 'homeassistant', 'n8n', 'linear', 'sentry'].map((id) => ({ id, label: id, by: 'x', mono: id[0].toUpperCase() }));
 const withRow = (id, over) => ({ connectors: FOUR.map((c) => (c.id === id ? { ...c, ...over } : c)), planned: PLANNED5 });
 
-test('paneHtml shows four Ready tiles and five Planned', () => {
+test('paneHtml shows five Ready tiles and five Planned', () => {
   const html = C.paneHtml({ view: { connectors: FOUR, planned: PLANNED5 } });
-  assert.equal((html.match(/class="ap-tile cx-tile" data-id=/g) || []).length, 4);
+  assert.equal((html.match(/class="ap-tile cx-tile" data-id=/g) || []).length, 5);
   assert.equal((html.match(/cx-later/g) || []).length, 5);
-  for (const n of ['Atlassian', 'Azure', 'GitHub', 'Microsoft Learn']) assert.ok(html.includes(`>${n}</span>`));
+  for (const n of ['Atlassian', 'Azure', 'Microsoft Entra', 'GitHub', 'Microsoft Learn']) assert.ok(html.includes(`>${n}</span>`));
 });
 
 test('github not connected shows the token card copy and a password input', () => {
@@ -277,4 +278,32 @@ test('github needs-sign-in keeps the token card and offers Test again, Sign out,
 test('atlassian needs-sign-in offers Sign out', () => {
   const html = C.paneHtml({ view: withRow('atlassian', { state: 'needs-sign-in' }), picked: 'atlassian' });
   assert.match(html, /data-act="disconnect"[^>]*>Sign out</);
+});
+
+test('entra: needs Azure first (no Turn on), then Turn on, then Connected with the read-only line and Turn off', () => {
+  const gated = C.paneHtml({ view: withRow('entra', { needsAzure: true }), picked: 'entra' });
+  assert.match(gated, /Connect Azure first/);
+  assert.doesNotMatch(gated, /data-act="en-on"/);
+  const off = C.paneHtml({ view: withRow('entra', {}), picked: 'entra' });
+  assert.match(off, /data-act="en-on"[^>]*>Turn on</);
+  const on = C.paneHtml({ view: withRow('entra', { state: 'connected', account: '<b>Acme</b>', lastTest: { ok: true, tools: 2, at: new Date().toISOString() },
+    agents: [{ id: 'cursor', label: 'Cursor CLI', chip: 'Added' }] }), picked: 'entra' });
+  assert.match(on, /Connected to &lt;b&gt;Acme&lt;\/b&gt; · 2 tools/);
+  assert.match(on, /Read-only/);
+  assert.match(on, /data-act="en-off"[^>]*>Turn off</);
+  assert.doesNotMatch(on, /data-act="en-on"/);
+});
+
+test('entra buttons hit enable and disconnect', async () => {
+  const calls = [];
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const ui = { api: async (m, u) => { calls.push([m, u]); return m === 'GET' ? withRow('entra', {}) : {}; } };
+  const pane = C.mountConnectors(el, ui);
+  await pane.refresh();
+  const click = (act) => els.click({ target: { closest: (x) => (x === '[data-act]' ? { dataset: { act } } : null) } });
+  await click('en-on'); await new Promise((r) => setTimeout(r, 20));
+  await click('en-off');
+  assert.deepEqual(calls.filter((c) => c[0] === 'POST'), [['POST', '/api/connectors/entra/enable'], ['POST', '/api/connectors/entra/disconnect']]);
+  pane.stop();
 });

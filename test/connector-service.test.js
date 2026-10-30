@@ -565,9 +565,9 @@ test('mslearn: a failing test leaves it enabled with the error shown', async (t)
   assert.strictEqual(await svc.relayTarget('mslearn').authorization(), '');
 });
 
-test('planned in view() has the five ids', async (t) => {
+test('planned in view() has the six ids', async (t) => {
   const { svc } = await setupRelayed(t);
-  assert.deepStrictEqual((await svc.view()).planned.map((p) => p.id), ['notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
+  assert.deepStrictEqual((await svc.view()).planned.map((p) => p.id), ['m365', 'notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
 });
 
 test('a token with an inner space or line break is refused with a fixed sentence, and the old credential stays', async (t) => {

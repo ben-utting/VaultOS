@@ -57,7 +57,7 @@ Optional: the habits you choose to track, with streaks, a focus timer and a shor
 
 ### Connectors
 
-Settings → Connectors signs in to a service once and adds it to every agent VaultOS can set up, so it works in every folder. Atlassian (Jira and Confluence) signs in with a browser or an API token, GitHub takes a personal access token, Microsoft Learn's docs search needs no sign-in, and Azure runs the Azure CLI with your own sign-in. Azure's tools for agents are read-only unless you allow changes, but agents that can run shell commands can still use `az` with that sign-in. Your agents never see your passwords or tokens.
+Settings → Connectors signs in to a service once and adds it to every agent VaultOS can set up, so it works in every folder. Atlassian (Jira and Confluence) signs in with a browser or an API token, GitHub takes a personal access token, Microsoft Learn's docs search needs no sign-in, and Azure runs the Azure CLI with your own sign-in. Microsoft Entra reuses that Azure sign-in to let agents look up users, groups, apps and sign-in logs through Microsoft Graph; it can only read (VaultOS sends GET requests to a fixed list of directory areas), and mail, files and Teams are not included. Azure's tools for agents are read-only unless you allow changes, but agents that can run shell commands can still use `az` with that sign-in. Your agents never see your passwords or tokens.
 
 ## Install on Windows
 

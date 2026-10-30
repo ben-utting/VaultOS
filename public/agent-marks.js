@@ -40,6 +40,7 @@
   };
   // Microsoft's logos aren't in Simple Icons: Learn gets a plain stroked open book.
   const CONNECTOR_STROKED = {
+    entra: '<circle cx="12" cy="8" r="3.2"/><path d="M5 20c.5-3.6 3.2-5.6 7-5.6s6.5 2 7 5.6"/><path d="M18.5 4.5v3M17 6h3"/>',
     mslearn: '<path d="M12 7c-1.6-1.5-4.1-2-8-2v13c3.9 0 6.4.5 8 2 1.6-1.5 4.1-2 8-2V5c-3.9 0-6.4.5-8 2zM12 7v13"/>',
   };
   function connector(id) {

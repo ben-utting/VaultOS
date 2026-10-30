@@ -83,14 +83,14 @@ test('connectors need a session', async (t) => {
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/start')).status, 401);
 });
 
-test('GET /api/connectors lists the four connectors not connected, and five planned', async (t) => {
+test('GET /api/connectors lists the five connectors not connected, and six planned', async (t) => {
   const s = await ready(t);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure', 'github', 'mslearn']);
+  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure', 'entra', 'github', 'mslearn']);
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'not-connected');
   assert.notEqual(r.body.connectors.find((c) => c.id === 'azure').state, 'connected');
-  assert.equal(r.body.planned.length, 5);
+  assert.equal(r.body.planned.length, 6);
   assert.equal(r.body.attention, false);
 });
 
@@ -219,7 +219,7 @@ test('token route saves a github token (200) and refuses mslearn and azure (400)
 test('enable route turns on mslearn (200) and refuses github (400)', async (t) => {
   const s = await readyWithFakes(t);
   assert.equal((await call(s.base, 'POST', '/api/connectors/mslearn/enable', { cookie: s.cookie })).status, 200);
-  for (const id of ['github', 'atlassian', 'azure', 'nope', 'constructor', '__proto__']) {
+  for (const id of ['github', 'atlassian', 'azure', 'entra', 'nope', 'constructor', '__proto__']) {
     const r = await call(s.base, 'POST', `/api/connectors/${id}/enable`, { cookie: s.cookie });
     assert.equal(r.status, 400, id);
     assert.equal(typeof r.body.error, 'string', id);

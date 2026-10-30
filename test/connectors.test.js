@@ -9,11 +9,11 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'github', 'mslearn']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'github', 'mslearn']);
 });
 
-test('PLANNED has the five ids in order', () => {
-  assert.deepEqual(PLANNED.map((p) => p.id), ['notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
+test('PLANNED has the six ids in order', () => {
+  assert.deepEqual(PLANNED.map((p) => p.id), ['m365', 'notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
   for (const p of PLANNED) for (const k of ['label', 'by', 'mono']) assert.equal(typeof p[k], 'string');
 });
 

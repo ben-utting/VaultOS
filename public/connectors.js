@@ -253,7 +253,27 @@
       + `<div class="ap-btns">${btn('test', 'Test again')}${btn('ms-off', 'Turn off')}</div>${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, github: githubBody, mslearn: mslearnBody };
+  function entraBody(c, st, now) {
+    const on = c.state === 'connected' || c.state === 'error';
+    const intro = '<li>Read-only access to your Microsoft Entra directory: users, groups, apps and sign-in logs. It uses your Azure sign-in, so there is nothing else to sign in to.</li>';
+    if (!on) {
+      const gate = c.needsAzure
+        ? '<li>Connect Azure first. Entra uses the same sign-in.</li>'
+        : '';
+      return `<ul class="ap-facts">${intro}${gate}</ul>`
+        + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+        + (c.needsAzure ? '' : `<div class="ap-btns">${btn('en-on', 'Turn on', ' primary')}</div>`) + errP(st, 'actions');
+    }
+    const t = c.lastTest;
+    const line = t && t.ok ? `Connected${c.account ? ` to ${c.account}` : ''} · ${t.tools} tools` : 'Connected';
+    const stale = t && !t.ok ? `Tested ${ago(t.at, now)}: it didn't answer` : '';
+    return `<ul class="ap-facts"><li>${esc(line)}</li>${stale ? `<li>${esc(stale)}</li>` : ''}<li>Read-only: agents can look things up but not change them.</li></ul>`
+      + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+      + agentRowsHtml(c)
+      + `<div class="ap-btns">${btn('test', 'Test again')}${btn('en-off', 'Turn off')}</div>${errP(st, 'actions')}`;
+  }
+
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, github: githubBody, mslearn: mslearnBody };
 
   function paneHtml(st, now = Date.now()) {
     st = { err: {}, email: '', token: '', ghToken: '', options: {}, azure: null, ...st };
@@ -469,6 +489,8 @@
       }
       if (act === 'gh-replace') { st.options.github = true; st.err.ghtoken = ''; render(); return; }
       if (act === 'gh-keep') { delete st.options.github; st.err.ghtoken = ''; st.ghToken = ''; render(); return; }
+      if (act === 'en-on') return run('actions', async () => { await call('POST', '/api/connectors/entra/enable'); await refresh(); });
+      if (act === 'en-off') return run('actions', async () => { await call('POST', '/api/connectors/entra/disconnect'); await refresh(); });
       if (act === 'ms-on') return run('actions', async () => { await call('POST', '/api/connectors/mslearn/enable'); await refresh(); });
       if (act === 'ms-off') return run('actions', async () => { await call('POST', '/api/connectors/mslearn/disconnect'); await refresh(); });
       if (act === 'switch') { st.options.atlassian = true; st.err.actions = ''; render(); return; }
