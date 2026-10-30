@@ -168,7 +168,7 @@ test('kickoffPrompt leaves other agents, and a missing home, on the plain prompt
   const home = tmpHome();
   fs.mkdirSync(path.join(home, '.claude', 'skills', 'i-have-adhd'), { recursive: true });
   fs.writeFileSync(path.join(home, '.claude', 'skills', 'i-have-adhd', 'SKILL.md'), 'x');
-  assert.equal(A.kickoffPrompt(A.PROFILES.cursor, home), A.KICKOFF_PROMPT);
+  assert.equal(A.kickoffPrompt(A.PROFILES.pi, home), A.KICKOFF_PROMPT);
   assert.equal(A.kickoffPrompt(A.PROFILES.claude, undefined), A.KICKOFF_PROMPT);
   assert.equal(A.kickoffPrompt(null, home), A.KICKOFF_PROMPT);
 });
@@ -176,4 +176,21 @@ test('kickoffPrompt leaves other agents, and a missing home, on the plain prompt
 test('the check-in asks for a few short lines', () => {
   assert.match(A.KICKOFF_PROMPT, /few short lines/);
   assert.match(A.KICKOFF_PROMPT, /until I say so/);
+});
+
+test('kickoffPrompt for the Cursor CLI finds the skill in any folder Cursor reads', () => {
+  for (const dir of ['.cursor/skills', '.agents/skills', '.claude/skills']) {
+    const home = tmpHome();
+    assert.equal(A.kickoffPrompt(A.PROFILES.cursor, home), A.KICKOFF_PROMPT, `${dir}: nothing installed yet`);
+    fs.mkdirSync(path.join(home, dir, 'i-have-adhd'), { recursive: true });
+    fs.writeFileSync(path.join(home, dir, 'i-have-adhd', 'SKILL.md'), 'x');
+    assert.equal(A.kickoffPrompt(A.PROFILES.cursor, home), `/i-have-adhd ${A.KICKOFF_PROMPT}`, dir);
+  }
+});
+
+test('kickoffPrompt for Claude Code only looks in its own skills folder', () => {
+  const home = tmpHome();
+  fs.mkdirSync(path.join(home, '.cursor', 'skills', 'i-have-adhd'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.cursor', 'skills', 'i-have-adhd', 'SKILL.md'), 'x');
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), A.KICKOFF_PROMPT);
 });
