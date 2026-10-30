@@ -377,6 +377,24 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
 
 /* ---------- Board ---------- */
 #board-view { position: relative; }
+/* An empty column folds to a 48px rail on a wide screen: its name runs down the side, still real
+   text, with the dot and a 0. It opens to a full column while a card is being dragged
+   (body.board-dragging), so it stays a drop target. Phone and tablet keep the full column
+   ("No tasks"). The Board turns flex here so one column can be narrower than the rest. */
+@media (min-width: 1025px) {
+  #board.board { display: flex; gap: 14px; align-items: flex-start; }
+  #board .col { flex: 1 1 270px; min-width: 270px; }
+  body:not(.board-dragging) #board .col.col-empty {
+    flex: 0 0 48px; min-width: 0; width: 48px;
+    background: transparent; box-shadow: none; border-style: dashed;
+  }
+  body:not(.board-dragging) #board .col-empty .col-body { display: none; }
+  body:not(.board-dragging) #board .col-empty .col-head {
+    writing-mode: vertical-rl; justify-content: flex-start; gap: 10px;
+    padding: 14px 0; border-bottom: 0; white-space: nowrap;
+  }
+  body:not(.board-dragging) #board .col-empty .col-head .n { margin: 0; }
+}
 .board {
   display: grid;
   grid-auto-flow: column;
@@ -510,9 +528,11 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
 .card:hover .meta { color: var(--muted); }
 /* "no plan items · updated 2026-10-12" only just fits a card at 12px: a 6px gap keeps it on one
    line, and when a longer count pushes it over, whole pieces wrap instead of splitting the date. */
-.card .meta { flex-wrap: wrap; gap: 2px 6px; }
-.card .meta > span { white-space: nowrap; }
-.blocked-on { margin-top: 8px; font-size: var(--t-xs); color: var(--danger-fg); }
+.card:not(.kb-card) .meta { flex-wrap: wrap; gap: 2px 6px; }
+.card:not(.kb-card) .meta > span { white-space: nowrap; }
+/* The blocked-by line is a quiet note; only its ban icon carries the danger colour. */
+.blocked-on { margin-top: 8px; font-size: var(--t-xs); color: var(--muted); }
+.blocked-on .icon { color: var(--danger-fg); }
 /* Same slot as .blocked-on, for status: review — what's left to verify/write up/decide. */
 .review-note { margin-top: 8px; font-size: var(--t-xs); color: var(--review); }
 /* status: scheduled — target start/CAB date. */

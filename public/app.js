@@ -38,6 +38,11 @@ STATE.hiddenColumns = loadHiddenColumns(STATE.workspace);
 STATE.hideSubtasks = loadHideSubtasks(STATE.workspace);
 let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped by whichever is open
 let DRAG = null;
+// body.board-dragging is what opens the folded (empty) columns while a card is in the air.
+// It must never outlive the drag: dragend clears it, so do a drop anywhere and the repaint.
+function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); }
+document.addEventListener('dragend', endBoardDrag);
+document.addEventListener('drop', endBoardDrag);   // bubbles after a column's own drop, which has read DRAG by then
 let OPEN = null; // { path, mtime } of the task shown in the drawer
 
 // ---------- Scroll preservation ----------
@@ -677,9 +682,8 @@ function card(t) {
     <div class="card" draggable="true" tabindex="0" data-path="${esc(t.path)}" data-mtime="${t.mtime}">
       <h3>${esc(t.title)}</h3>
       <div class="row">
-        ${t.id ? `<span class="tag">${esc(t.id)}</span>` : ''}
         ${t.area ? `<span class="tag">${esc(t.area)}</span>` : ''}
-        <span class="tag pri-${esc(t.priority)}">${esc(t.priority)}</span>
+        ${t.priority === 'high' ? `<span class="tag pri-high">high</span>` : ''}
       </div>
       ${(() => { const c = batchChip(t); return c ? `<div class="row batch-row">${c}${t.host ? `<span class="tag st-host">${esc(t.host)}</span>` : ''}</div>` : ''; })()}
       ${total ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ''}
@@ -718,6 +722,7 @@ function render() {
   // columns" in styles.css), so hold those too, keyed by status: a hidden
   // column or a filter can shift the positions between renders.
   const colTops = new Map([...$('board').querySelectorAll('.col-body')].map((b) => [b.dataset.status, b.scrollTop]));
+  document.body.classList.toggle('board-dragging', !!DRAG);   // a repaint can't leave it stuck on
   indexBatches();          // before visibleTasks()/card() — both read BATCH_INDEX
   updateFilterBadge();
   updateColsBadge();
@@ -748,14 +753,14 @@ function render() {
       .filter((t) => t.status === s)
       .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
     return `
-      <section class="col">
+      <section class="col${inCol.length ? '' : ' col-empty'}">
         <div class="col-head">
           <span class="dot" style="background: var(--${s})"></span>
           ${esc(s.replace('-', ' '))}
           <span class="n">${inCol.length}</span>
         </div>
         <div class="col-body" data-status="${esc(s)}">
-          ${inCol.length ? inCol.map(card).join('') : '<div class="empty">Nothing here</div>'}
+          ${inCol.length ? inCol.map(card).join('') : '<div class="empty">No tasks</div>'}
         </div>
       </section>`;
   }).join('');
@@ -769,9 +774,10 @@ function render() {
     el.addEventListener('dragstart', (e) => {
       DRAG = { path: el.dataset.path, mtime: Number(el.dataset.mtime) };
       el.classList.add('dragging');
+      document.body.classList.add('board-dragging');   // empty rails open up as drop targets
       e.dataTransfer.effectAllowed = 'move';
     });
-    el.addEventListener('dragend', () => { el.classList.remove('dragging'); DRAG = null; });
+    el.addEventListener('dragend', () => { el.classList.remove('dragging'); endBoardDrag(); });
   }
   // Batch chip filters the board; it must not also open the card it sits on.
   for (const el of $('board').querySelectorAll('.batch-chip')) {
@@ -782,16 +788,17 @@ function render() {
     el.addEventListener('click', (e) => { e.stopPropagation(); setMode('kb'); openArticle(el.dataset.article); });
   }
 
-  for (const col of $('board').querySelectorAll('.col-body')) {
-    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('over'); });
-    col.addEventListener('dragleave', () => col.classList.remove('over'));
-    col.addEventListener('drop', async (e) => {
+  for (const sec of $('board').querySelectorAll('.col')) {
+    const col = sec.querySelector('.col-body');
+    sec.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('over'); });
+    sec.addEventListener('dragleave', (e) => { if (!sec.contains(e.relatedTarget)) col.classList.remove('over'); });
+    sec.addEventListener('drop', async (e) => {
       e.preventDefault();
       col.classList.remove('over');
       if (!DRAG) return;
       const status = col.dataset.status;
       const moving = DRAG;
-      DRAG = null;
+      endBoardDrag();
       const task = STATE.tasks.find((t) => t.path === moving.path);
       if (!task || task.status === status) return;
       try {
@@ -1023,7 +1030,7 @@ function renderFacts(t) {
   // reads from the same board token (and flips correctly in Sepia). It's set on the
   // wrapper rather than the chip so the notes below inherit it too.
   el.style.setProperty('--s', `var(--${t.status})`);
-  const quiet = [t.owner, t.updated ? 'updated ' + t.updated : ''].filter(Boolean);
+  const quiet = [t.id, t.owner, t.updated ? 'updated ' + t.updated : ''].filter(Boolean);
   el.innerHTML = `
     <div class="d-facts-row">
       <span class="d-status-chip">
