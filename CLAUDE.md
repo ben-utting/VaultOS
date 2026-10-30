@@ -548,6 +548,23 @@ Ben drags files from his desktop into a folder, the way he did in VS Code.
   Open / Download / Copy vault path / Upload files here… / Terminal here. Upload files here…
   is also the way to upload from a phone.
 
+## Files: edit text, rename (added 2026-10-30)
+
+**Edit.** `public/text-edit.js` (`TextEdit`, loaded before `workbench.js`): an Edit button on text files (.txt, .md,
+.json…) and on a .csv's Source tab swaps the numbered read-only view for a plain `<textarea>`, with Save (Ctrl+S),
+Cancel and Restore previous. A draft is kept per path, so a paste survives a tab switch; `workbench.js` asks
+`TextEdit.isDirty/confirmDiscard/drop` at the same places it asks `SheetFiles`. Server: `POST /api/fs/text/save` and
+`/api/fs/text/restore`, built on the sheet store (per-file lock, 409 when the file moved on, one previous version
+shared with the grid's Restore). It refuses empty text and NUL bytes, caps at `FS_TEXT_MAX` (1 MB), and keeps a CRLF
+file CRLF. `GET /api/fs/file` carries `backup` for text it can show. Tests: `test/text-save.test.js`.
+
+**Rename.** Right-click → Rename… (or F2) in the tree, Changed recently and the tabs; inline box in the tree, a
+prompt elsewhere. `POST /api/fs/rename` renames within the same folder only (no moves). It refuses names VaultOS reads
+by name: `task.md`, `article.md`, `Board.md`, a `_tasks` folder and anything inside one, and each board's top-level
+folder. Links to the old name in other notes are not rewritten (the toast says so). The previous-version backup moves
+with the file. The client re-points tabs, cached files, views and open folders (`fxRenamed`), and refuses while a
+tab under the path has unsaved edits. Tests: `test/fs-rename.test.js`.
+
 ## Spreadsheets in Files (added 2026-10-06)
 
 `.csv` and `.xlsx` files open in Files as an Excel-style grid (they used to be raw text / "No

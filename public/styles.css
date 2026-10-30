@@ -1921,6 +1921,10 @@ body.fx-resizing { cursor: ns-resize; user-select: none; }
 .fx-ico { flex: none; display: inline-flex; color: var(--muted); }
 .fx-ico .icon { width: 15px; height: 15px; }
 .fx-row.dir > .fx-ico { color: var(--brand); }
+.fx-rename-input {
+  width: 100%; box-sizing: border-box; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--accent); border-radius: 4px; padding: 1px 5px; outline: none;
+}
 .fx-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .fx-name small { display: block; font-size: 11px; color: var(--muted-2); overflow: hidden; text-overflow: ellipsis; }
 .fx-hit { align-items: flex-start; }

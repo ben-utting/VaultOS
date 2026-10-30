@@ -2858,6 +2858,77 @@ app.post('/api/fs/text/restore', async (req, res) => {
   }
 });
 
+// ---- Rename in Files ----
+// A rename stays in the same folder (no moves). VaultOS finds jobs and the Board by name, so the names it reads
+// are protected: task.md, article.md and Board.md, a `_tasks` folder and anything inside one, and each board's own
+// top-level folder. Links to the old name in other notes are not rewritten.
+const RENAME_PROTECTED_FILES = new Set(['task.md', 'article.md', 'board.md']);
+const RENAME_NAME_MAX = 255;
+
+function renameRefusal(rel, isDir) {
+  const segs = rel.split('/');
+  const base = segs[segs.length - 1].toLowerCase();
+  if (!isDir && RENAME_PROTECTED_FILES.has(base)) return `${segs[segs.length - 1]} is read by name, so it cannot be renamed.`;
+  if (segs.some((x) => x.toLowerCase() === '_tasks')) return 'The _tasks folder and what is inside it are read by name, so they cannot be renamed.';
+  if (isDir && segs.length === 1 && boards().some((b) => b.dir === rel)) return 'A board\'s top-level folder cannot be renamed.';
+  return null;
+}
+
+function renameName(raw) {
+  const name = typeof raw === 'string' ? raw.trim() : '';
+  if (!name) throw sheetFail(400, 'Type a name first.');
+  if (name.length > RENAME_NAME_MAX || Buffer.byteLength(name) > RENAME_NAME_MAX) throw sheetFail(400, 'That name is too long.');
+  if (/[\/\\\0]/.test(name)) throw sheetFail(400, 'A name cannot contain / or \\.');
+  if (name === '.' || name === '..' || name.startsWith('.')) throw sheetFail(400, 'A name cannot start with a dot.');
+  if (/[<>:"|?*\u0000-\u001f]/.test(name)) throw sheetFail(400, 'A name cannot contain < > : " | ? * or control characters.');
+  if (/[. ]$/.test(name)) throw sheetFail(400, 'A name cannot end with a dot or a space.');
+  return name;
+}
+
+app.post('/api/fs/rename', async (req, res) => {
+  try {
+    const body = req.body || {};
+    if (typeof body.path !== 'string' || !body.path) throw sheetFail(400, 'Missing path');
+    const name = renameName(body.name);
+    let full;
+    try {
+      full = await safeVaultPath(body.path);
+    } catch (err) {
+      if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) throw sheetFail(404, 'Not found');
+      throw sheetFail(400, err && !err.code ? err.message : 'Path not allowed');
+    }
+    if (full === VAULT_DIR) throw sheetFail(400, 'The vault itself cannot be renamed.');
+    const rel = relOf(full);
+    const info = await fsp.lstat(full);
+    const refusal = renameRefusal(rel, info.isDirectory());
+    if (refusal) throw sheetFail(422, refusal);
+    if (name === path.basename(full)) throw sheetFail(400, 'That is already its name.');
+    const dest = path.join(path.dirname(full), name);
+    const newRel = relOf(dest);
+    const { store } = sheetLib();
+    await store.withLock(full, async () => {
+      // A name that is already taken is refused. A case-only change on a case-insensitive disk (the vault can be
+      // on one) finds the same file under the new spelling, which is fine.
+      const taken = await fsp.lstat(dest).catch(() => null);
+      if (taken && !(taken.ino === info.ino && taken.dev === info.dev && name.toLowerCase() === path.basename(full).toLowerCase())) {
+        throw sheetFail(409, `There is already a file or folder named ${name} here.`);
+      }
+      await fsp.rename(full, dest);
+    });
+    // The previous-version backups are filed under the old path: move them with the file (best effort).
+    try {
+      const bakRoot = process.env.SHEET_BACKUP_DIR || path.join(DATA_DIR, 'sheet-backups');
+      const from = path.join(bakRoot, ...rel.split('/'));
+      const to = path.join(bakRoot, ...newRel.split('/'));
+      await fsp.stat(from);
+      await fsp.rename(from, to);
+    } catch { /* no backup, or it could not move: the file itself has been renamed */ }
+    res.json({ path: newRel, oldPath: rel, name, dir: info.isDirectory() });
+  } catch (err) {
+    sheetError(res, err);
+  }
+});
+
 // xterm.js straight out of node_modules — no CDN, no bundler, same as the rest
 // of the frontend.
 const VENDOR = {

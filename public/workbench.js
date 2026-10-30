@@ -47,6 +47,7 @@ const FX_ICONS = {
   link: svg('<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>'),
   refresh: svg('<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>'),
   download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'),
+  rename: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
   upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
   sheet: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>'),
   history: svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>'),
@@ -671,10 +672,12 @@ function fxMenuOpen(x, y, target) {
   const item = (act, icon, label) => `<button type="button" role="menuitem" data-act="${act}">${icon}<span>${label}</span></button>`;
   const term = termOn() ? item('term', FX_ICONS.terminal, 'Terminal here') : '';
   fxMenu.innerHTML = target.dir
-    ? item('upload', FX_ICONS.upload, 'Upload files here…')
+    ? item('rename', FX_ICONS.rename, 'Rename…')
+      + item('upload', FX_ICONS.upload, 'Upload files here…')
       + item('copy', FX_ICONS.link, 'Copy vault path')
       + term
     : item('open', FX_ICONS.md, 'Open')
+      + item('rename', FX_ICONS.rename, 'Rename…')
       + item('download', FX_ICONS.download, 'Download')
       + item('copy', FX_ICONS.link, 'Copy vault path')
       + item('upload', FX_ICONS.upload, 'Upload files to this folder…')
@@ -705,6 +708,7 @@ fxMenu.addEventListener('click', (e) => {
   else if (b.dataset.act === 'copy') copyText(t.path).then(() => toast('Copied ' + t.path));
   else if (b.dataset.act === 'term') termOpen({ cwd: folder });
   else if (b.dataset.act === 'upload') fxPickUpload(folder);
+  else if (b.dataset.act === 'rename') fxRenameStart(t.path, !!t.dir);
 });
 fxMenu.addEventListener('keydown', (e) => {
   const items = [...fxMenu.querySelectorAll('button')];
@@ -717,6 +721,101 @@ document.addEventListener('pointerdown', (e) => { if (FX_MENU_TARGET && !fxMenu.
 window.addEventListener('blur', () => { if (FX_MENU_TARGET) fxMenuClose(); });
 window.addEventListener('resize', () => { if (FX_MENU_TARGET) fxMenuClose(); });
 $('fx-tree').addEventListener('scroll', () => { if (FX_MENU_TARGET) fxMenuClose(); });
+
+// ---------- Rename ----------
+// Right-click → Rename…, or F2 on a tree row (or on the open file). In the tree the name turns into a text box
+// with the extension left out of the selection; Enter renames, Esc or clicking away cancels. Elsewhere (the
+// "Changed recently" list, a tab) a prompt asks. The server keeps the file in its folder and refuses the names
+// VaultOS reads (task.md, Board.md, _tasks…); links to the old name in other notes are not rewritten.
+const underPath = (x, p) => x === p || x.startsWith(p + '/');
+
+function fxRenameStart(p, isDir) {
+  const cell = $('fx-tree').querySelector(`.fx-row[data-path="${CSS.escape(p)}"] .fx-name`);
+  const old = baseOf(p);
+  if (!cell) {
+    const name = window.prompt(`Rename ${old} to:`, old);
+    if (name != null && name.trim() !== old) fxRename(p, name);
+    return;
+  }
+  if (cell.querySelector('.fx-rename-input')) return;
+  const saved = cell.innerHTML;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'fx-rename-input';
+  input.value = old;
+  input.spellcheck = false;
+  input.setAttribute('aria-label', `New name for ${old}`);
+  cell.textContent = '';
+  cell.appendChild(input);
+  let done = false;
+  const finish = (go) => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    cell.innerHTML = saved;
+    if (go && name && name !== old) fxRename(p, name);
+  };
+  for (const ev of ['click', 'dblclick', 'pointerdown', 'contextmenu']) input.addEventListener(ev, (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(false));
+  input.focus();
+  const dot = old.lastIndexOf('.');
+  input.setSelectionRange(0, !isDir && dot > 0 ? dot : old.length);
+}
+
+async function fxRename(p, name) {
+  const open = FX.tabs.map((t) => t.path).filter((x) => underPath(x, p));
+  const unsaved = open.find((x) => TextEdit.isDirty(x) || (window.SheetFiles && SheetFiles.isDirty(x)));
+  if (unsaved) { toast(`Save or discard your changes to ${baseOf(unsaved)} first`); return; }
+  let r;
+  try { r = await api('/api/fs/rename', { method: 'POST', body: JSON.stringify({ path: p, name }) }); }
+  catch (err) { toast(err.message); return; }
+  await fxRenamed(p, r.path);
+  toast(`Renamed to ${r.name}. Links to the old name in other notes are not updated.`);
+}
+
+// Point everything that remembered the old path (tabs, cached files, views, open folders) at the new one.
+async function fxRenamed(from, to) {
+  const re = (x) => (underPath(x, from) ? to + x.slice(from.length) : x);
+  for (const t of FX.tabs) {
+    if (!underPath(t.path, from)) continue;
+    TextEdit.drop(t.path);
+    if (window.SheetFiles) SheetFiles.drop(t.path);
+    t.path = re(t.path);
+  }
+  if (FX.active) FX.active = re(FX.active);
+  for (const k of [...FX.files.keys()]) if (underPath(k, from)) FX.files.delete(k);
+  for (const k of [...FX.changed]) if (underPath(k, from)) FX.changed.delete(k);
+  for (const k of [...FX.tree.keys()]) if (underPath(k, from)) FX.tree.delete(k);
+  for (const k of Object.keys(FX.views)) if (underPath(k, from)) { FX.views[re(k)] = FX.views[k]; delete FX.views[k]; }
+  for (const k of [...FX.expanded]) if (underPath(k, from)) { FX.expanded.delete(k); FX.expanded.add(re(k)); }
+  lsSet(FX_KEYS.views, FX.views);
+  lsSet(FX_KEYS.expanded, [...FX.expanded]);
+  saveTabs();
+  try {
+    await fxLoadDir(dirOf(to));
+    await Promise.all([...FX.expanded].filter((d) => !FX.tree.has(d)).map((d) => fxLoadDir(d).catch(() => FX.expanded.delete(d))));
+    await fxLoadRecent();
+    if (FX.query) await fxRunSearch(FX.query);
+  } catch (err) { toast(err.message); }
+  renderTree();
+  renderRecent();
+  renderTabs();
+  if (FX.active) fxShow(FX.active).catch((err) => toast(err.message)); else renderView();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'F2' || STATE.mode !== 'files' || inOwnSelectAll(document.activeElement)) return;
+  const row = document.activeElement && document.activeElement.closest && document.activeElement.closest('#fx-tree .fx-row[data-path]');
+  const p = row ? row.dataset.path : FX.active;
+  if (!p) return;
+  e.preventDefault();
+  fxRenameStart(p, row ? !!row.dataset.dir : false);
+});
 
 // ---------- Upload (drag from the desktop, or the menu's file picker) ----------
 // Drop on a folder row → into that folder; on a file row → beside it; on the
