@@ -2357,6 +2357,8 @@ app.get('/api/fs/file', async (req, res) => {
       if (buf.subarray(0, 8192).includes(0)) { if (!csv) out.kind = 'binary'; }
       else out.source = buf.toString('utf8');
     }
+    // Text the Files editor can replace: when it was last backed up (null: no earlier version to restore)
+    if (out.source != null) out.backup = await sheetLib().store.backupInfo(rel);
     res.json(out);
   } catch (err) {
     fsError(res, err);
@@ -2778,6 +2780,79 @@ app.post('/api/fs/sheet/restore', async (req, res) => {
       const stat = await fsp.stat(full);
       return stat.size > SHEET_FILE_MAX.get(ext) ? { buf: null, stat } : store.readGuarded(full, null);
     }));
+  } catch (err) {
+    sheetError(res, err);
+  }
+});
+
+// ---- Text files: Edit / Save in Files ----
+// The same safety as the sheet save (vault path, per-file lock, 409 when the file moved on, the previous version
+// kept for Restore), for the text Files can show: .md, .txt, .json, and a .csv's Source. The client sends the whole
+// new text and the mtime it opened the file at.
+const TEXT_EMPTY = 'Will not save an empty file. Paste the new text first.';
+const TEXT_TOO_LARGE = 'That is too large to edit here (over 1 MB).';
+const TEXT_NOT_TEXT = 'That file is not plain text, so it cannot be edited here.';
+
+async function textTarget(relPath) {
+  if (typeof relPath !== 'string' || !relPath) throw sheetFail(400, 'Missing path');
+  let full;
+  try {
+    full = await safeVaultPath(relPath);
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) throw sheetFail(404, 'Not found');
+    throw sheetFail(400, err && !err.code ? err.message : 'Path not allowed');
+  }
+  const kind = fsKind(full);
+  const csv = kind === 'sheet' && path.extname(full).toLowerCase() === '.csv';
+  if (kind !== 'md' && kind !== 'text' && !csv) throw sheetFail(400, TEXT_NOT_TEXT);
+  const stat = await fsp.stat(full);
+  if (!stat.isFile()) throw sheetFail(400, 'Not a file');
+  if (stat.size > FS_TEXT_MAX) throw sheetFail(413, TEXT_TOO_LARGE);
+  return { full, rel: relOf(full), stat };
+}
+
+// What the client needs after a write; it re-reads the file itself (GET /api/fs/file) for the rest.
+async function textWritten(rel, stat) {
+  return { path: rel, mtime: stat.mtimeMs, size: stat.size, backup: await sheetLib().store.backupInfo(rel) };
+}
+
+// Line endings stay as the file had them: a textarea only knows \n, so a CRLF file gets its \r back.
+function textKeepEol(oldBuf, text) {
+  const s = oldBuf.toString('utf8');
+  const crlf = (s.match(/\r\n/g) || []).length;
+  const lf = (s.match(/\n/g) || []).length - crlf;
+  return crlf > lf ? text.replace(/\r?\n/g, '\r\n') : text;
+}
+
+app.post('/api/fs/text/save', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const mtime = sheetMtime(body);
+    if (typeof body.text !== 'string') throw sheetFail(400, 'Missing text');
+    if (!body.text.trim()) throw sheetFail(400, TEXT_EMPTY);
+    if (body.text.includes('\0')) throw sheetFail(400, TEXT_NOT_TEXT);
+    if (Buffer.byteLength(body.text) > FS_TEXT_MAX) throw sheetFail(413, TEXT_TOO_LARGE);
+    const { full, rel } = await textTarget(body.path);
+    const { store } = sheetLib();
+    const stat = await store.withLock(full, async () => {
+      const guard = await store.readGuarded(full, mtime); // 409 if the file moved on since the client opened it
+      if (guard.buf.subarray(0, 8192).includes(0)) throw sheetFail(422, TEXT_NOT_TEXT);
+      return store.replace(full, rel, Buffer.from(textKeepEol(guard.buf, body.text), 'utf8'), guard);
+    });
+    res.json(await textWritten(rel, stat));
+  } catch (err) {
+    sheetError(res, err);
+  }
+});
+
+app.post('/api/fs/text/restore', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const mtime = sheetMtime(body);
+    const { full, rel } = await textTarget(body.path);
+    const { store } = sheetLib();
+    const stat = await store.withLock(full, async () => store.restore(full, rel, await store.readGuarded(full, mtime)));
+    res.json(await textWritten(rel, stat));
   } catch (err) {
     sheetError(res, err);
   }
