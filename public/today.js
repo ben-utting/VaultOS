@@ -329,29 +329,39 @@ const Today = (() => {
     paintNextStart();
   }
   // Start, by the timer: Running · 12:34 (disabled) while a session runs, Paused while paused, disabled in a
-  // break (Start would start the break). The strip never starts a second session.
+  // break (Start would start the break). The strip never starts a second session. The timer always logs to
+  // today, so a past day's task can't be started (Open still shows it), and a Board title over the server's
+  // 200 characters can't be a target.
+  const BOARD_TITLE_MAX = 200;   // lib/today-service.js BOARD_MAX
+  function nextStartBlock() {
+    if (!next || next.kind === 'clear') return 'none';
+    if (!tm) return 'Loading the timer';
+    if (P && P.date !== P.today) return "Focus runs on today's tasks";
+    if (next.kind === 'board' && next.title.length > BOARD_TITLE_MAX) return 'Title too long for a Focus session';
+    if (tm.state === 'running') return `${PHASES[tm.phase] || 'Focus'} is running`;
+    if (tm.state === 'paused') return 'Resume or reset it in Focus';
+    if (tm.phase !== 'focus') return 'A break is next: start or skip it in Focus';
+    return '';
+  }
   function paintNextStart() {
     const b = $('td-next-start');
     if (!b || !next || next.kind === 'clear') return;
-    let label = 'Start';
-    let why = next.kind === 'board' ? `Focus on ${next.title}` : `Focus on ${next.text}`;
-    if (tm && tm.state === 'running') { label = `Running · ${clock(leftMs())}`; why = `${PHASES[tm.phase] || 'Focus'} is running`; }
-    else if (tm && tm.state === 'paused') { label = `Paused · ${clock(leftMs())}`; why = 'Resume or reset it in Focus'; }
-    else if (tm && tm.phase !== 'focus') why = 'A break is next: start or skip it in Focus';
-    const off = !tm || tm.state !== 'idle' || tm.phase !== 'focus';
+    const block = nextStartBlock();
+    const label = tm && tm.state === 'running' ? `Running · ${clock(leftMs())}`
+      : tm && tm.state === 'paused' ? `Paused · ${clock(leftMs())}` : 'Start';
     if (b.dataset.label !== label) {
       b.dataset.label = label;
-      b.innerHTML = (off && tm && tm.state !== 'idle' ? '' : ICON.play) + esc(label);
+      b.innerHTML = (label === 'Start' ? ICON.play : '') + esc(label);
     }
-    b.disabled = off;
-    b.title = why;
+    b.disabled = !!block;
+    b.title = block || (next.kind === 'board' ? `Focus on ${next.title}` : `Focus on ${next.text}`);
   }
   function onNextStart() {
-    if (!next || next.kind === 'clear' || !tm || timerBusy || tm.state !== 'idle' || tm.phase !== 'focus') return;
-    const sel = $('td-target');
-    if (![...sel.options].some((o) => o.value === next.target)) {
-      extra = { value: next.target, label: next.kind === 'board' ? next.title : next.text };
-    }
+    if (timerBusy || nextStartBlock()) return;
+    const listed = [...$('td-target').options].some((o) => o.value === next.target);
+    // Only a Board task gets the one-off option; a today task is always in the list already.
+    if (next.kind === 'board' && !listed) extra = { value: next.target, label: next.title };
+    else if (!listed) return;
     aim(next.target);
     timerOp('start');
   }

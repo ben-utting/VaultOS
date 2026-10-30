@@ -688,7 +688,7 @@ SCEN.T4 = async () => {
 
   // (c) A past day stepped to on purpose still takes writes on a stale clock.
   await tap(p, '#td-prev');
-  check('T4 stepped back a day', await waitFor(p, () => !document.getElementById('td-back').classList.contains('hidden') && !document.getElementById('td-next').dataset.day === 'today'));
+  check('T4 stepped back a day', await waitFor(p, () => !document.getElementById('td-back').classList.contains('hidden') && document.getElementById('td-next').dataset.day !== 'today'));
   await settle();
   await staleClock();
   sent.length = 0;
