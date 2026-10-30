@@ -316,7 +316,7 @@ Settings → Connectors signs in to a service once and adds it to every agent Va
 (Claude Code and the Cursor CLI), so it works in every folder. Agents never see a password or token.
 Spec: `docs/superpowers/specs/2026-10-29-connectors-design.md` (the last section lists what was
 decided or changed during the build). Code: `lib/connectors.js` (catalogue, copy), `lib/connector-store.js`,
-`lib/connector-oauth.js`, `lib/connector-relay.js`, `lib/connector-agents.js` (config writers),
+`lib/connector-oauth.js`, `lib/connector-relay.js`, `lib/connector-relayed.js` (GitHub and Microsoft Learn credentials), `lib/connector-agents.js` (config writers),
 `lib/connector-azure.js`, `lib/connector-service.js` (the glue), the `/api/connectors/*` and `/mcp/:id`
 parts of `server.js`, and `public/connectors.js` (the pane).
 
@@ -332,7 +332,7 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   `POST /api/connectors/atlassian/cancel` drops this session's pending sign-ins (the pane's Cancel).
 - **GitHub and Microsoft Learn are relayed too** (spec `docs/superpowers/specs/2026-10-29-github-mslearn-connectors-design.md`),
   through the generic `lib/connector-relayed.js` and the same relay. GitHub takes a personal access token
-  (`POST /api/connectors/github/token`, `{ token }`, trimmed, probed with `get_me` first; a refused token
+  (`POST /api/connectors/github/token`, `{ token }`, trimmed, probed with `initialize` + `tools/list` first (`get_me` only reads the login, best-effort); a refused token
   is not saved and the old one stays) and goes to `https://api.githubcopilot.com/mcp/`. Microsoft Learn needs
   no sign-in (`POST /api/connectors/mslearn/enable`) and goes to `https://learn.microsoft.com/api/mcp`.
   A stored credential of `''` means "connected, no credential": the relay sends no `Authorization` header
@@ -368,14 +368,14 @@ parts of `server.js`, and `public/connectors.js` (the pane).
 - **Credentials are kept out of agent configs, which is not isolation.** An agent with a shell runs as the
   same user and can read `~/.vaultos/connectors.json`. The relay keeps tokens out of the agent's config
   and context, nothing more.
-- **VaultOS never overwrites an agent's own entry.** If the agent already has an `atlassian` entry, or
+- **VaultOS never overwrites an agent's own entry.** If the agent already has its own entry under the connector's name (`atlassian`, `github` or `mslearn`), or
   `~/.cursor/mcp.json` isn't valid JSON (or its `mcpServers` isn't an object), nothing is written to that
   agent, the file stays byte-for-byte, and the row says why ("Has its own entry").
 - **Fake Atlassian:** `scripts/fake-mcp-oauth.js` (node:http only; OAuth with registration and PKCE,
   token and refresh, an SSE `tools/list`; modes `normal`, `expire`, `refuse-refresh`, `slow-sse`;
   env `CONNECTOR_UPSTREAM_ATLASSIAN` points the app at it; `CONNECTOR_UPSTREAM_GITHUB` does the same for
-  GitHub, which accepts `Bearer svc-key` and has a `get_me` tool returning `alex-example`. Microsoft Learn
-  has no fake: leave `CONNECTOR_UPSTREAM_MSLEARN` unset and the e2e hits the real service). `expire` keeps whatever access token is current dead
+  GitHub, which accepts `Bearer svc-key` and has a `get_me` tool returning `alex-example`). Microsoft Learn
+  has no fake: leave `CONNECTOR_UPSTREAM_MSLEARN` unset and the e2e hits the real service. `expire` keeps whatever access token is current dead
   until the mode goes back to `normal` (a refresh alone doesn't recover); the e2e's wrapper returns the fake
   to `normal` on the first refresh.
 - **Preview:** `connectors-preview` on `127.0.0.1:7695`, files in `/opt/vault/connectors-preview/`

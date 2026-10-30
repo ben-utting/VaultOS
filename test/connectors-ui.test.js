@@ -235,7 +235,7 @@ test('markup in a github login is escaped', () => {
   assert.match(html, /&lt;img src=x onerror=1&gt;/);
 });
 
-test('github save posts the trimmed token; mslearn buttons hit enable and disconnect', async () => {
+test('github save posts the trimmed token', async () => {
   const calls = [];
   let view = withRow('github', {});
   const els = {};
@@ -247,4 +247,34 @@ test('github save posts the trimmed token; mslearn buttons hit enable and discon
   await els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'gh-token' } } : null) } });
   assert.deepEqual(calls.find((c) => c[0] === 'POST'), ['POST', '/api/connectors/github/token', { token: 'ghp_abc' }]);
   pane.stop();
+});
+
+test('mslearn buttons hit enable and disconnect', async () => {
+  const calls = [];
+  let view = withRow('mslearn', {});
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const ui = { api: async (m, u, b) => { calls.push([m, u]); return m === 'GET' ? view : {}; } };
+  const pane = C.mountConnectors(el, ui);
+  await pane.refresh();
+  const click = (act) => els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act } } : null) } });
+  await click('ms-on'); await new Promise((r) => setTimeout(r, 20));
+  await click('ms-off');
+  assert.deepEqual(calls.filter((c) => c[0] === 'POST'), [['POST', '/api/connectors/mslearn/enable'], ['POST', '/api/connectors/mslearn/disconnect']]);
+  pane.stop();
+});
+
+test('github needs-sign-in keeps the token card and offers Test again, Sign out, agent rows and the note', () => {
+  const html = C.paneHtml({ view: withRow('github', { state: 'needs-sign-in', agents: [{ id: 'claude', label: 'Claude Code', chip: 'Added' }] }), picked: 'github' });
+  assert.match(html, /GitHub no longer accepts your token/);
+  assert.match(html, /data-act="gh-token"/);
+  assert.match(html, /data-act="test"[^>]*>Test again</);
+  assert.match(html, /data-act="disconnect"[^>]*>Sign out</);
+  assert.match(html, /Claude Code/);
+  assert.match(html, /Signing out here doesn't delete the token on GitHub\./);
+});
+
+test('atlassian needs-sign-in offers Sign out', () => {
+  const html = C.paneHtml({ view: withRow('atlassian', { state: 'needs-sign-in' }), picked: 'atlassian' });
+  assert.match(html, /data-act="disconnect"[^>]*>Sign out</);
 });

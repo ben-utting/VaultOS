@@ -151,7 +151,8 @@
     const note = c.state !== 'needs-sign-in' && c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
     return '<ul class="ap-facts"><li>Jira and Confluence, through Atlassian\'s own hosted server</li><li>Pick one way to connect. You can switch later.</li></ul>'
       + lead + note + optionCardsHtml(c, st)
-      + (st.options.atlassian && connectedLike ? `<div class="ap-btns">${btn('keep', 'Keep my current sign-in')}</div>` : '');
+      + (st.options.atlassian && connectedLike ? `<div class="ap-btns">${btn('keep', 'Keep my current sign-in')}</div>` : '')
+      + (c.state === 'needs-sign-in' ? `<div class="ap-btns">${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}` : '');
   }
 
   function codePanelHtml(st, now) {
@@ -222,7 +223,10 @@
     const intro = '<li>Repos, issues and pull requests, through GitHub\'s own hosted server</li>';
     if (!connectedLike) {
       const lead = c.state === 'needs-sign-in' ? '<p class="su-err cx-err" role="alert">GitHub no longer accepts your token. Paste a new one.</p>' : '';
-      return `<ul class="ap-facts">${intro}</ul>${lead}${c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : ''}${githubTokenCard(c, st, false)}`;
+      const signedOut = c.state === 'needs-sign-in'
+        ? agentRowsHtml(c) + `<div class="ap-btns">${btn('test', 'Test again')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}`
+          + '<p class="cx-muted">Signing out here doesn\'t delete the token on GitHub.</p>' : '';
+      return `<ul class="ap-facts">${intro}</ul>${lead}${c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : ''}${githubTokenCard(c, st, false)}${signedOut}`;
     }
     if (st.options.github) return `<ul class="ap-facts">${intro}</ul>${githubTokenCard(c, st, true)}`;
     const tested = testedLine(c, now, 'GitHub');

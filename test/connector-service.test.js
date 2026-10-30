@@ -436,14 +436,15 @@ async function setupRelayed(t, { agents = ['cursor'] } = {}) {
   const gh = await startFake();
   const ms = await startFake({ noAuth: true });
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-rel-'));
+  const run = fakeRun();
   const svc = createConnectorService({
     home, port: 7684, env: { CONNECTOR_UPSTREAM_GITHUB: gh.base, CONNECTOR_UPSTREAM_MSLEARN: ms.base },
-    fetch: (...a) => globalThis.fetch(...a), run: fakeRun(), spawn: fakeSpawn(), now: () => 1000000,
+    fetch: (...a) => globalThis.fetch(...a), run, spawn: fakeSpawn(), now: () => 1000000,
     installedAgents: async () => agents,
   });
   await svc.init();
   t.after(async () => { await gh.stop(); await ms.stop(); fs.rmSync(home, { recursive: true, force: true }); });
-  return { gh, ms, home, svc };
+  return { gh, ms, home, svc, run };
 }
 const cursorJson = (home) => JSON.parse(fs.readFileSync(path.join(home, '.cursor/mcp.json'), 'utf8'));
 
@@ -473,7 +474,7 @@ test('github: an empty token is refused without calling GitHub; saveToken refuse
 test('github: a token that fails the probe keeps the previous token and throws the upstream error', async (t) => {
   const { svc, home } = await setupRelayed(t);
   await svc.saveToken('github', { token: 'svc-key' });
-  await assert.rejects(svc.saveToken('github', { token: 'wrong' }), /401/);
+  await assert.rejects(svc.saveToken('github', { token: 'wrong' }), (e) => /^GitHub didn't accept this token \(.*401.*\)\.$/.test(e.message) && !e.message.includes('wrong'));
   assert.strictEqual(store(home).connectors.github.key, 'svc-key');
   assert.strictEqual((await row(svc, 'github')).state, 'connected');
 });
@@ -567,4 +568,34 @@ test('mslearn: a failing test leaves it enabled with the error shown', async (t)
 test('planned in view() has the five ids', async (t) => {
   const { svc } = await setupRelayed(t);
   assert.deepStrictEqual((await svc.view()).planned.map((p) => p.id), ['notion', 'homeassistant', 'n8n', 'linear', 'sentry']);
+});
+
+test('a token with an inner space or line break is refused with a fixed sentence, and the old credential stays', async (t) => {
+  const { svc, home, gh } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  const seen = gh.state.seen.length;
+  for (const bad of ['ghp_SECRET\nmore', 'ghp_SECRET more', 'ghp_SECRET\u0001x']) {
+    await assert.rejects(svc.saveToken('github', { token: bad }), (e) => e.message === 'That token has spaces or line breaks in it. Copy it again from GitHub.' && !e.message.includes('SECRET'));
+  }
+  await assert.rejects(svc.saveToken('atlassian', { email: 'alex@example.com', token: 'a b' }), { message: 'That token has spaces or line breaks in it. Copy it again from Atlassian.' });
+  assert.strictEqual(gh.state.seen.length, seen); // never probed
+  assert.strictEqual(store(home).connectors.github.key, 'svc-key');
+});
+
+test('disconnecting github or mslearn leaves Azure alone', async (t) => {
+  const { svc, run } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  await svc.enable('mslearn');
+  const before = run.calls.length;
+  await svc.disconnect('github');
+  await svc.disconnect('mslearn');
+  assert.deepStrictEqual(run.calls.slice(before).filter((c) => /\baz\b.*(logout|login)/.test(c)), []);
+});
+
+test('a sign-out between the probe and the 401 check does not throw', async (t) => {
+  const { svc, gh } = await setupRelayed(t);
+  await svc.saveToken('github', { token: 'svc-key' });
+  const p = svc.test('github');
+  await svc.disconnect('github');
+  await p; // resolves either way, never a TypeError
 });
