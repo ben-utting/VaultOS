@@ -700,7 +700,7 @@ function todayISO() {
 const { atomicWrite } = require('./lib/atomic-write');
 const { createToday } = require('./lib/today-service');
 const { createQuotes } = require('./lib/today-quote');
-const { createIndex } = require('./lib/search');
+const { createIndex, tokenize } = require('./lib/search');
 
 // One warm search index for the KB box and the agents' `vault-search`. The vault
 // may sit on a network share where a full walk takes seconds, so searches answer
@@ -1049,6 +1049,7 @@ app.get('/api/me', (req, res) => {
   res.json({
     authed: true,
     ...(localRead ? { localRead: true } : {}),
+    todayDir: s && s.features.today ? s.today.dir : '',
     features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead) },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)) } : null,
   });
@@ -2423,6 +2424,46 @@ async function walkAll(dir, out) {
     if (e.isFile()) out.push({ path: relOf(full), name: e.name, kind: fsKind(e.name) });
   }));
 }
+// Whole-vault search over the visible workspaces: tasks, articles and notes from
+// the in-memory index. Hidden workspaces, folders that are not a workspace, the
+// Today folder and _tasks/ never appear. `terms` is how many index tokens q held
+// (0 for a stopword-only query, which is a valid, empty search).
+const SEARCH_KINDS = new Set(['task', 'article', 'note']);
+app.get('/api/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'q is required' });
+  const s = SETTINGS();
+  const boards = s ? visibleBoards(s) : [];
+  const kind = req.query.kind ? String(req.query.kind) : '';
+  if (kind && !SEARCH_KINDS.has(kind)) return res.status(400).json({ error: 'unknown kind' });
+  const wsKey = req.query.ws ? String(req.query.ws) : '';
+  const wsBoard = wsKey ? boards.find((b) => b.key === wsKey) : null;
+  if (wsKey && !wsBoard) return res.status(400).json({ error: 'unknown ws' });
+  const status = kind === 'task' && req.query.status ? String(req.query.status) : '';
+  const n = parseInt(String(req.query.limit || ''), 10);
+  const limit = Math.min(50, Math.max(1, Number.isFinite(n) ? n : 20));
+  const terms = tokenize(q).length;
+  if (!terms) return res.json({ results: [], terms: 0 });
+  const byDir = new Map(boards.map((b) => [b.dir, b]));
+  const today = s.today.dir.replace(/\/+$/, '') + '/';
+  const hits = await searchIndex.search(q, {
+    prefix: true, kind: kind || undefined, under: wsBoard ? wsBoard.dir + '/' : undefined, limit: limit * 3,
+  });
+  const results = [];
+  for (const h of hits) {
+    const segs = h.path.split('/');
+    const b = byDir.get(segs[0]);
+    if (!b || h.path.startsWith(today) || segs.some((x) => x.toLowerCase() === '_tasks')) continue;
+    if (status && h.status !== status) continue;
+    results.push({
+      path: h.path, kind: h.kind, title: h.title, date: h.date, snippet: h.snippet,
+      ws: b.key, wsLabel: b.label, folder: segs.slice(1, -1).join(' / '),
+      ...(h.kind === 'task' ? { status: h.status } : {}),
+    });
+    if (results.length >= limit) break;
+  }
+  res.json({ results, terms });
+});
 app.get('/api/fs/find', async (req, res) => {
   const words = String(req.query.q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return res.json({ items: [] });
