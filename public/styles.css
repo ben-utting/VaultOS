@@ -313,11 +313,11 @@ header button.ws-chip {
 }
 .clear-filters:hover { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
 
-/* The one row never wraps a control: only the search chip's text gives way (ellipsis), at every width.
+/* The one row never wraps a control: only the chips give way (the search chip, and the workspace chip's label), their text ellipsizing.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
 /* Search is a button that opens the search panel, with the shortcut beside it; the chip next to it names the filter
-   narrowing the current mode and clears it. Both give way (the chip's text, then the button's) before anything else. */
+   narrowing the current mode and clears it. The button stays fixed; the chip's text gives way. */
 header button#search-btn {
   flex: none; display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px;
   color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md);
@@ -1681,7 +1681,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   }
   header::after, .modes, .brand, .ws-div { display: none; }
   header .spacer { order: 2; }   /* pushes the tools right of the icon-only Search button */
-  /* The wordmark is gone, so the chip leads the row; the 38vw cap on its label keeps the search box a usable width. */
+  /* The wordmark is gone, so the chip leads the row; the cap on its label (min(24ch, 38vw)) keeps room for the Search button and the chip. */
   header button.ws-chip { order: 0; padding: 2px 6px 2px 8px; }
   #search-btn, #search-chip { order: 1; }
   header button#search-btn { padding: 0; width: 40px; height: 40px; min-height: 40px; justify-content: center; }
