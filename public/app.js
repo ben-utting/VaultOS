@@ -2041,14 +2041,18 @@ function applyFilter(q) {
   else if (STATE.mode === 'board') { STATE.query = q; render(); }
   renderSearchChip();
 }
-// `"boiler" ×` beside the Search button while the current mode is being filtered; clicking it clears the filter.
+// `"boiler" ×` beside the Search button while the current mode is being filtered. The text reopens the panel with
+// that query; the × (its own button, which never shrinks, so a long query's ellipsis can't hide it) clears it.
 function renderSearchChip() {
   const chip = $('search-chip'), q = currentFilter();
   chip.classList.toggle('hidden', !q);
-  chip.textContent = q ? `"${q}" ×` : '';
-  chip.setAttribute('aria-label', q ? `Clear filter "${q}"` : '');
+  const text = chip.querySelector('.sc-text');
+  text.textContent = q ? `"${q}"` : '';
+  text.setAttribute('aria-label', q ? `Search for "${q}" again` : '');
+  chip.querySelector('.sc-x').setAttribute('aria-label', q ? `Clear filter "${q}"` : 'Clear filter');
 }
-$('search-chip').addEventListener('click', () => applyFilter(''));
+$('search-chip').querySelector('.sc-text').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open({ q: currentFilter() }); });
+$('search-chip').querySelector('.sc-x').addEventListener('click', () => applyFilter(''));
 $('search-btn').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open(); });
 {
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
