@@ -1049,7 +1049,7 @@ wraps to two rows. `#search-btn` is fixed (`flex: none`; its `Ctrl F` hint hides
 button). Two chips give way, and their text ellipsizes. `#search-chip`: `flex: 0 1 auto`, `max-width: 22ch` (14ch at
 861–1100px); at ≤700px `flex: 0 4 auto`, min 48px, `max-width: 28vw`, so it shrinks before the workspace name.
 `#ws-chip`: `flex: none` with its label capped at `min(24ch, 38vw)` (14ch at 861–1100px); at ≤700px
-`flex: 0 1 auto`, min 48px. Every other control is `flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
+`flex: 0 1 auto`, min 48px. `.today-chip`: `flex: 1 1 66px`, min 66px (the time alone), and its `.tc-what` target ellipsizes (min 3em, max 200px; 90px at ≤700px). Every other control is `flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
 hides `#termbtn`: a header-fit check that doesn't unhide it misses about 50px. `/opt/vault/look-check/t2.js` runs the
 matrix (880–1600px × Board/KB/Files/Today × Terminal, search, chip) and must stay green after any header change.
 The sections kept the popovers' element ids (`filter-list`, `cols-list`,
