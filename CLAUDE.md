@@ -78,7 +78,7 @@ waiting longer in real time.
    as visually verified when the POST 401'd.
 3. **There are no deep links.** `app.js` reads no URL params and no hash, so
    every fresh load opens on the default: Today mode, workspace Personal (the
-   switcher is the header chip `#ws-chip` and its menu, plus a single radio pick in Settings → Workspaces,
+   switcher is the header chip `#ws-chip` (hidden when fewer than two workspaces are visible) and its menu, plus a single radio pick in Settings → Workspaces,
    which also renames, reorders and hides; the old show/hide in
    `workspace-visibility.json` is no longer read by the UI). To reach a specific workspace, task or article
    you must click, which means a puppeteer script, not the one-shot
@@ -604,6 +604,30 @@ listener); a drop anywhere else leaves `DRAG` set, and the empty columns shown, 
 The column a card is dropped on gets `col-landing`, which keeps it shown while the move is saved (the drop clears
 `board-dragging` straight away); the `render()` after the save replaces it with the column's new state.
 
+## Search panel (2026-11-01)
+
+The header `#search` input is gone. `#search-btn` (Search + a `Ctrl F` / `⌘F` hint; icon-only at ≤700px) opens a
+command-palette-style panel, `public/search-panel.js` (`SearchPanel.open/close/isOpen`), over tasks, articles,
+notes and files in the visible workspaces. Pure logic (intent, grouping, highlight) is in `public/search-core.js`,
+unit-tested in `test/search-core.test.js`.
+- **Shortcuts:** Ctrl+F / ⌘F and Ctrl+K / ⌘K, from a capture-phase `keydown` listener. A second Ctrl+F while open
+  closes it *without* `preventDefault` (browser find still works). Left alone inside `.xterm`, `#fx-edit-box`, a
+  sheet cell editor, or any input/textarea/contenteditable outside the panel. Bails while the document viewers
+  (DGV/DOCV) or Settings are open.
+- **Filter chip:** `#search-chip` shows the current mode's filter (`.sc-text` reopens the panel seeded with
+  `currentFilter()`, `.sc-x` clears). app.js globals: `currentFilter()`, `applyFilter(q)`, `renderSearchChip()`. The
+  panel's "Filter Board / Knowledge Base / the Files tree to 'q'" row calls `applyFilter`. On the phone header, Clear
+  hides while the search chip and the Pomodoro chip both show.
+- **Server:** `GET /api/search?q=` (server.js, over lib/search.js) returns `{results, terms}`. Visible workspaces only;
+  excludes the Today dir, `_tasks/` and `_Templates`; default limit 30, max 50; `q` is capped at 200 chars. Tasks
+  carry `status`. `GET /api/me` gained `todayDir` and `GET /api/workspaces` gained `dir`, so the client can apply the
+  same exclusions to Recent.
+- **Behaviour:** stale responses are dropped by a sequence number plus an `AbortController`. Blank input or
+  `terms === 0` shows Recent (8 newest tasks and files). File rows show their type, not size. Type filter is
+  All · Tasks · Articles · Notes · Files; Status shows only for Tasks; filters live in memory for the session.
+- Copy says "workspace", never "board", for a workspace. Font sizes use the `--t-*` tokens; selected rows use the
+  shared selected rule; no new solid-gold fills.
+
 ## Files: staged loading (2026-10-30)
 
 `fxLoad` paints in stages instead of waiting for everything. The root folder arrives first and draws the tree and the
@@ -1031,6 +1055,7 @@ The sections kept the popovers' element ids (`filter-list`, `cols-list`,
 Folders is hidden in Files mode and Columns off the Board (`secAvailable`); the
 gear gets a dot (`updateSetDot`) whenever the folder filter or columns are hiding cards.
 Escape is handled on `window` capture, so it closes only the sheet.
+The search panel (below) also takes Escape on `window` capture and closes only itself, ahead of the drawer.
 
 **Refresh app = `location.reload()`, deliberately.** An iOS home-screen web app
 resumes the old page forever, so a data-only rescan never picked up new
@@ -1212,7 +1237,7 @@ final-review fix wave. The release (Task 13) has NOT happened yet.** Master is u
   refits the terminals. It disarms on blur, any pointerdown, or when the host hides. **Escape:** never
   touched while focus is in xterm and the prefix is unarmed; armed, it cancels and is swallowed (anything
   unbound is). Overlays (sheet, picker, menus) take Escape on their own element with `stopPropagation()`,
-  because `app.js` closes the task drawer on any document Escape. Direct keys: Alt+1…9 = the space numbered
+  because `app.js` closes the task drawer on any document Escape. The search panel does the same. Direct keys: Alt+1…9 = the space numbered
   N in the sidebar or rail (only spaces with a pane here are numbered, so a key never brings a session),
   Ctrl+Shift+` = new pane; neither acts while the `?` sheet or the Go-to picker is open (`ctx.overlayOpen`).
   Ctrl+` stays in `workbench.js`, and the `?` sheet lists it on the dock only (the window has no dock).
