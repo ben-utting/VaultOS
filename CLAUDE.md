@@ -613,7 +613,8 @@ unit-tested in `test/search-core.test.js`.
 - **Shortcuts:** Ctrl+F / ⌘F and Ctrl+K / ⌘K, from a capture-phase `keydown` listener. A second Ctrl+F while open
   closes it *without* `preventDefault` (browser find still works). Left alone inside `.xterm`, `#fx-edit-box`, a
   sheet cell editor, or any input/textarea/contenteditable outside the panel. Bails while the document viewers
-  (DGV/DOCV) or Settings are open.
+  (DGV/DOCV), Settings, the Morning read card or a terminal's `.tw-sheet` / `.tw-pick` is open; key repeats are
+  ignored. The Morning read card in turn never opens over the panel.
 - **Filter chip:** `#search-chip` shows the current mode's filter (`.sc-text` reopens the panel seeded with
   `currentFilter()`, `.sc-x` clears). app.js globals: `currentFilter()`, `applyFilter(q)`, `renderSearchChip()`. The
   panel's "Filter Board / Knowledge Base / the Files tree to 'q'" row calls `applyFilter`. On the phone header, Clear
@@ -622,8 +623,14 @@ unit-tested in `test/search-core.test.js`.
   excludes the Today dir, `_tasks/` and `_Templates`; default limit 30, max 50; `q` is capped at 200 chars. Tasks
   carry `status`. `GET /api/me` gained `todayDir` and `GET /api/workspaces` gained `dir`, so the client can apply the
   same exclusions to Recent.
-- **Behaviour:** stale responses are dropped by a sequence number plus an `AbortController`. Blank input or
-  `terms === 0` shows Recent (8 newest tasks and files). File rows show their type, not size. Type filter is
+- **Listings cache:** `/api/fs/find` and `/api/fs/recent` read whole-vault listings from `lib/walk-cache.js`
+  (`fsListings` in server.js): walked at most once per 30 s, concurrent requests share one walk, and every signed-in
+  non-GET `/api/*` request drops both (before it runs and when it answers), so writes made in the app show at once;
+  an agent's writes in a terminal show within 30 s. Tasks' `status` is normalised like the Board's (unknown → backlog).
+- **Behaviour:** stale responses are dropped by a sequence number plus an `AbortController`. The Filter row and the
+  `/api/search` groups paint as soon as that answers; Files merges in when `/api/fs/find` lands (selection kept).
+  Recent paints the board's tasks at once and merges `/api/fs/recent` in. Enter while a search is out picks only if
+  the panel is still open. Blank input or `terms === 0` shows Recent (8 newest tasks and files). File rows show their type, not size. Type filter is
   All · Tasks · Articles · Notes · Files; Status shows only for Tasks; filters live in memory for the session.
 - Copy says "workspace", never "board", for a workspace. Font sizes use the `--t-*` tokens; selected rows use the
   shared selected rule; no new solid-gold fills.
