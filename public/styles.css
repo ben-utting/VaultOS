@@ -316,19 +316,24 @@ header button.ws-chip {
 /* The one row never wraps a control: only the chips give way (the search chip, the workspace chip's label and Today's chip), their text ellipsizing.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
-/* Search is a button that opens the search panel, with the shortcut beside it; the chip next to it names the filter
-   narrowing the current mode and clears it. The button stays fixed; the chip's text gives way. */
-header button#search-btn {
-  flex: none; display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px;
-  color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md);
-  white-space: nowrap;
+/* On a desktop the header has no Search control: Ctrl+F / Ctrl+K open the panel (Settings → Appearance names them).
+   A phone or touch tablet has no such keys, so there it is a 40px icon button. The chip beside it names the filter
+   narrowing the current mode and only shows while one is set; its text gives way. */
+header button#search-btn { display: none; }
+@media (max-width: 700px), (hover: none) and (pointer: coarse) {
+  header button#search-btn {
+    display: inline-flex; flex: none; align-items: center; justify-content: center;
+    padding: 0; width: 40px; height: 40px; min-height: 40px;
+    color: var(--muted);
+  }
+  header button#search-btn:hover { color: var(--text); }
 }
-header button#search-btn:hover { color: var(--text); }
 #search-btn .icon { width: 15px; height: 15px; flex: none; }
-.search-kbd {
+.kbd {
   font: inherit; font-size: var(--t-xs); color: var(--muted); padding: 0 5px;
   border: 1px solid var(--line); border-radius: var(--radius-sm); line-height: 1.5;
 }
+.ss-keys { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--t-sm); }
 header #search-chip {
   flex: 0 1 auto; min-width: 0; max-width: 22ch; display: inline-flex; align-items: stretch;
   border: 1px solid var(--line); border-radius: var(--radius-md); font-size: var(--t-sm);
@@ -1564,7 +1569,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   header { column-gap: 8px; }
   header .count, header .ws-div, .cf-more { display: none; }
   .ws-chip-label { max-width: 14ch; }
-  .search-kbd { display: none; }
   header #search-chip { max-width: 14ch; }
 }
 /* Under 961px Today's chip and "Clear" together still don't fit, so while the chip runs the wordmark gives way
@@ -1684,8 +1688,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   /* The wordmark is gone, so the chip leads the row; the cap on its label (min(24ch, 38vw)) keeps room for the Search button and the chip. */
   header button.ws-chip { order: 0; padding: 2px 6px 2px 8px; }
   #search-btn, #search-chip { order: 1; }
-  header button#search-btn { padding: 0; width: 40px; height: 40px; min-height: 40px; justify-content: center; }
-  #search-btn .search-lbl, #search-btn .search-kbd { display: none; }
   /* With a Pomodoro running and a filter on (chip, "Clear") the row was ~70px too wide at 390. "Clear" gives way to
      the chip (its × clears the query; Clear comes back once the query is gone, if folders still narrow the board),
      the gaps close up, and then the chip's query and the workspace name ellipsise, so Refresh and Settings stay. */

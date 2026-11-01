@@ -606,8 +606,10 @@ The column a card is dropped on gets `col-landing`, which keeps it shown while t
 
 ## Search panel (2026-11-01)
 
-The header `#search` input is gone. `#search-btn` (Search + a `Ctrl F` / `⌘F` hint; icon-only at ≤700px) opens a
-command-palette-style panel, `public/search-panel.js` (`SearchPanel.open/close/isOpen`), over tasks, articles,
+The header has no search control on a desktop (Ben, 2026-11-01: "only the keyboard shortcut"): Ctrl+F / ⌘F or
+Ctrl+K opens a command-palette-style panel, and Settings → Appearance names the keys (`.ss-keys`, Mac-aware in
+app.js). `#search-btn` is a 40px icon shown only at ≤700px or on a touch screen (`(hover: none) and (pointer: coarse)`),
+where there are no such keys. The panel is `public/search-panel.js` (`SearchPanel.open/close/isOpen`), over tasks, articles,
 notes and files in the visible workspaces. Pure logic (intent, grouping, highlight) is in `public/search-core.js`,
 unit-tested in `test/search-core.test.js`.
 - **Shortcuts:** Ctrl+F / ⌘F and Ctrl+K / ⌘K, from a capture-phase `keydown` listener. A second Ctrl+F while open
@@ -1052,8 +1054,8 @@ Sign out leaves the header (the sheet's `#logout-sheet` is the way out) and Sett
 keeps the name); at 861–1366px a filter's "Clear all filters" takes the count's place; at 861–1100px the count and
 divider go, "Clear all filters" reads "Clear" (`.cf-more`; `aria-label` keeps the full name), the gaps close to 8px
 and the workspace name is cut at 14ch; at 861–960px a running Pomodoro chip also hides the wordmark. At 701–860px it
-wraps to two rows; at ≤ 700px it is one row again. `#search-btn` never shrinks (`flex: none`); its `Ctrl F` hint
-hides at 861–1100px, and at ≤ 700px it is a 40px icon button. Three things give way instead, their text ellipsizing.
+wraps to two rows; at ≤ 700px it is one row again. `#search-btn` is hidden on a desktop and a fixed 40px icon
+(`flex: none`) at ≤ 700px or on a touch screen. Three things give way instead, their text ellipsizing.
 `#search-chip`: `flex: 0 1 auto`, `max-width: 22ch` (14ch at 861–1100px); at ≤ 700px `flex: 0 4 auto`, min 48px,
 `max-width: 28vw`, so it shrinks before the workspace name. `#ws-chip`: the chip is `flex: none` and its
 `.ws-chip-label` is capped at `min(24ch, 38vw)` (14ch at 861–1100px); at ≤ 700px the chip is `flex: 0 1 auto`, min

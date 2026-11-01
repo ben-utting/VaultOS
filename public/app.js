@@ -2056,7 +2056,9 @@ $('search-chip').querySelector('.sc-x').addEventListener('click', () => applyFil
 $('search-btn').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open(); });
 {
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
-  document.querySelector('#search-btn .search-kbd').textContent = mac ? '⌘F' : 'Ctrl F';
+  // Desktop has no Search control (the shortcut is the way in); Settings → Appearance names the keys.
+  for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + (k.dataset.key === 'k' ? 'K' : 'F');
+  $('search-btn').title = `Search (${mac ? '⌘F' : 'Ctrl+F'})`;
 }
 $('clear-filters').addEventListener('click', clearAllFilters);
 // Refresh reloads the whole app, not just the data: an installed home-screen

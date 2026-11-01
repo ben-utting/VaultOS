@@ -40,7 +40,7 @@
         <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
       </nav>
       <!-- Opens the search panel (search-panel.js). The chip beside it names the filter now narrowing the current mode: its text reopens the panel with it, its × clears it. -->
-      <button type="button" id="search-btn" class="ghost" aria-label="Search" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="search-lbl">Search</span><kbd class="search-kbd">Ctrl F</kbd></button>
+      <button type="button" id="search-btn" class="ghost" aria-label="Search" title="Search" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
       <span id="search-chip" class="search-chip hidden"><button type="button" class="sc-text" title="Search for this again"></button><button type="button" class="sc-x" aria-label="Clear filter">×</button></span>
       <div class="spacer"></div>
       <span id="count" class="count"></span>
@@ -162,6 +162,11 @@
       </div>
       <!-- Where a terminal button opens a shell. Hidden on a phone, where a
            second window is just another browser tab: there it's always the dock. -->
+      <!-- The header has no Search control on a desktop: the shortcut is the way in, so it is named here. -->
+      <div class="row">
+        <div class="lbl">Search</div>
+        <div class="ss-keys"><kbd class="kbd" data-key="find">Ctrl F</kbd> or <kbd class="kbd" data-key="k">Ctrl K</kbd></div>
+      </div>
       <div class="row" id="term-where-row">
         <div class="lbl">Terminals open in</div>
         <div class="seg" id="segTermWhere">
