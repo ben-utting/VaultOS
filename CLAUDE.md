@@ -1317,6 +1317,35 @@ final-review fix wave. The release (Task 13) has NOT happened yet.** Master is u
 - **Not in this round:** resume after restart (`claude --resume`), a Telegram "needs you" ping, a `vaultos`
   CLI for agents, tabs inside a space, live cwd tracking, ahead/behind counts.
 
+## Notes mode and capture (added 2026-11-01, Release 1)
+
+Write a thought down from anywhere, then grow it into a note. Spec: `docs/superpowers/specs/2026-11-01-notes-mode-design.md`
+(Release 2 — writing room, Develop, Ask me questions — is not built yet). Off unless `features.notes` (Settings → Features).
+
+- **Settings:** `notes: { dir, inbox, main, tags, template }` in `.vaultos/settings.json`. `dir` is vault-relative, the
+  rest relative to `dir`. Defaults are neutral (`Notes`, `Inbox`, `Main`, `Tags`, `Templates/Note.md`); a vault points
+  them at its own folders. `/api/me` carries `notes: { enabled, dir, inbox, main, tags }`; the client's `notesOn()`.
+- **Files:** `lib/notes-names.js` (capture names: `YYYY-MM-DD HHMM first words.md`, ≤60 chars, banned characters
+  dropped, ` 2` on a clash), `lib/notes-parse.js` (first line, `Status #…`, `Tags [[…]]`), `lib/notes-service.js`
+  (list, capture, remove/undo, sweep; realpath checks keep every write inside the vault; captures are serialised so
+  two at once can't pick the same name), `public/notes-core.js` (wikilinks, ages, Ctrl+J, filters), `public/capture.js`
+  (the box), `public/notes.js` (the mode).
+- **Routes:** `GET /api/notes`, `POST /api/notes/capture|delete|undo`; 404 `Notes is off` when the flag is off. A note
+  opens with `GET /api/fs/file` and saves with `POST /api/fs/text/save` — the Files routes, so lock, 409 and previous
+  version are shared. `/api/search` also returns `note` hits under `notes.dir` when Notes is on (ws `null`,
+  wsLabel `Notes`); the search panel opens any `.md` under `notes.dir` in Notes.
+- **Done / Undo:** delete moves the file to `.vaultos/notes-trash/` (mtime set to now, the note's own dates restored on
+  undo) and holds an in-memory token for 30 s. A restart loses the token; `boot()` sweeps trash older than a day.
+- **Capture:** pen `#capture-btn` (every width), Ctrl+J / ⌘J (capture phase, same overlay guards as search plus the
+  search panel), and the manifest shortcut `/?capture=1` (handled in `start()`, then removed from the URL). Draft in
+  `localStorage['vaultboard.captureDraft']`. A failed save keeps the box open with the text. At ≤700px the box is a
+  sheet from the **top**, so the phone keyboard can't cover it.
+- **toast(msg, { action, onAction, ms, tone })** — `tone: 'info'` is the neutral style; the default is the error look.
+- **Preview + e2e:** `/opt/vault/notes-preview` (container `notes-preview`, `127.0.0.1:7695`, mounts this worktree
+  or checkout), synthetic vault from `scripts/notes-sandbox.js`, `reset.sh`, `mint-cookie.js`.
+  `node scripts/notes-e2e.js [--phone] [--theme=sepia] C1 … C6 N1 … N6` — run all four variants before a release.
+  Never point it at `:7684`.
+
 ## Today mode (built on branch `today-mode`, not yet released)
 
 VaultOS opens on **Today**: date stepper, daily quote, eight habits with a 7-day grid and streaks,

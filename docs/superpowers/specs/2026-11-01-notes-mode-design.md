@@ -173,3 +173,11 @@ On an Inbox note, **Develop**:
 - A Today card for the Inbox count (add later if the Inbox's own count and "old" marks aren't enough).
 - Graph view, backlinks pane, heading-anchor autocomplete, moving notes between folders, Source Material editing beyond the plain editor.
 - A Settings UI for the `notes` section.
+
+## What changed while building Release 1
+- Opening and saving a note reuse `GET /api/fs/file` and `POST /api/fs/text/save`; there is no `/api/notes/save` or `/api/notes/file`. One `GET /api/notes` returns both lists, the tag names, every note name (for `[[links]]`) and missing folders.
+- `/api/search` returns notes under `notes.dir` when Notes is on, even when that folder isn't a workspace.
+- The phone capture box is a sheet from the top, not the bottom: a fixed bottom sheet sits under the iOS keyboard.
+- `toast()` gained a neutral `tone: 'info'`: the existing toast is styled as an error, wrong for "Saved".
+- A removed note's trash copy is dated when it is removed, so the start-up sweep keeps it a day; undo restores its own dates.
+- Ctrl+J stays the shortcut. Headless tests can't show whether a browser keeps Ctrl+J for itself, so check it in the real browser after release.
