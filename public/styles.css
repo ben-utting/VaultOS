@@ -281,8 +281,6 @@ header button.ws-chip {
 }
 .ws-chip-label { max-width: min(24ch, 38vw); overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .ws-chip-chev { width: 12px; height: 12px; flex: none; }   /* currentColor: --muted, --text on hover */
-.ws-chip-single { cursor: default; }
-.ws-chip-single .ws-chip-chev { display: none; }
 .ws-chip-off .ws-chip-label { color: var(--muted); }   /* Files: not the workspace you are looking at */
 .spacer { flex: 1; }
 .count { color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
@@ -318,11 +316,25 @@ header button.ws-chip {
 /* The one row never wraps a control: only the search box gives way (down to 110px), at every width.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
-header input[type="search"] {
-  flex: 0 1 260px; min-width: 110px; padding: 7px 11px;
-  border-radius: var(--radius-md); border: 1px solid var(--line);
-  background: var(--panel-2); color: var(--text); font: inherit;
+/* Search is a button that opens the search panel, with the shortcut beside it; the chip next to it names the filter
+   narrowing the current mode and clears it. Both give way (the chip's text, then the button's) before anything else. */
+header button#search-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px;
+  color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md);
+  white-space: nowrap;
 }
+header button#search-btn:hover { color: var(--text); }
+#search-btn .icon { width: 15px; height: 15px; flex: none; }
+.search-kbd {
+  font: inherit; font-size: var(--t-xs); color: var(--muted); padding: 0 5px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); line-height: 1.5;
+}
+header button#search-chip {
+  flex: 0 1 auto; min-width: 0; max-width: 22ch; padding: 4px 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius-md); font-size: var(--t-sm);
+}
+header button#search-chip:hover { border-color: var(--accent); }
 
 /* Header tools: terminal, Settings (with a dot while it's hiding cards), Sign out. */
 #setbtn { position: relative; display: inline-flex; align-items: center; gap: 7px; }
@@ -1544,7 +1556,8 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   header { column-gap: 8px; }
   header .count, header .ws-div, .cf-more { display: none; }
   .ws-chip-label { max-width: 14ch; }
-  header input[type="search"] { min-width: 80px; }
+  .search-kbd { display: none; }
+  header button#search-chip { max-width: 14ch; }
 }
 /* Under 961px Today's chip and "Clear" together still don't fit, so while the chip runs the wordmark gives way
    (as it does on a phone): it is the same in every mode, because the chip is. */
@@ -1562,7 +1575,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   .count, .today-chip { order: 5; }
   #refresh, #termbtn, #setbtn, #logout { order: 6; }
   .modes { order: 8; flex: none; }
-  header input[type="search"] { order: 9; flex: 1 1 120px; min-width: 90px; }
+  #search-btn, #search-chip { order: 9; }
 }
 @media (max-width: 700px) {
   /* The running total is repeated on every column head anyway. */
@@ -1658,10 +1671,15 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
     flex-wrap: nowrap; gap: 8px;
     padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
   }
-  header::after, header .spacer, .modes, .brand, .ws-div { display: none; }
+  header::after, .modes, .brand, .ws-div { display: none; }
+  header .spacer { order: 2; }   /* pushes the tools right of the icon-only Search button */
   /* The wordmark is gone, so the chip leads the row; the 38vw cap on its label keeps the search box a usable width. */
   header button.ws-chip { order: 0; padding: 2px 6px 2px 8px; }
-  header input[type="search"] { order: 1; flex: 1 1 auto; min-width: 0; }
+  #search-btn, #search-chip { order: 1; }
+  header button#search-btn { padding: 0; width: 40px; height: 40px; min-height: 40px; justify-content: center; }
+  #search-btn .search-lbl, #search-btn .search-kbd { display: none; }
+  header button#search-chip { flex: none; max-width: 28vw; min-height: 40px; }
+  .cf-more { display: none; }   /* "Clear" is enough beside the chip; aria-label keeps the full name */
   .clear-filters { order: 2; padding: 4px 8px; }
   .today-chip { order: 2; padding: 4px 8px; }
   .today-chip .tc-what { max-width: 90px; }
@@ -1845,7 +1863,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   #d-more, #d-close { width: 40px; height: 40px; min-height: 40px; padding: 0; }
   #d-agent { height: 40px; min-height: 40px; }
   .more-menu button { min-height: 40px; }
-  header input[type="search"] { min-height: 40px; }
   .mode { padding-top: 9px; padding-bottom: 9px; }
   .seg button, .stepper button { padding: 12px 8px; }
   .filter-item { padding: 10px 6px; }

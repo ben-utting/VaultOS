@@ -39,7 +39,9 @@
         <button id="mode-files" class="mode" data-mode="files">Files</button>
         <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
       </nav>
-      <input type="search" id="search" placeholder="Search tasks…">
+      <!-- Opens the search panel (search-panel.js). The chip beside it names the filter now narrowing the current mode, and clears it. -->
+      <button type="button" id="search-btn" class="ghost" aria-label="Search" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="search-lbl">Search</span><kbd class="search-kbd">Ctrl F</kbd></button>
+      <button type="button" id="search-chip" class="ghost hidden" title="Clear this filter"></button>
       <div class="spacer"></div>
       <span id="count" class="count"></span>
       <!-- The Pomodoro's time left and target, in every mode while a session runs or is paused (today.js). -->

@@ -356,7 +356,7 @@ $('fx-collapse').addEventListener('click', () => {
   renderTree();
 });
 
-// ---------- Search (the header box, in Files mode) ----------
+// ---------- Search (the header's filter chip and search panel, in Files mode) ----------
 async function fxRunSearch(q) {
   FX.found = await api('/api/fs/find?q=' + encodeURIComponent(q));
 }
@@ -368,7 +368,7 @@ const fxSearch = debounce(async (q) => {
 function fxClearSearch() {
   FX.query = '';
   FX.found = null;
-  if (STATE.mode === 'files') $('search').value = '';
+  if (typeof renderSearchChip === 'function') renderSearchChip();
 }
 
 // ---------- Tabs ----------

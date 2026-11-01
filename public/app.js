@@ -593,10 +593,10 @@ function clearAllFilters() {
   STATE.batchFilter = '';
   STATE.query = '';
   STATE.projectFilter.clear();
-  $('search').value = '';       // the box keeps its text otherwise, and the board looks broken
   updateFilterBadge();
   if (secOpen('folders')) renderFilterList();
   render();
+  renderSearchChip();
   $('board').scrollLeft = 0;
 }
 
@@ -1194,9 +1194,7 @@ function setMode(mode) {
   $('files-view').classList.toggle('hidden', mode !== 'files');
   // The header is shared, but "Clear all filters" only means anything on the board.
   $('clear-filters').classList.toggle('hidden', mode !== 'board' || !anyFilterActive());
-  $('search').placeholder = { kb: 'Search the knowledge base…', files: 'Find a file…' }[mode] || 'Search tasks…';
-  $('search').value = { kb: STATE.kb.query, files: FX.query }[mode] ?? STATE.query;
-  $('search').classList.toggle('hidden', mode === 'today');   // nothing to search on Today
+  renderSearchChip();
   document.body.dataset.mode = mode;
   // Files covers the whole vault, so the workspace chip still shows where Board and KB are but reads as not
   // applying there. It stays clickable: picking one is how you choose where you land next. On Today it is
@@ -1468,8 +1466,7 @@ function renderKBWelcome() {
   const dashSearch = $('kb-dash-search');
   if (dashSearch) {
     dashSearch.addEventListener('input', (e) => {
-      $('search').value = e.target.value;
-      kbSearch(e.target.value);
+      applyFilter(e.target.value);
     });
     if (restoreFocus) {
       dashSearch.focus();
@@ -2030,11 +2027,33 @@ document.addEventListener('keydown', (e) => {
 // Search (mode-aware) + boot
 // ========================================================================
 const kbSearch = debounce((q) => { STATE.kb.query = q; loadKB(q); }, 250);
-$('search').addEventListener('input', (e) => {
-  if (STATE.mode === 'kb') kbSearch(e.target.value);
-  else if (STATE.mode === 'files') fxSearch(e.target.value);
-  else { STATE.query = e.target.value; render(); }
-});
+// The active mode's filter text: Board's STATE.query, the Knowledge Base's, the Files tree's. Today has none.
+function currentFilter() {
+  if (STATE.mode === 'today') return '';
+  if (STATE.mode === 'kb') return STATE.kb.query || '';
+  if (STATE.mode === 'files') return FX.query || '';
+  return STATE.query || '';
+}
+function applyFilter(q) {
+  q = String(q ?? '');
+  if (STATE.mode === 'kb') { STATE.kb.query = q; kbSearch(q); }
+  else if (STATE.mode === 'files') { FX.query = q.trim(); fxSearch(q); }
+  else if (STATE.mode === 'board') { STATE.query = q; render(); }
+  renderSearchChip();
+}
+// `"boiler" ×` beside the Search button while the current mode is being filtered; clicking it clears the filter.
+function renderSearchChip() {
+  const chip = $('search-chip'), q = currentFilter();
+  chip.classList.toggle('hidden', !q);
+  chip.textContent = q ? `"${q}" ×` : '';
+  chip.setAttribute('aria-label', q ? `Clear filter "${q}"` : '');
+}
+$('search-chip').addEventListener('click', () => applyFilter(''));
+$('search-btn').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open(); });
+{
+  const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
+  document.querySelector('#search-btn .search-kbd').textContent = mac ? '⌘F' : 'Ctrl F';
+}
 $('clear-filters').addEventListener('click', clearAllFilters);
 // Refresh reloads the whole app, not just the data: an installed home-screen
 // app on iOS resumes the old page indefinitely, so this is how it picks up a
@@ -2117,11 +2136,9 @@ function renderWorkspaceSwitcher() {
   $('ws-current').textContent = cur ? cur.label : '';
   const chip = $('ws-chip');
   const pick = WORKSPACE_LIST.length > 1;
-  chip.classList.toggle('hidden', !cur);   // nothing to name until /api/workspaces has answered
-  chip.classList.toggle('ws-chip-single', !!cur && !pick);
+  chip.classList.toggle('hidden', !cur || !pick);   // nothing to name until /api/workspaces has answered, and nothing to choose between with one
   chip.querySelector('.ws-chip-label').textContent = cur ? cur.label : '';
   if (cur) chip.setAttribute('aria-label', `Workspace: ${cur.label}`); else chip.removeAttribute('aria-label');
-  if (cur && !pick) chip.setAttribute('aria-disabled', 'true'); else chip.removeAttribute('aria-disabled');
   if (pick) { chip.setAttribute('aria-haspopup', 'menu'); chip.setAttribute('aria-expanded', String(wsMenuOpen())); }
   else { chip.removeAttribute('aria-haspopup'); chip.removeAttribute('aria-expanded'); closeWsMenu({ focus: false }); }
   if (wsMenuOpen()) renderWsMenu();
@@ -2239,7 +2256,7 @@ function setWorkspace(key) {
   STATE.kb = { collections: [], articles: [], collectionFilter: new Set(), query: '', article: null, loaded: false,
     sidebarOpen: STATE.kb.sidebarOpen };
   applyKbSidebarClass();
-  $('search').value = '';
+  renderSearchChip();
   updateFilterBadge();
   closeDrawer();
   $('kb-reader').innerHTML = `
