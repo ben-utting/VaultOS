@@ -1271,6 +1271,37 @@ function today() {
   return svc;
 }
 
+// ---------- Notes (capture, Inbox, Main Notes) ----------
+// lib/notes-service.js does the file work; these routes only gate it. Opening and saving a note use the Files
+// routes (GET /api/fs/file, POST /api/fs/text/save), so locks, the 409 guard and the previous version are shared.
+let NOTES_SVC = null;
+function notesSvc() {
+  const s = SETTINGS();
+  if (!s || !s.features.notes) return null;
+  if (!NOTES_SVC) {
+    const { createNotesService } = require('./lib/notes-service');
+    NOTES_SVC = createNotesService({ vaultDir: VAULT_DIR, settings: () => SETTINGS() });
+  }
+  return NOTES_SVC;
+}
+function notesRoute(fn) {
+  return async (req, res) => {
+    const svc = notesSvc();
+    if (!svc) return res.status(404).json({ error: 'Notes is off' });
+    try {
+      res.json(await fn(svc, req.body || {}));
+    } catch (err) {
+      if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) return res.status(err.status).json({ error: err.message });
+      console.error('[notes]', err);
+      res.status(500).json({ error: 'Something went wrong.' });
+    }
+  };
+}
+app.get('/api/notes', notesRoute((svc) => svc.list()));
+app.post('/api/notes/capture', notesRoute((svc, b) => svc.capture(b.text)));
+app.post('/api/notes/delete', notesRoute((svc, b) => svc.remove(b.path)));
+app.post('/api/notes/undo', notesRoute((svc, b) => svc.undo(b.token)));
+
 app.get('/api/today', async (req, res) => {
   try {
     const date = req.query.date;
@@ -3436,6 +3467,9 @@ async function boot() {
   }
   const svc = todayService();
   if (svc) svc.boot().catch((err) => console.error('Today boot failed:', err.message));
+  // Rough notes removed before a restart lost their undo; keep them a day, then let them go.
+  const notes = notesSvc();
+  if (notes) notes.sweep().catch((err) => console.error('Notes sweep failed:', err.message));
 }
 
 // Required (by a test) rather than run: expose the pure frontmatter helpers and don't boot.
