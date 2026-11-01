@@ -1044,14 +1044,16 @@ showing it needs about 1340px, so it gives way in steps (the "Responsive" header
 Sign out leaves the header (the sheet's `#logout-sheet` is the way out) and Settings is just its gear (`aria-label`
 keeps the name); at 861–1366px a filter's "Clear all filters" takes the count's place; at 861–1100px the count and
 divider go, "Clear all filters" reads "Clear" (`.cf-more`; `aria-label` keeps the full name), the gaps close to 8px
-and the workspace name is cut at 14ch; at 861–960px a running Pomodoro chip also hides the wordmark. Below 861px it
-wraps to two rows. `#search-btn` is fixed (`flex: none`; its `Ctrl F` hint hides at 861–1100px, and at ≤700px it is a 40px icon
-button). Two chips give way, and their text ellipsizes. `#search-chip`: `flex: 0 1 auto`, `max-width: 22ch` (14ch at
-861–1100px); at ≤700px `flex: 0 4 auto`, min 48px, `max-width: 28vw`, so it shrinks before the workspace name.
-`#ws-chip`: `flex: none` with its label capped at `min(24ch, 38vw)` (14ch at 861–1100px); at ≤700px
-`flex: 0 1 auto`, min 48px. `.today-chip`: `flex: 1 1 66px`, min 66px (the time alone), and its `.tc-what` target ellipsizes (min 3em, max 200px; 90px at ≤700px). Every other control is `flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
-hides `#termbtn`: a header-fit check that doesn't unhide it misses about 50px. `/opt/vault/look-check/t2.js` runs the
-matrix (880–1600px × Board/KB/Files/Today × Terminal, search, chip) and must stay green after any header change.
+and the workspace name is cut at 14ch; at 861–960px a running Pomodoro chip also hides the wordmark. At 701–860px it
+wraps to two rows; at ≤ 700px it is one row again. `#search-btn` never shrinks (`flex: none`); its `Ctrl F` hint
+hides at 861–1100px, and at ≤ 700px it is a 40px icon button. Three things give way instead, their text ellipsizing.
+`#search-chip`: `flex: 0 1 auto`, `max-width: 22ch` (14ch at 861–1100px); at ≤ 700px `flex: 0 4 auto`, min 48px,
+`max-width: 28vw`, so it shrinks before the workspace name. `#ws-chip`: the chip is `flex: none` and its
+`.ws-chip-label` is capped at `min(24ch, 38vw)` (14ch at 861–1100px); at ≤ 700px the chip is `flex: 0 1 auto`, min
+48px. `.today-chip`: `flex: 1 1 66px`, min 66px (the time alone); its `.tc-what` target is min 3em, max 200px (90px
+at ≤ 700px). The preview runs `TERMINAL=0`, which hides `#termbtn`: a header-fit check that doesn't unhide it misses
+the Terminal button. After any header change, re-check 880–1600px in every mode with Terminal shown, a search on and
+the Pomodoro chip running; the 2026-10-30 script for this (`/opt/vault/look-check/t2.js`) is no longer on this box.
 The sections kept the popovers' element ids (`filter-list`, `cols-list`,
 `ws-list`, `segTheme`…), so their render functions are unchanged; the old
 `$('xpop').classList.contains('open')` gates became `secOpen('folders'|'cols'|'ws')`.
