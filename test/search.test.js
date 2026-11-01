@@ -169,3 +169,15 @@ test('prefix:true lets the last query word match as a prefix', async (t) => {
   assert.deepEqual(paths(await idx.search('postg', { prefix: true })), ['W/a/article.md']);
   assert.deepEqual(paths(await idx.search('upgrade kube', { prefix: true, minCoverage: 1 })), ['W/a/article.md']);
 });
+
+test('a task result carries its status; a note does not', async (t) => {
+  const dir = vault(t, {
+    'W/1. p/a/task.md': fm({ title: 'Boiler', status: 'review' }),
+    'W/n.md': 'boiler',
+  });
+  const rs = await createIndex(dir).search('boiler');
+  const task = rs.find((r) => r.kind === 'task');
+  const note = rs.find((r) => r.kind === 'note');
+  assert.equal(task.status, 'review');
+  assert.ok(!('status' in note));
+});
