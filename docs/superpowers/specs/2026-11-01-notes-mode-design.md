@@ -63,15 +63,12 @@ It ships in two releases. **Release 1:** settings, capture, Notes mode with Inbo
 ### Routes (Release 1)
 | Route | Does |
 |---|---|
-| `GET /api/notes/inbox` | Inbox list |
-| `GET /api/notes/main` | Main Notes list, plus the tag names in `<tags>/` |
-| `GET /api/notes/file?path=` | Raw text, `mtime`, rendered HTML (through `renderBody`) |
+| `GET /api/notes` | `{inbox, main, tags, names, missing}`: both lists, the tag names in `<tags>/`, every note name under `<dir>` (for `[[links]]`), and missing folders |
 | `POST /api/notes/capture` `{text}` | Creates the rough note; answers `{path, name}` |
-| `POST /api/notes/save` `{path, text, mtime}` | Saves an existing note in `<dir>`; 409 on change |
 | `POST /api/notes/delete` `{path}` | Inbox only. Moves the file to a held copy and answers an undo token |
 | `POST /api/notes/undo` `{token}` | Puts a deleted rough note back (within 30 s) |
 
-Writes sit behind the session gate like every other write. The loopback read path may list and read but never writes.
+Opening and saving a note reuse the existing `GET /api/fs/file` (raw text, `mtime`, HTML through `renderBody`) and `POST /api/fs/text/save` (lock, 409, previous version). Writes sit behind the session gate like every other write. The loopback read path may list and read but never writes.
 
 **Delete and undo:** delete renames the file into `<vault>/.vaultos/notes-trash/` with a random name, records the original path in memory against a token, and removes it for good after 30 seconds. Undo renames it back, refusing if a file now exists at the original path. A restart within the 30 seconds leaves the file in `notes-trash/`. On start-up, the server deletes anything in that folder older than a day.
 
