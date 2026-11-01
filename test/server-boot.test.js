@@ -82,7 +82,7 @@ test('migrates an existing vault', async (t) => {
   assert.match(srv.output(), /migrated: wrote \.vaultos\/settings\.json \(2 boards\)/);
   const cookie = await login(srv.base, PASSWORD);
   const ws = await get(srv.base, '/api/workspaces', cookie);
-  assert.deepEqual(ws.body, [{ key: 'alpha', label: 'alpha' }, { key: 'beta', label: 'Beta' }]);
+  assert.deepEqual(ws.body, [{ key: 'alpha', label: 'alpha', dir: 'alpha' }, { key: 'beta', label: 'Beta', dir: 'Beta' }]);
   const me = await get(srv.base, '/api/me', cookie);
   assert.equal(me.body.authed, true);
   assert.equal(me.body.features.today, true);

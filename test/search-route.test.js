@@ -145,3 +145,9 @@ test('q is capped at 200 characters', async (t) => {
   assert.equal((await get(s, 'q=' + 'a'.repeat(200))).status, 200);
   assert.equal((await get(s, 'q=' + encodeURIComponent('  ' + 'a'.repeat(200) + '  '))).status, 200);
 });
+
+test('/api/workspaces lists each visible workspace with its dir', async (t) => {
+  const s = await srvWith(t);
+  const list = await (await fetch(`${s.srv.base}/api/workspaces`, { headers: { cookie: s.cookie } })).json();
+  assert.deepEqual(list, [{ key: 'work', label: 'Work', dir: 'Work' }, { key: 'home', label: 'Home', dir: 'Home' }]);
+});

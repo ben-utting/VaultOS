@@ -1625,10 +1625,11 @@ app.post('/api/settings/password', settingsGuard, (req, res) => {
 
 // ---------- Workspaces ----------
 // The switcher's boards: the visible ones, in settings order (the first is the
-// default). Hiding and reordering happen in Settings → Boards.
+// default). Hiding and reordering happen in Settings → Boards. `dir` (the vault
+// folder) lets the search panel keep file hits inside the visible workspaces.
 app.get('/api/workspaces', (req, res) => {
   const s = SETTINGS();
-  res.json(s ? visibleBoards(s).map(({ key, label }) => ({ key, label })) : []);
+  res.json(s ? visibleBoards(s).map(({ key, label, dir }) => ({ key, label, dir })) : []);
 });
 
 // ---------- Read API ----------
