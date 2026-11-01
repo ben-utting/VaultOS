@@ -45,7 +45,9 @@
     return (items || []).filter((it) => {
       if (!it || it.dir || typeof it.path !== 'string') return false;
       if (/\.md$/i.test(it.path)) return false;
-      if (!dirs.includes(it.path.split('/')[0])) return false;
+      const segs = it.path.split('/');
+      if (!dirs.includes(segs[0])) return false;
+      if (segs.some((g) => /^_(tasks|templates)$/i.test(g))) return false;
       if (today && (it.path === today || it.path.startsWith(today + '/'))) return false;
       return true;
     });
@@ -66,12 +68,15 @@
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   function highlight(text, q) {
-    const safe = esc(text == null ? '' : text);
+    const raw = text == null ? '' : String(text);
     const words = [...new Set(String(q || '').split(/\s+/).filter((w) => w.length >= 2))]
-      .map((w) => esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .sort((a, b) => b.length - a.length);
-    if (!words.length) return safe;
-    return safe.replace(new RegExp(words.join('|'), 'gi'), (m) => `<mark>${m}</mark>`);
+    if (!words.length) return esc(raw);
+    // Split the raw text (capture group keeps the matches at odd indexes), escape every segment.
+    return raw.split(new RegExp('(' + words.join('|') + ')', 'gi'))
+      .map((seg, i) => (i % 2 ? '<mark>' + esc(seg) + '</mark>' : esc(seg)))
+      .join('');
   }
 
   return { keyIntent, intentForQuery, filterLabel, visibleFileHits, groupResults, highlight };

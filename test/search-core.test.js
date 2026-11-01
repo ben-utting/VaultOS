@@ -47,6 +47,8 @@ test('visibleFileHits', () => {
   ];
   assert.deepEqual(SC.visibleFileHits(items, ws, 'Home/Today').map((i) => i.path), ['Home/notes/invoice-boiler.pdf']);
   assert.equal(SC.visibleFileHits(items, ws, '').length, 2);
+  const hidden = [{ path: 'Home/_tasks/x.pdf' }, { path: 'Home/1. p/_Templates/y.pdf' }, { path: 'Home/ok/z.pdf' }];
+  assert.deepEqual(SC.visibleFileHits(hidden, ws, '').map((i) => i.path), ['Home/ok/z.pdf']);
 });
 
 test('groupResults: order, cap, omitted empties', () => {
@@ -64,5 +66,7 @@ test('groupResults: order, cap, omitted empties', () => {
 test('highlight escapes then marks', () => {
   assert.equal(SC.highlight('<b>&amp; ship</b>', 'ship'), '&lt;b&gt;&amp;amp; <mark>ship</mark>&lt;/b&gt;');
   assert.equal(SC.highlight('a Ship b', 'x ship'), 'a <mark>Ship</mark> b');
-  assert.equal(SC.highlight('a.b', '.. a.'), 'a.b'.replace(/a\./, '<mark>a.</mark>'));
+  assert.equal(SC.highlight('a.b', '.. a.'), '<mark>a.</mark>b');
+  assert.equal(SC.highlight('a & b', 'amp'), 'a &amp; b');
+  assert.equal(SC.highlight('x < y > "z"', 'lt gt quot'), 'x &lt; y &gt; &quot;z&quot;');
 });
