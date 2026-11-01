@@ -17,6 +17,7 @@ const Notes = (() => {
     edit: null,             // { base, mtime, saving } while editing
     status: '', tag: '',    // Main Notes filters
     timer: null,
+    removing: false,        // a Done in flight: a second press is ignored
   };
   const list = $('nt-list');
   const pane = $('nt-pane');
@@ -32,7 +33,8 @@ const Notes = (() => {
     if (N.loading) return N.loading;
     N.loading = api('/api/notes')
       .then((d) => { N.data = d; paintList(); paintCount(); return d; })
-      .catch((err) => { list.innerHTML = `<p class="nt-msg">${esc(err.message)}</p>`; return null; })
+      // A failed refresh (a dropped connection, a restart) keeps the last good list; only a first load shows the error.
+      .catch((err) => { if (!N.data) list.innerHTML = `<p class="nt-msg">${esc(err.message)}</p>`; return null; })
       .finally(() => { N.loading = null; });
     return N.loading;
   }
@@ -216,12 +218,18 @@ const Notes = (() => {
 
   // ---- Done / Undo ----
   async function done() {
-    const p = N.path;
+    if (N.removing) return;
+    N.removing = true;
+    const btn = $('nt-done');
+    if (btn) btn.disabled = true;
+    try { await removeNote(N.path); } finally { N.removing = false; }
+  }
+  async function removeNote(p) {
     let res;
     try {
       WRITES++;
       res = await fetch('/api/notes/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) });
-    } catch { toast("Couldn't reach VaultOS. Try again."); return; }
+    } catch { toast("Couldn't reach VaultOS. Try again."); const b = $('nt-done'); if (b) b.disabled = false; return; }
     if (res.status === 401) { showLogin(); return; }
     const d = await res.json().catch(() => ({}));
     N.path = null;

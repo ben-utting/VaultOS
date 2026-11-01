@@ -136,10 +136,50 @@ test('undo is 409 when a note has taken the name again', async (t) => {
   await assert.rejects(s.undo(token), (e) => e.status === 409);
 });
 
-test('sweep removes trash older than a day and keeps newer', async (t) => {
-  const v = vault(t, { '.vaultos/notes-trash/old.md': 'o', '.vaultos/notes-trash/new.md': 'n' });
-  ago(v, '.vaultos/notes-trash/old.md', 2 * DAY);
-  ago(v, '.vaultos/notes-trash/new.md', 3600000);
+test('sweep removes trash removed over a day ago and keeps newer', async (t) => {
+  const oldName = `${NOW.getTime() - 2 * DAY}-aaaa.md`;
+  const newName = `${NOW.getTime() - 3600000}-bbbb.md`;
+  const v = vault(t, { [`.vaultos/notes-trash/${oldName}`]: 'o', [`.vaultos/notes-trash/${newName}`]: 'n' });
   await svc(v).sweep();
-  assert.deepEqual(fs.readdirSync(v.at('.vaultos/notes-trash')), ['new.md']);
+  assert.deepEqual(fs.readdirSync(v.at('.vaultos/notes-trash')), [newName]);
+});
+
+test('remove leaves the note\'s own times alone, so it never needs to own the file', async (t) => {
+  const v = vault(t);
+  const rel = 'Notes/Inbox/a rough one.md';
+  ago(v, rel, 5 * DAY);
+  const before = fs.statSync(v.at(rel)).mtimeMs;
+  await svc(v).remove(rel);
+  const [f] = fs.readdirSync(v.at('.vaultos/notes-trash'));
+  assert.equal(fs.statSync(path.join(v.at('.vaultos/notes-trash'), f)).mtimeMs, before);
+});
+
+test('sweep goes by when a note was removed, not by its own age', async (t) => {
+  const v = vault(t);
+  const rel = 'Notes/Inbox/a rough one.md';
+  ago(v, rel, 30 * DAY);
+  await svc(v, { now: () => new Date() }).remove(rel);
+  await svc(v, { now: () => new Date() }).sweep();
+  assert.equal(fs.readdirSync(v.at('.vaultos/notes-trash')).length, 1, 'a just-removed old note is kept');
+});
+
+test('two removes of the same note at once: one Undo, the other "Already gone."', async (t) => {
+  const v = vault(t);
+  const s = svc(v);
+  const rel = 'Notes/Inbox/a rough one.md';
+  const [a, b] = await Promise.allSettled([s.remove(rel), s.remove(rel)]);
+  const ok = [a, b].filter((r) => r.status === 'fulfilled');
+  const bad = [a, b].filter((r) => r.status === 'rejected');
+  assert.equal(ok.length, 1);
+  assert.equal(bad.length, 1);
+  assert.equal(bad[0].reason.status, 404);
+  assert.equal(bad[0].reason.message, 'Already gone.');
+});
+
+test('one unreadable note does not take down the list', async (t) => {
+  const v = vault(t, { 'Notes/Inbox/locked.md': 'secret\n' });
+  fs.chmodSync(v.at('Notes/Inbox/locked.md'), 0o000);
+  t.after(() => { try { fs.chmodSync(v.at('Notes/Inbox/locked.md'), 0o644); } catch {} });
+  const l = await svc(v).list();
+  assert.ok(l.inbox.some((i) => i.path === 'Notes/Inbox/a rough one.md'));
 });

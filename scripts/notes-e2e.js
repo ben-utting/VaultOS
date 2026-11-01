@@ -244,6 +244,51 @@ const SCEN = {
     await p.close();
   },
 
+  // C7: the draft is kept while typing, so a reload (or the phone killing the app) doesn't lose it.
+  async C7() {
+    const p = await page();
+    await tap(p, '#capture-btn');
+    await boxOpen(p);
+    await typeInBox(p, 'typed then reloaded');
+    await sleep(800);
+    await p.reload({ waitUntil: 'networkidle2' });
+    await tap(p, '#capture-btn');
+    await boxOpen(p);
+    check('C7 the draft survives a reload', (await ev(p, () => document.getElementById('cp-text').value)) === 'typed then reloaded', await ev(p, () => document.getElementById('cp-text').value));
+    await p.close();
+  },
+
+  // N7: a double press on Done still ends with the Undo toast, and Undo still works.
+  async N7() {
+    const p = await page();
+    await toNotes(p);
+    await openRow(p, WALKS);
+    let deletes = 0;
+    p.on('request', (r) => { if (r.method() === 'POST' && r.url().endsWith('/api/notes/delete')) deletes++; });
+    await ev(p, () => { const b = document.getElementById('nt-done'); b.click(); b.click(); });
+    await sleep(1500);
+    check('N7 one delete is sent, not two', deletes === 1, deletes);
+    const t = await toastText(p);
+    check('N7 the toast still offers Undo', !!t && t.includes('Undo'), t);
+    await tap(p, '#toast .toast-act');
+    check('N7 Undo brings it back', await waitFor(p, (w) => !!document.querySelector(`.nt-row[data-path="${w}"]`), 5000, WALKS));
+    await p.close();
+  },
+
+  // N8: a refresh that can't reach the server keeps the list on screen.
+  async N8() {
+    const p = await page();
+    await toNotes(p);
+    execFileSync('docker', ['stop', CONTAINER], { stdio: 'ignore' });
+    try {
+      await ev(p, () => Notes.refresh());
+      check('N8 the list is still there', await ev(p, () => document.querySelectorAll('.nt-row').length === 6), await ev(p, () => document.querySelectorAll('.nt-row').length));
+    } finally {
+      execFileSync('docker', ['start', CONTAINER], { stdio: 'ignore' });
+    }
+    await p.close();
+  },
+
   // N1: Notes lists both sections, marks the old rough note, and shows a note with its [[links]].
   async N1() {
     const p = await page();

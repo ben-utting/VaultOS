@@ -1334,8 +1334,11 @@ Write a thought down from anywhere, then grow it into a note. Spec: `docs/superp
   opens with `GET /api/fs/file` and saves with `POST /api/fs/text/save` — the Files routes, so lock, 409 and previous
   version are shared. `/api/search` also returns `note` hits under `notes.dir` when Notes is on (ws `null`,
   wsLabel `Notes`); the search panel opens any `.md` under `notes.dir` in Notes.
-- **Done / Undo:** delete moves the file to `.vaultos/notes-trash/` (mtime set to now, the note's own dates restored on
-  undo) and holds an in-memory token for 30 s. A restart loses the token; `boot()` sweeps trash older than a day.
+- **Done / Undo:** delete moves the file to `.vaultos/notes-trash/<removed-at epoch ms>-<random>.md` (the file's own
+  times are never touched: setting them needs owning the file, and host edits flip ownership) and holds an in-memory
+  token for 30 s. A second Done at once answers 404 "Already gone."; the client sends only one. A restart loses the
+  token; `boot()` sweeps trash removed more than a day ago (by the name). A note that can't be read is left out of
+  the list rather than failing it, and a failed refresh keeps the last good list on screen.
 - **Capture:** pen `#capture-btn` (every width), Ctrl+J / ⌘J (capture phase, same overlay guards as search plus the
   search panel), and the manifest shortcut `/?capture=1` (handled in `start()`, then removed from the URL). Draft in
   `localStorage['vaultboard.captureDraft']`. A failed save keeps the box open with the text. At ≤700px the box is a
@@ -1343,7 +1346,7 @@ Write a thought down from anywhere, then grow it into a note. Spec: `docs/superp
 - **toast(msg, { action, onAction, ms, tone })** — `tone: 'info'` is the neutral style; the default is the error look.
 - **Preview + e2e:** `/opt/vault/notes-preview` (container `notes-preview`, `127.0.0.1:7695`, mounts this worktree
   or checkout), synthetic vault from `scripts/notes-sandbox.js`, `reset.sh`, `mint-cookie.js`.
-  `node scripts/notes-e2e.js [--phone] [--theme=sepia] C1 … C6 N1 … N6` — run all four variants before a release.
+  `node scripts/notes-e2e.js [--phone] [--theme=sepia] C1 … C7 N1 … N8` — run all four variants before a release.
   Never point it at `:7684`.
 
 ## Today mode (built on branch `today-mode`, not yet released)

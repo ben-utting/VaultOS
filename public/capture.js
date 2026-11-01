@@ -68,6 +68,7 @@ const Capture = (() => {
       const data = await res.json().catch(() => null);
       if (!res.ok || !data || !data.path) { setErr((data && data.error) || OFFLINE); return; }
       ta.value = '';
+      clearTimeout(draftTimer);
       writeDraft('');
       close();
       toast(`Saved to ${inboxName()}`, {
@@ -86,7 +87,13 @@ const Capture = (() => {
   $('cp-close').addEventListener('click', () => close());
   saveBtn.addEventListener('click', save);
   box.addEventListener('mousedown', (e) => { if (e.target === box) close(); });
-  ta.addEventListener('input', () => { if (errEl.textContent) setErr(''); });
+  // The draft is kept as it is typed (not only on close), so a reload or the phone killing the app loses nothing.
+  let draftTimer = 0;
+  ta.addEventListener('input', () => {
+    if (errEl.textContent) setErr('');
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => writeDraft(ta.value), 300);
+  });
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (isMac() ? e.metaKey : e.ctrlKey)) { e.preventDefault(); save(); }
   });

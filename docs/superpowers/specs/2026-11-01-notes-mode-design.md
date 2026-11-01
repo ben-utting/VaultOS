@@ -179,5 +179,6 @@ On an Inbox note, **Develop**:
 - `/api/search` returns notes under `notes.dir` when Notes is on, even when that folder isn't a workspace.
 - The phone capture box is a sheet from the top, not the bottom: a fixed bottom sheet sits under the iOS keyboard.
 - `toast()` gained a neutral `tone: 'info'`: the existing toast is styled as an error, wrong for "Saved".
-- A removed note's trash copy is dated when it is removed, so the start-up sweep keeps it a day; undo restores its own dates.
+- A removed note's trash name carries when it was removed (`<epoch ms>-<random>.md`), so the start-up sweep keeps it a day without touching the file's own times.
 - Ctrl+J stays the shortcut. Headless tests can't show whether a browser keeps Ctrl+J for itself, so check it in the real browser after release.
+- From the final review: two Done presses at once give one Undo (the client sends one; the server answers the other 404); an unreadable note is left out of the list instead of failing it; a failed refresh keeps the last list; the capture draft is kept as it is typed.
