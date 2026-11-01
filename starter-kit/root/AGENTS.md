@@ -52,6 +52,18 @@ To move a card, change `status:` and set `updated:` to today. Dragging a card in
 
 Dates are `YYYY-MM-DD`.
 
+### Move the card yourself
+
+The board hides a column while it has no cards, but all seven statuses always exist. When the work changes stage, change `status:` yourself without waiting to be asked, fill the field that goes with it, and add a Progress log line saying why. The column then appears on the board.
+
+- You start working on it: `in-progress`.
+- The build or fix is done and the owner needs to check it, test it or read it: `review`, with `review_note:`.
+- It waits on someone or something else to act: `blocked`, with `blocked_by:`.
+- The owner has a choice to make before it can go on: `needs-decision`, with `decision_note:`.
+- It has a date and can't start before then: `scheduled`, with `scheduled_for:`.
+
+Never set `done` yourself. Stop at `review`; `done` happens when the owner says the job is finished (see "Create, split, finish").
+
 ## Working on a task
 
 - Read the whole `task.md` first, and again at the start of every session: Goal, Context, Plan, Progress log, Findings.

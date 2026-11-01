@@ -38,10 +38,10 @@ STATE.hiddenColumns = loadHiddenColumns(STATE.workspace);
 STATE.hideSubtasks = loadHideSubtasks(STATE.workspace);
 let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped by whichever is open
 let DRAG = null;
-// body.board-dragging is what opens the folded (empty) columns while a card is in the air.
+// body.board-dragging is what shows the hidden (empty) columns while a card is in the air.
 // dragend and a drop clear it, and render() re-sets it from DRAG. A repaint that replaces the dragged card loses
-// that card's dragend (see "Board rails" in CLAUDE.md), so DRAG can outlive a drop outside the columns.
-function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); updateBoardNav(); }   // the rails refold: the scroll arrows follow
+// that card's dragend (see "Hidden empty columns" in CLAUDE.md), so DRAG can outlive a drop outside the columns.
+function endBoardDrag() { DRAG = null; document.body.classList.remove('board-dragging'); updateBoardNav(); }   // the empty columns hide again: the scroll arrows follow
 document.addEventListener('dragend', endBoardDrag);
 document.addEventListener('drop', endBoardDrag);   // bubbles after a column's own drop, which has read DRAG by then
 let OPEN = null; // { path, mtime } of the task shown in the drawer
@@ -483,10 +483,12 @@ function renderSubtaskToggle() {
 }
 $('show-subtasks').addEventListener('change', (e) => setHideSubtasks(!e.target.checked));
 function renderColsList() {
+  const n = (s) => STATE.tasks.filter((t) => t.status === s).length;   // an empty column hides itself, ticked or not
   $('cols-list').innerHTML = STATE.statuses.map((s) => `
     <label class="filter-item">
       <input type="checkbox" data-s="${esc(s)}" ${STATE.hiddenColumns.has(s) ? '' : 'checked'}>
       <span>${esc(STATUS_LABELS[s] || s)}</span>
+      <span class="n" title="${n(s) ? '' : 'Empty columns stay hidden until a card arrives'}">${n(s)}</span>
     </label>`).join('');
   for (const el of $('cols-list').querySelectorAll('input[type=checkbox]')) {
     el.addEventListener('change', () => {
@@ -751,16 +753,16 @@ function render() {
   $('clear-filters').classList.toggle('hidden', STATE.mode !== 'board' || !anyFilterActive());
 
   const statuses = STATE.statuses.filter((s) => !STATE.hiddenColumns.has(s));
-  // An empty column folds to a rail (wide screens), but not when every column is empty: a search with no hits or
-  // an empty workspace would be a row of rails with nothing saying why, so it shows full columns with "No tasks".
+  // An empty column is hidden (it comes back while a card is dragged), but not when every column is empty: a search
+  // with no hits or an empty workspace would be a blank board with nothing saying why, so it shows "No tasks".
   const allEmpty = !statuses.some((s) => tasks.some((t) => t.status === s));
   $('board').innerHTML = statuses.map((s) => {
     const inCol = tasks
       .filter((t) => t.status === s)
       .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
-    const rail = !inCol.length && !allEmpty;
+    const hide = !inCol.length && !allEmpty;
     return `
-      <section class="col${rail ? ' col-empty' : ''}"${rail ? ` aria-label="${esc(statusLabel(s))}, 0 tasks" title="${esc(statusLabel(s))}, 0 tasks"` : ''}>
+      <section class="col${hide ? ' col-empty' : ''}">
         <div class="col-head">
           <span class="dot" style="background: var(--${s})"></span>
           ${esc(s.replace('-', ' '))}
@@ -781,11 +783,11 @@ function render() {
     el.addEventListener('dragstart', (e) => {
       DRAG = { path: el.dataset.path, mtime: Number(el.dataset.mtime) };
       el.classList.add('dragging');
-      // After the browser has snapshotted the drag image: widening the rails inside dragstart shifts the layout
+      // After the browser has snapshotted the drag image: showing the hidden columns inside dragstart shifts the layout
       // first, and Safari and Firefox then drag a picture of the wrong place. The arrows follow the new width.
       requestAnimationFrame(() => {
         if (!DRAG) return;   // dropped or cancelled before the frame
-        document.body.classList.add('board-dragging');   // empty rails open up as drop targets
+        document.body.classList.add('board-dragging');   // hidden empty columns appear as drop targets
         updateBoardNav();
       });
       e.dataTransfer.effectAllowed = 'move';
@@ -811,7 +813,7 @@ function render() {
       if (!DRAG) return;
       const status = col.dataset.status;
       const moving = DRAG;
-      // The drop folds the rails again at once; the one landed on stays open until the render() after the save.
+      // The drop hides the empty columns again at once; the one landed on stays until the render() after the save.
       sec.classList.add('col-landing');
       endBoardDrag();
       const task = STATE.tasks.find((t) => t.path === moving.path);

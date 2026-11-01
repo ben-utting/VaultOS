@@ -380,25 +380,11 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
 
 /* ---------- Board ---------- */
 #board-view { position: relative; }
-/* An empty column folds to a 48px rail on a wide screen: its name runs down the side, still real
-   text, with the dot and a 0. It opens to a full column while a card is being dragged
-   (body.board-dragging), so it stays a drop target. Phone and tablet keep the full column
-   ("No tasks"). The Board turns flex here so one column can be narrower than the rest.
+/* An empty column is hidden at every width: the board shows only the statuses that hold cards, and a
+   column appears when a card arrives (an agent's status change, a drag, the drawer's status select).
+   While a card is being dragged (body.board-dragging) every column comes back as a full drop target.
    .col-landing is the column a card was just dropped on: it stays open until the render() after the save. */
-@media (min-width: 1025px) {
-  #board.board { display: flex; gap: 14px; align-items: flex-start; }
-  #board .col { flex: 1 1 270px; min-width: 270px; }
-  body:not(.board-dragging) #board .col.col-empty:not(.col-landing) {
-    flex: 0 0 48px; min-width: 0; width: 48px;
-    background: transparent; box-shadow: none; border-style: dashed;
-  }
-  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-body { display: none; }
-  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-head {
-    writing-mode: vertical-rl; justify-content: flex-start; gap: 10px;
-    padding: 14px 0; border-bottom: 0; white-space: nowrap;
-  }
-  body:not(.board-dragging) #board .col-empty:not(.col-landing) .col-head .n { margin: 0; }
-}
+body:not(.board-dragging) #board .col.col-empty:not(.col-landing) { display: none; }
 .board {
   display: grid;
   grid-auto-flow: column;

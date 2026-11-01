@@ -217,7 +217,7 @@ the theme.
 
 Gold used to mean everything: selected, done-ish, primary, brand. Now it means two things, **VaultOS** (the mode
 pill, the wordmark) and **the one action to take** (primary buttons). Every other "this one is selected" is a single
-quiet look: `--panel-2` fill, `--text` colour and a 1px `--accent` ring, in the one shared rule in `styles.css`
+quiet look: a 16% `--accent` tint on the `--panel-2` track, `--text` colour and no ring, in the one shared rule in `styles.css`
 (`.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"]`, declared after
 every rule it overrides). A new selectable control joins that selector; it does not get its own gold fill.
 `test/look-tokens.test.js` enforces it: it lists every selector that may fill with gold (the identity-and-action and
@@ -225,6 +225,10 @@ asked-about allowlists), fails on any other, and fails again if an entry stops b
 The solid-gold fills left on that list (`.su-switch:checked`, `.tw-keys button[aria-pressed="true"]`, `.ap-chip.def`,
 `.td-fill`, `.td-dots i.on`) are state and progress marks (a switch that is on, a latched key, a tag, a progress fill),
 kept because Ben asked about them; they are not precedent for a new selected state.
+Since round 2 (2026-10-30) each gold mark has one job: a **ring** (outline) is keyboard focus only, a **tint** is
+selected, an **underline** is today (`.td-cell.sel` gets a 2px `--brand` bottom border, the day header stays gold and
+bold), and **solid gold** is the brand and the primary action. Don't add a gold ring or inset `box-shadow` to mean
+anything but focus; `look-tokens.test.js` fails a selected rule that carries one.
 Done is green, but green text on a soft tick or a score bar missed 3:1 in sepia, so there are two tokens:
 `--done-ink` (the check on `.td-tick`) and `--done-bar` (Today's score bars), each darker in sepia. Use them for
 those; `--done` itself is for status dots and borders.
@@ -580,20 +584,24 @@ Ben drags files from his desktop into a folder, the way he did in VS Code.
   Open / Download / Copy vault path / Upload files here… / Terminal here. Upload files here…
   is also the way to upload from a phone.
 
-## Board rails (2026-10-30)
+## Hidden empty columns (2026-11-01, replaced the 48px rails)
 
-From 1025px up an empty column folds to a 48px rail: its name runs down the side as real text with the dot and a 0,
-and it carries `aria-label` / `title` ("Blocked, 0 tasks"). Phone and tablet keep the full column with "No tasks";
-that is why the breakpoint is 1025px and the Board turns flex only there. While a card is dragged
-`body.board-dragging` opens every rail to a full drop target, so a card can still go into an empty column.
-`dragstart` adds the class a frame late (`requestAnimationFrame`), because widening the rails inside the handler shifts
+A column with no cards is hidden at every width (`.col-empty` → `display: none`), so the Board shows only the
+statuses that hold cards. A column appears as soon as a card lands in it, from an agent's `status:` change, a drag
+or the drawer's status select (which always lists all seven). Agents are told in the workspace `CLAUDE.md`s and the
+starter kit's `AGENTS.md` that the hidden statuses still exist and to move cards themselves; the Board relies on that.
+Exception: when every column is empty (no search hits, a new workspace) they all show with "No tasks", so the
+board is never blank with nothing saying why. Settings → Columns shows each status's card count, so ticking an empty
+one that stays hidden makes sense.
+While a card is dragged `body.board-dragging` shows every column as a full drop target.
+`dragstart` adds the class a frame late (`requestAnimationFrame`), because showing columns inside the handler shifts
 the layout before Safari and Firefox snapshot the drag image. `endBoardDrag` removes it, and both ends call
-`updateBoardNav` because the rails change the scrollable width. `render()` re-sets the class from `DRAG`, so a repaint
-mid-drag keeps the rails open and one after the drag leaves them shut. It can't recover a lost end, though: if a
+`updateBoardNav` because the columns change the scrollable width. `render()` re-sets the class from `DRAG`, so a repaint
+mid-drag keeps them shown and one after the drag hides them. It can't recover a lost end, though: if a
 repaint (the poll, Refresh) replaces the dragged card, its `dragend` fires on a node that is no longer in the page and
 reaches no listener, the document's included. A drop on a column still ends the drag (the document's `drop`
-listener); a drop anywhere else leaves `DRAG` set, and the rails open, until the next drag ends.
-The column a card is dropped on gets `col-landing`, which keeps it open while the move is saved (the drop clears
+listener); a drop anywhere else leaves `DRAG` set, and the empty columns shown, until the next drag ends.
+The column a card is dropped on gets `col-landing`, which keeps it shown while the move is saved (the drop clears
 `board-dragging` straight away); the `render()` after the save replaces it with the column's new state.
 
 ## Files: staged loading (2026-10-30)
@@ -1295,6 +1303,13 @@ Code: `lib/today-{note,stats,quote,timer,service}.js`, `lib/atomic-write.js`, th
   are one at a time, so a double Enter can't add twice. A section ends at the next `#` or `##` heading, new
   tasks and focus lines go after the last one, and a new quote replaces only the `>` lines: Ben's own text
   in the note stays put.
+- **Next (round 2, 2026-10-30)** is Today's first block (`#td-next`): the first open, unmoved today task, else the
+  header workspace's In Progress task (a "needs you" agent state first, then newest `mtime`), else "You're clear for
+  today". The picker is pure (`public/today-next.js`, `pickNext`, tests in `test/today-next.test.js`). Its Start is
+  the screen's one primary; Focus's own Start drops to secondary while Next shows an item. A past day shows only that
+  day's tasks, never the Board. The `/api/tasks` fetch runs on entering Today, on a workspace switch and on refresh;
+  while it is missing or failed, Next shows "clear", never an error. The header chip is live on Today (dimmed on Files).
+  Puppeteer checks that pin a date go stale: rollover marks the old day's open task `[>]` on the next day.
 - **A stale "today" never writes.** The client works out London's date on the server-corrected clock. If
   the page is on "today" and that date has moved on (a tab left open overnight), a tick or task write isn't
   sent: the page reloads and says "New day. Refreshed." A past day stepped back to is written as asked.
