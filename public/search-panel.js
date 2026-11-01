@@ -332,6 +332,9 @@ const SearchPanel = (() => {
       setMode(r.kind === 'task' ? 'board' : 'kb');
       if (r.kind === 'task') await openTask(r.path);
       else { closeDrawer(); await openArticle(r.path); }
+    } else if (notesOn() && /\.md$/i.test(r.path) && r.path.startsWith(`${ME.notes.dir}/`)) {
+      closeDrawer();
+      Notes.open(r.path);   // a note in the notes folder opens where it is written, in Notes
     } else {
       closeDrawer();
       fxOpen(r.path, { reveal: true });

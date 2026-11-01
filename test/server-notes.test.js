@@ -88,3 +88,16 @@ test('a note saves through the Files text route, and a stale mtime is 409', asyn
   assert.equal(fs.readFileSync(s.disk(MAIN), 'utf8'), 'edited\n');
   assert.equal((await s.req('POST', '/api/fs/text/save', { path: MAIN, text: 'again\n', mtime: f.body.mtime })).status, 409);
 });
+
+test('search finds a note in the notes folder when Notes is on, and not when it is off', async (t) => {
+  const on = await notesServer(t);
+  const r = await on.req('GET', '/api/search?q=Small%20steps');
+  assert.equal(r.status, 200);
+  const hit = r.body.results.find((x) => x.path === MAIN);
+  assert.ok(hit, JSON.stringify(r.body));
+  assert.equal(hit.ws, null);
+  assert.equal(hit.wsLabel, 'Notes');
+  const off = await notesServer(t, { on: false });
+  const r2 = await off.req('GET', '/api/search?q=Small%20steps');
+  assert.ok(!r2.body.results.some((x) => x.path === MAIN));
+});

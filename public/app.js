@@ -133,7 +133,9 @@ function applyMe() {
   }
   for (const el of [$('termbtn'), $('mnav-term'), $('term-where-row'), $('term-sound-row')]) el.classList.toggle('hidden', !term);
   $('d-agent').classList.toggle('hidden', !ME.agent);
-  for (const el of [$('capture-btn'), $('capture-keys-row')]) el.classList.toggle('hidden', !notesOn());
+  for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#mobile-nav [data-for="mode-notes"]')]) {
+    el.classList.toggle('hidden', !notesOn());
+  }
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
   renderDrawerAgent();
@@ -1189,6 +1191,9 @@ $('d-refresh').addEventListener('click', () => {
 // ========================================================================
 function setMode(mode) {
   if (mode === 'today' && !todayOn()) mode = 'board';   // Today is off: nothing to show (a Refresh's 'today' too)
+  if (mode === 'notes' && !notesOn()) mode = homeMode();
+  // Leaving Notes with an unsaved edit: ask first (Notes.confirmLeave), and stay if the answer is no.
+  if (STATE.mode === 'notes' && mode !== 'notes' && window.Notes && !Notes.confirmLeave()) return;
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
   if (STATE.mode === 'files' && mode !== 'files' && window.SheetFiles) SheetFiles.beforeViewChange(null, null);
   // ... and the Files bar's More menu, which lives in <body>, is detached rather than left there (workbench.js).
@@ -1202,6 +1207,8 @@ function setMode(mode) {
   $('mode-board').classList.toggle('active', mode === 'board');
   $('mode-kb').classList.toggle('active', mode === 'kb');
   $('mode-files').classList.toggle('active', mode === 'files');
+  $('mode-notes').classList.toggle('active', mode === 'notes');
+  $('notes-view').classList.toggle('hidden', mode !== 'notes');
   $('today-view').classList.toggle('hidden', mode !== 'today');
   $('board-view').classList.toggle('hidden', mode !== 'board');
   $('kb-view').classList.toggle('hidden', mode !== 'kb');
@@ -1213,13 +1220,14 @@ function setMode(mode) {
   // Files covers the whole vault, so the workspace chip still shows where Board and KB are but reads as not
   // applying there. It stays clickable: picking one is how you choose where you land next. On Today it is
   // live: Next's Board fallback is that workspace's In Progress task.
-  const wsOff = mode === 'files';
+  const wsOff = mode === 'files' || mode === 'notes';
   $('ws-chip').classList.toggle('ws-chip-off', wsOff);
-  $('ws-chip').title = wsOff ? 'Files covers the whole vault' : '';
+  $('ws-chip').title = mode === 'files' ? 'Files covers the whole vault' : mode === 'notes' ? 'Notes has its own folder' : '';
   closeWsMenu({ focus: false });
   closeSheet();   // its folder/column sections depend on the mode (see secAvailable)
   updateFilterBadge();
   if (mode === 'today') Today.show(); else Today.hide();   // Today.show() fills #count from its payload
+  if (mode === 'notes') Notes.show(); else Notes.hide();   // Notes.show() fills #count
   if (mode === 'kb') {
     $('count').textContent = `${STATE.kb.articles.length} article${STATE.kb.articles.length === 1 ? '' : 's'}`;
     if (!STATE.kb.loaded) loadKB();
@@ -1234,6 +1242,7 @@ $('mode-today').addEventListener('click', () => setMode('today'));
 $('mode-board').addEventListener('click', () => setMode('board'));
 $('mode-kb').addEventListener('click', () => setMode('kb'));
 $('mode-files').addEventListener('click', () => setMode('files'));
+$('mode-notes').addEventListener('click', () => setMode('notes'));
 
 // ---------- Mobile nav ----------
 // The phone's bottom tab bar. Each button clicks its header twin (so every
@@ -1257,7 +1266,7 @@ for (const b of MNAV) b.addEventListener('click', () => {
   $(b.dataset.for).click();
 });
 new MutationObserver(syncMobileNav).observe($('termbtn'), { attributes: true, attributeFilter: ['aria-pressed', 'data-n', 'data-alert'] });
-for (const id of ['mode-today', 'mode-board', 'mode-files', 'mode-kb']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
+for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
 
 // ---------- KB sidebar (collections/article list) ----------
 // Closed by default; opens as a hover panel over the reader rather than
@@ -2083,7 +2092,7 @@ $('clear-filters').addEventListener('click', clearAllFilters);
 // sessionStorage and is restored at startup. Server-side terminals survive it.
 const RELOAD_KEY = 'vaultboard.reloadState';
 $('refresh').addEventListener('click', () => {
-  try { sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ mode: STATE.mode, article: STATE.kb.article })); } catch {}
+  try { sessionStorage.setItem(RELOAD_KEY, JSON.stringify({ mode: STATE.mode, article: STATE.kb.article, note: window.Notes ? Notes.current() : null })); } catch {}
   location.reload();
 });
 function restoreAfterReload() {
@@ -2092,6 +2101,7 @@ function restoreAfterReload() {
   if (!st || !st.mode) return false;   // Board too: the home mode isn't always Board
   setMode(st.mode);   // 'today' with Today off lands on the Board (setMode)
   if (st.mode === 'kb' && st.article) openArticle(st.article);
+  if (st.mode === 'notes' && st.note && notesOn()) Notes.open(st.note);
   return true;
 }
 

@@ -108,6 +108,22 @@ async function typeInBox(p, s) {
   await p.keyboard.type(s);
 }
 
+async function toNotes(p) {
+  await tap(p, modeBtn('notes'));
+  return waitFor(p, () => document.querySelectorAll('.nt-row').length > 0 || !!document.querySelector('.nt-empty'), 8000);
+}
+// Opens a row; on the phone that swaps the list for the note.
+async function openRow(p, rel) {
+  if (DEFAULTS.phone && await ev(p, () => document.querySelector('.nt-layout').classList.contains('nt-reading'))) await tap(p, '#nt-back');
+  if (!await tap(p, `.nt-row[data-path="${rel}"]`)) return false;
+  return waitFor(p, (r) => document.getElementById('nt-pane').dataset.path === r && !!document.getElementById('nt-body'), 5000, rel);
+}
+async function waitForDisk(rel, ok, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { try { if (ok(fs.readFileSync(disk(rel), 'utf8'))) return true; } catch {} await sleep(100); }
+  return false;
+}
+
 const reset = () => execFileSync(path.join(PREVIEW, 'reset.sh'), { stdio: 'inherit' });
 const startedAt = () => {
   try { return execFileSync('docker', ['inspect', '-f', '{{.State.StartedAt}}', CONTAINER], { encoding: 'utf8' }).trim(); }
@@ -225,6 +241,122 @@ const SCEN = {
     await sleep(500);
     const items = await inbox();
     check('C6 one new note, not two', items.filter((i) => i.first === 'only once').length === 1, items.map((i) => i.name));
+    await p.close();
+  },
+
+  // N1: Notes lists both sections, marks the old rough note, and shows a note with its [[links]].
+  async N1() {
+    const p = await page();
+    check('N1 Notes mode opens', await toNotes(p));
+    check('N1 Inbox heading counts 3', (await text(p, '.nt-h[data-sec="inbox"]')) === 'Inbox (3)', await text(p, '.nt-h[data-sec="inbox"]'));
+    check('N1 Main Notes heading counts 3', (await text(p, '.nt-h[data-sec="main"]')) === 'Main Notes (3)', await text(p, '.nt-h[data-sec="main"]'));
+    check('N1 the 9-day-old note is marked old', await ev(p, (o) => !!document.querySelector(`.nt-row[data-path="${o}"] .nt-old`), OLD));
+    check('N1 a recent note is not', await ev(p, (w) => !document.querySelector(`.nt-row[data-path="${w}"] .nt-old`), WALKS));
+    await shot(p, 'N1-list');
+    check('N1 open Small steps', await openRow(p, SMALL));
+    check('N1 [[Tools shape thinking]] is a link', await ev(p, (t) => !!document.querySelector(`#nt-body a.nt-link[data-path="${t}"]`), TOOLS));
+    check('N1 [[Missing note]] is muted, not a link', await ev(p, () => [...document.querySelectorAll('#nt-body .nt-link-missing')].some((e) => e.textContent === 'Missing note')));
+    await shot(p, 'N1-note');
+    await p.close();
+  },
+
+  // N2: a link to a main note opens it here; a link to a source note opens Files.
+  async N2() {
+    const p = await page();
+    await toNotes(p);
+    await openRow(p, SMALL);
+    await tap(p, `#nt-body a.nt-link[data-path="${TOOLS}"]`);
+    check('N2 the linked note opens in Notes', await waitFor(p, (t) => document.getElementById('nt-pane').dataset.path === t, 5000, TOOLS));
+    await openRow(p, SMALL);
+    await tap(p, '#nt-body .nt-link[data-path="Notes/Sources/Books/Sample Book.md"]');
+    check('N2 the source note opens in Files', await waitFor(p, () => document.body.dataset.mode === 'files', 5000));
+    await p.close();
+  },
+
+  // N3: Edit and Ctrl+S save; a change on disk behind the editor gets Load theirs / Keep mine.
+  async N3() {
+    const p = await page();
+    await toNotes(p);
+    await openRow(p, TOOLS);
+    await tap(p, '#nt-edit');
+    check('N3 the editor opens', await waitFor(p, () => !!document.getElementById('nt-text')));
+    await ev(p, () => { const t = document.getElementById('nt-text'); t.value = t.value + 'added line\n'; t.dispatchEvent(new Event('input')); t.focus(); });
+    await ctrl(p, 's');
+    check('N3 saved to disk', await waitForDisk(TOOLS, (s) => s.endsWith('added line\n')));
+    check('N3 the pane shows the note again', await waitFor(p, () => !document.getElementById('nt-text') && !!document.getElementById('nt-body')));
+    await tap(p, '#nt-edit');
+    await waitFor(p, () => !!document.getElementById('nt-text'));
+    fs.writeFileSync(disk(TOOLS), 'written elsewhere\n');
+    await ev(p, () => { const t = document.getElementById('nt-text'); t.value = 'mine\n'; t.dispatchEvent(new Event('input')); });
+    await tap(p, '#nt-save');
+    check('N3 the conflict bar shows', await waitFor(p, () => { const b = document.getElementById('nt-conflict'); return !!b && !b.hidden; }));
+    await shot(p, 'N3-conflict');
+    await tap(p, '#nt-theirs');
+    check('N3 Load theirs shows the disk text', await waitFor(p, () => document.getElementById('nt-text').value === 'written elsewhere\n'));
+    fs.writeFileSync(disk(TOOLS), 'changed again\n');
+    await ev(p, () => { const t = document.getElementById('nt-text'); t.value = 'mine wins\n'; t.dispatchEvent(new Event('input')); });
+    await tap(p, '#nt-save');
+    await waitFor(p, () => { const b = document.getElementById('nt-conflict'); return !!b && !b.hidden; });
+    await tap(p, '#nt-mine');
+    check('N3 Keep mine saves over it', await waitForDisk(TOOLS, (s) => s === 'mine wins\n'));
+    await p.close();
+  },
+
+  // N4: Done removes with Undo; Done on a note already deleted elsewhere says so and refreshes.
+  async N4() {
+    const p = await page();
+    await toNotes(p);
+    await openRow(p, WALKS);
+    await tap(p, '#nt-done');
+    check('N4 the row leaves the list', await waitFor(p, (w) => !document.querySelector(`.nt-row[data-path="${w}"]`), 5000, WALKS));
+    check('N4 the file is gone', !fs.existsSync(disk(WALKS)));
+    const t = await toastText(p);
+    check('N4 the toast offers Undo', !!t && t.startsWith('Removed') && t.includes('Undo'), t);
+    await tap(p, '#toast .toast-act');
+    check('N4 Undo brings it back', await waitFor(p, (w) => !!document.querySelector(`.nt-row[data-path="${w}"]`), 5000, WALKS));
+    check('N4 the file is back', fs.existsSync(disk(WALKS)));
+    await openRow(p, OLD);
+    fs.unlinkSync(disk(OLD));
+    await tap(p, '#nt-done');
+    check('N4 an already-gone note says so', await waitFor(p, () => { const t = document.getElementById('toast'); return !t.classList.contains('hidden') && t.textContent.includes('Already gone.'); }));
+    check('N4 and the list refreshes', await waitFor(p, (o) => !document.querySelector(`.nt-row[data-path="${o}"]`), 5000, OLD));
+    await p.close();
+  },
+
+  // N5: the status and tag filters narrow Main Notes; an empty Inbox says how to fill it.
+  async N5() {
+    for (const f of fs.readdirSync(disk('Notes/Inbox'))) fs.unlinkSync(path.join(disk('Notes/Inbox'), f));
+    const p = await page();
+    await toNotes(p);
+    const empty = await text(p, '.nt-empty');
+    const want = DEFAULTS.phone ? 'Nothing waiting. Tap the pen to catch the next thought.' : 'Nothing waiting. Ctrl+J catches the next thought.';
+    check('N5 the empty Inbox says how to fill it', empty === want, empty);
+    await tap(p, '.nt-seg button[data-status="child"]');
+    check('N5 status child leaves one note', await waitFor(p, (s) => { const r = [...document.querySelectorAll('.nt-row[data-sec="main"]')]; return r.length === 1 && r[0].dataset.path === s; }, 3000, SMALL));
+    await tap(p, '.nt-seg button[data-status=""]');
+    await p.select('#nt-tag', 'work');
+    check('N5 tag work leaves one note', await waitFor(p, () => { const r = [...document.querySelectorAll('.nt-row[data-sec="main"]')]; return r.length === 1 && r[0].dataset.path.endsWith('Rest is part of work.md'); }, 3000));
+    await shot(p, 'N5-filters');
+    await p.close();
+  },
+
+  // N6: capture's Open lands on the note; a search pick of a note opens it in Notes; Refresh keeps the note.
+  async N6() {
+    const p = await page();
+    await tap(p, '#capture-btn');
+    await boxOpen(p);
+    await typeInBox(p, 'Open me next');
+    await tap(p, '#cp-save');
+    await waitFor(p, () => !!document.querySelector('#toast .toast-act'));
+    await tap(p, '#toast .toast-act');
+    check('N6 Open goes to the new note in Notes', await waitFor(p, () => document.body.dataset.mode === 'notes' && (document.getElementById('nt-pane').dataset.path || '').endsWith('Open me next.md'), 5000));
+    await ev(p, () => SearchPanel.open({ q: 'Tools shape' }));
+    check('N6 search finds the note', await waitFor(p, (t) => [...document.querySelectorAll('.sp-row')].some((r) => r.textContent.includes('Tools shape thinking')), 10000, TOOLS));
+    await ev(p, () => { const r = [...document.querySelectorAll('.sp-row')].find((x) => x.textContent.includes('Tools shape thinking')); r.click(); });
+    check('N6 the pick opens in Notes', await waitFor(p, (t) => document.body.dataset.mode === 'notes' && document.getElementById('nt-pane').dataset.path === t, 5000, TOOLS));
+    await tap(p, '#refresh');
+    await p.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+    check('N6 Refresh comes back to the same note', await waitFor(p, (t) => document.body.dataset.mode === 'notes' && document.getElementById('nt-pane').dataset.path === t, 8000, TOOLS));
     await p.close();
   },
 };

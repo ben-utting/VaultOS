@@ -2513,9 +2513,12 @@ app.get('/api/search', async (req, res) => {
     prefix: true, kind: kind || undefined, under: wsBoard ? wsBoard.dir + '/' : undefined, limit: limit * 3,
   });
   const results = [];
+  // Notes mode's folder is searchable when Notes is on, even when it isn't a workspace (ws null: it opens in Notes).
+  const notesDir = s && s.features.notes && !wsBoard ? s.notes.dir.replace(/\/+$/, '') + '/' : '';
+  const NOTES_WS = { key: null, label: 'Notes' };
   for (const h of hits) {
     const segs = h.path.split('/');
-    const b = byDir.get(segs[0]);
+    const b = byDir.get(segs[0]) || (notesDir && h.kind === 'note' && h.path.startsWith(notesDir) ? NOTES_WS : null);
     if (!b || h.path.startsWith(today) || segs.some((x) => x.toLowerCase() === '_tasks')) continue;
     // The Board's rule: a missing or unknown status is backlog. Also keeps raw frontmatter out of the client's markup.
     const st = STATUSES.includes(h.status) ? h.status : 'backlog';

@@ -274,7 +274,8 @@ test('only the mode pill and primary buttons fill with gold', () => {
 const SELECTED = ['.seg button.on', '.ss-nav button.active', '.ws-row.active', '.ws-menu [aria-checked="true"]',
   '.more-menu [role="menuitemradio"][aria-checked="true"]',   // the view radios in the drawer's More menu
   '.td-hf-icon[aria-checked="true"]', '.ap-tile[aria-checked="true"]',   // the icon picker and the agent cards
-  '.sp-seg button[aria-pressed="true"]', '.sp-row.sel'];   // the search panel's Type control and its selected row
+  '.sp-seg button[aria-pressed="true"]', '.sp-row.sel',   // the search panel's Type control and its selected row
+  '.nt-seg button[aria-pressed="true"]', '.nt-row.sel'];   // Notes mode's Status control and its selected row
 const TINT = /^color-mix\(in srgb, var\(--accent\) (\d+)%, var\(--panel-2\)\)$/;
 const lastDecl = (s, prop) => BLOCKS.filter((b) => topLevel(b) && sel(b).includes(s)).flatMap((b) => b.decls).filter((d) => d.prop === prop).pop();
 // The percentage the selected rule uses (read from the first selector; the test below makes the rest match it).
