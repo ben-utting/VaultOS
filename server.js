@@ -701,6 +701,7 @@ const { atomicWrite } = require('./lib/atomic-write');
 const { createToday } = require('./lib/today-service');
 const { createQuotes } = require('./lib/today-quote');
 const { createIndex, tokenize } = require('./lib/search');
+const { createWalkCache } = require('./lib/walk-cache');
 
 // One warm search index for the KB box and the agents' `vault-search`. The vault
 // may sit on a network share where a full walk takes seconds, so searches answer
@@ -1246,6 +1247,15 @@ app.use('/api', (req, res, next) => {
   if (isLocalRead(req)) return next();
   if (req.method === 'GET' && req.path === '/connectors/atlassian/callback') return cxSignInPage(res);
   res.status(401).json({ error: 'Not authenticated' });
+});
+// Any signed-in write may change the vault: drop the cached file listings (fsListings) both before it runs and
+// once it has answered, so a listing walked while the write was in flight is not kept either.
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  const drop = () => { fsListings.all.invalidate(); fsListings.recent.invalidate(); };
+  drop();
+  res.once('finish', drop);
+  next();
 });
 
 // ---------- Today ----------
@@ -2387,7 +2397,9 @@ app.get('/api/fs/raw', async (req, res) => {
 });
 
 // "What did the agent just touch?" — newest files across the whole vault.
-// ~1,800 files, so a full stat walk is a few ms; no watcher to keep alive.
+// A full stat walk, which is seconds on the network share the vault lives on,
+// so the listing (every file, newest first) is kept by fsListings below and
+// each request only cuts it to its window; no watcher to keep alive.
 // Board.md files are skipped: every /api/tasks scan may rewrite them, so they
 // would sit at the top of the list forever and bury the real edits.
 async function walkRecent(dir, since, out) {
@@ -2406,10 +2418,13 @@ async function walkRecent(dir, since, out) {
 }
 app.get('/api/fs/recent', async (req, res) => {
   const hours = Math.min(Math.max(Number(req.query.hours) || 24, 1), 24 * 30);
-  const out = [];
-  await walkRecent(VAULT_DIR, Date.now() - hours * 3600e3, out);
-  out.sort((a, b) => b.mtime - a.mtime);
-  res.json({ hours, items: out.slice(0, 50), now: Date.now() });
+  const since = Date.now() - hours * 3600e3;
+  const items = [];
+  for (const f of await fsListings.recent.get()) {   // newest first
+    if (f.mtime < since || items.length >= 50) break;
+    items.push(f);
+  }
+  res.json({ hours, items, now: Date.now() });
 });
 
 // Filename search for Files mode's search box: case-insensitive substring on
@@ -2425,6 +2440,19 @@ async function walkAll(dir, out) {
     if (e.isFile()) out.push({ path: relOf(full), name: e.name, kind: fsKind(e.name) });
   }));
 }
+// The two whole-vault listings, each walked at most once per 30 s however many
+// requests ask (the search panel asks on every keystroke). Every write request
+// clears both (the middleware after the sign-in gate), so a rename, upload or
+// save made in the app shows at once; what an agent writes in a terminal shows
+// within 30 s.
+const fsListings = {
+  all: createWalkCache(async () => { const out = []; await walkAll(VAULT_DIR, out); return out; }),
+  recent: createWalkCache(async () => {
+    const out = [];
+    await walkRecent(VAULT_DIR, 0, out);
+    return out.sort((a, b) => b.mtime - a.mtime);
+  }),
+};
 // Whole-vault search over the visible workspaces: tasks, articles and notes from
 // the in-memory index. Hidden workspaces, folders that are not a workspace, the
 // Today folder and _tasks/ never appear. `terms` is how many index tokens q held
@@ -2456,11 +2484,13 @@ app.get('/api/search', async (req, res) => {
     const segs = h.path.split('/');
     const b = byDir.get(segs[0]);
     if (!b || h.path.startsWith(today) || segs.some((x) => x.toLowerCase() === '_tasks')) continue;
-    if (status && h.status !== status) continue;
+    // The Board's rule: a missing or unknown status is backlog. Also keeps raw frontmatter out of the client's markup.
+    const st = STATUSES.includes(h.status) ? h.status : 'backlog';
+    if (status && st !== status) continue;
     results.push({
       path: h.path, kind: h.kind, title: h.title, date: h.date, snippet: h.snippet,
       ws: b.key, wsLabel: b.label, folder: segs.slice(1, -1).join(' / '),
-      ...(h.kind === 'task' ? { status: h.status } : {}),
+      ...(h.kind === 'task' ? { status: st } : {}),
     });
     if (results.length >= limit) break;
   }
@@ -2469,8 +2499,7 @@ app.get('/api/search', async (req, res) => {
 app.get('/api/fs/find', async (req, res) => {
   const words = String(req.query.q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return res.json({ items: [] });
-  const all = [];
-  await walkAll(VAULT_DIR, all);
+  const all = await fsListings.all.get();
   const hits = all.filter((f) => { const p = f.path.toLowerCase(); return words.every((w) => p.includes(w)); });
   // Name matches before path-only matches, then shorter paths first.
   const score = (f) => (words.some((w) => f.name.toLowerCase().includes(w)) ? 0 : 1);

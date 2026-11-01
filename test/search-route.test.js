@@ -151,3 +151,36 @@ test('/api/workspaces lists each visible workspace with its dir', async (t) => {
   const list = await (await fetch(`${s.srv.base}/api/workspaces`, { headers: { cookie: s.cookie } })).json();
   assert.deepEqual(list, [{ key: 'work', label: 'Work', dir: 'Work' }, { key: 'home', label: 'Home', dir: 'Home' }]);
 });
+
+test('an unknown or missing task status comes back as backlog, as on the Board, and filters as backlog', async (t) => {
+  const s = await srvWith(t, true, {
+    'Work/3. Odd/01-weird/task.md': task('Weird kettle', 'x);background:url(//host/beacon', 'kettle descaling'),
+    'Work/3. Odd/02-blank/task.md': '---\ntype: task\ntitle: "Blank kettle"\n---\n\nkettle blank\n',
+  });
+  const { results } = await (await get(s, 'q=kettle&kind=task')).json();
+  assert.equal(results.length, 2);
+  for (const r of results) assert.equal(r.status, 'backlog', r.path);
+  const backlog = await paths(s, 'q=kettle&kind=task&status=backlog');
+  assert.deepEqual(backlog.sort(), ['Work/3. Odd/01-weird/task.md', 'Work/3. Odd/02-blank/task.md']);
+  assert.deepEqual(await paths(s, 'q=kettle&kind=task&status=x);background:url(//host/beacon'), []);
+});
+
+test('the cached file listings see a write made in the app at once', async (t) => {
+  const s = await srvWith(t);
+  const req = (u, init = {}) => fetch(`${s.srv.base}${u}`, { ...init, headers: { cookie: s.cookie, ...(init.headers || {}) } });
+  const find = async (q) => (await (await req(`/api/fs/find?q=${encodeURIComponent(q)}`)).json()).items.map((i) => i.path);
+  const recent = async () => (await (await req('/api/fs/recent?hours=1')).json()).items.map((i) => i.path);
+  assert.deepEqual(await find('meeting-notes'), ['Home/notes/meeting-notes.md']);   // warms the cache
+  await recent();
+  const ren = await req('/api/fs/rename', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: 'Home/notes/meeting-notes.md', name: 'standup-notes.md' }),
+  });
+  assert.equal(ren.status, 200);
+  assert.deepEqual(await find('meeting-notes'), []);
+  assert.deepEqual(await find('standup-notes'), ['Home/notes/standup-notes.md']);
+  const up = await req('/api/fs/upload?dir=Work&name=fresh-upload.txt', { method: 'POST', body: 'hello' });
+  assert.equal(up.status, 200);
+  assert.ok((await recent()).includes('Work/fresh-upload.txt'));
+  assert.deepEqual(await find('fresh-upload'), ['Work/fresh-upload.txt']);
+});
