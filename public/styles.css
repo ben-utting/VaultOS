@@ -313,7 +313,7 @@ header button.ws-chip {
 }
 .clear-filters:hover { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
 
-/* The one row never wraps a control: only the chips give way (the search chip, and the workspace chip's label), their text ellipsizing.
+/* The one row never wraps a control: only the chips give way (the search chip, the workspace chip's label and Today's chip), their text ellipsizing.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
 /* Search is a button that opens the search panel, with the shortcut beside it; the chip next to it names the filter
@@ -1548,7 +1548,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    1340px, so from 861px up it stays one row by giving things way in steps rather than one cliff, and only below
    860px wraps onto a second row. Nothing is lost on the way: Sign out is in the Settings sheet (#logout-sheet), the
    Settings button keeps its icon and name, and every column head repeats the count. Checked with Terminal shown,
-   with a search on and with the Pomodoro chip, at 880–1600px in every mode (/opt/vault/look-check/t2.js). */
+   with a search on and with the Pomodoro chip, at 880–1600px in every mode. */
 @media (max-width: 1280px) {
   /* Sign out folds into the Settings sheet's footer and Settings becomes its gear. */
   #logout, .setbtn-lbl { display: none; }

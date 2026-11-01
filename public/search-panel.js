@@ -168,6 +168,10 @@ const SearchPanel = (() => {
 
   // ---- Searching ----
   // One AbortController per query and a sequence number: an answer that isn't for the latest query is dropped.
+  // /api/search answers from memory; /api/fs/find and /api/fs/recent walk the vault (seconds on the network share
+  // until the server has the listing cached). So the Filter row and the search groups paint as soon as /api/search
+  // answers and Files merges in when /api/fs/find lands, under the same sequence check. The promise run() returns
+  // settles at the first paint that has something to pick (Enter waits on it), not at the last.
   async function run() {
     clearTimeout(S.timer);
     S.pending = false;
@@ -176,39 +180,48 @@ const SearchPanel = (() => {
     const ctl = S.ctl = new AbortController();
     const opts = { signal: ctl.signal };
     const q = input.value.trim().slice(0, 200);
+    const live = () => seq === S.seq;
     try {
-      if (SearchCore.intentForQuery(q) === 'recent') {
-        const rec = await recent(opts);
-        if (seq === S.seq) paint(q, rec);
-        return;
-      }
+      if (SearchCore.intentForQuery(q) === 'recent') return await showRecent(q, opts, live);
       const kind = S.type === 'all' || S.type === 'file' ? '' : S.type;
       const p = new URLSearchParams({ q });
       if (kind) p.set('kind', kind);
       if (S.ws) p.set('ws', S.ws);
       if (kind === 'task' && S.status) p.set('status', S.status);
-      const [s, f] = await Promise.all([
-        S.type === 'file' ? { results: [], terms: 1 } : api('/api/search?' + p, opts),
-        S.type === 'all' || S.type === 'file' ? api('/api/fs/find?q=' + encodeURIComponent(q), opts) : { items: [] },
-      ]);
-      if (seq !== S.seq) return;
-      if (s.terms === 0) {   // only stopwords: show what changed lately instead of nothing
-        const rec = await recent(opts);
-        if (seq === S.seq) paint(q, rec);
-        return;
-      }
-      const files = SearchCore.visibleFileHits(f.items, wsShown(), ME.todayDir).map(fileRow);
-      paint(q, SearchCore.groupResults(s.results, files, { type: S.type }));
-    } catch {
-      if (seq === S.seq) paint(q, null);
+      const wantFiles = S.type === 'all' || S.type === 'file';
+      const found = wantFiles ? api('/api/fs/find?q=' + encodeURIComponent(q), opts) : Promise.resolve({ items: [] });
+      found.catch(() => {});   // handled below; this only stops an early return leaving it unhandled
+      const s = S.type === 'file' ? { results: [], terms: 1 } : await api('/api/search?' + p, opts);
+      if (!live()) return;
+      if (s.terms === 0) return await showRecent(q, opts, live);   // only stopwords: what changed lately instead of nothing
+      const first = SearchCore.groupResults(s.results, [], { type: S.type });
+      paint(q, first, { pending: wantFiles });
+      if (!wantFiles) return;
+      const merge = found.then((f) => {
+        if (!live()) return;
+        const files = SearchCore.visibleFileHits(f.items, wsShown(), ME.todayDir).map(fileRow);
+        paint(q, SearchCore.groupResults(s.results, files, { type: S.type }), { keep: true });
+      }, (err) => {
+        // Files could not be listed: keep the search groups that did come back.
+        if (live() && !(err && err.name === 'AbortError')) paint(q, first, { keep: true });
+      });
+      if (!first.length) await merge;   // nothing to pick yet but the Filter row: Enter waits for Files
+    } catch (err) {
+      if (live() && !(err && err.name === 'AbortError')) paint(q, null);
     }
   }
 
-  // The 8 most recently changed tasks and files: /api/fs/recent plus the board's tasks, by mtime.
-  async function recent(opts) {
+  // Recent: the board's tasks (already in STATE) paint at once; /api/fs/recent merges in when it lands.
+  async function showRecent(q, opts, live) {
+    paint(q, recentGroups([]), { pending: true });
     let items = [];
     try { items = (await api('/api/fs/recent?hours=720', opts)).items || []; }
-    catch (err) { if (err && err.name === 'AbortError') throw err; }
+    catch (err) { if (err && err.name === 'AbortError') return; }
+    if (live()) paint(q, recentGroups(items), { keep: true });
+  }
+
+  // The 8 most recently changed tasks and files: /api/fs/recent's items plus the board's tasks, by mtime.
+  function recentGroups(items) {
     const byPath = new Map();
     const titles = new Map((STATE.tasks || []).map((t) => [t.path, t]));
     for (const it of items) {
@@ -236,7 +249,11 @@ const SearchPanel = (() => {
 
   // ---- Rendering ----
   // S.rows lines up with the .sp-row elements: { type: 'filter' } | { type: 'hit', r } | { type: 'more', key }.
-  function paint(q, groups) {
+  // pending: more is on its way (Files, or Recent's files), so an empty list says so rather than "nothing".
+  // keep: a merge into what is on screen, so the selected row and the scroll stay where they were.
+  const rowKey = (e) => (e.type === 'hit' ? 'hit:' + e.r.path : e.type + ':' + (e.key || ''));
+  function paint(q, groups, { pending = false, keep = false } = {}) {
+    const prev = keep && S.sel >= 0 && S.rows[S.sel] ? rowKey(S.rows[S.sel]) : null;
     const rows = [];
     let h = '';
     const row = (cls, icon, inner, entry, path) => {
@@ -247,6 +264,7 @@ const SearchPanel = (() => {
     const label = q && SearchCore.filterLabel(STATE.mode, q);
     if (label) h += row(' sp-filter', ICON.filter, `<span class="sp-title">${esc(label)}</span>`, { type: 'filter' });
     if (groups === null) h += '<div class="sp-empty">Search is unavailable</div>';
+    else if (!groups.length && pending) h += '<div class="sp-empty">Looking through files…</div>';
     else if (!groups.length) {
       h += SearchCore.intentForQuery(q) === 'search'
         ? `<div class="sp-empty">Nothing matches '${esc(q)}'${narrowing() ? ' <button type="button" class="linklike sp-clear">Clear filters</button>' : ''}</div>`
@@ -259,13 +277,14 @@ const SearchPanel = (() => {
       }
     }
     list.innerHTML = h;
-    list.scrollTop = 0;
+    if (!keep) list.scrollTop = 0;
     S.rows = rows;
-    select(rows.length ? 0 : -1);
+    const same = prev ? rows.findIndex((e) => rowKey(e) === prev) : -1;
+    select(same >= 0 ? same : rows.length ? 0 : -1, !keep);
   }
   function hitHtml(r, q) {
     const bits = [];
-    if (r.kind === 'task' && r.status) bits.push(`<span class="dot" style="background: var(--${esc(r.status)})"></span><span>${esc(STATUS_LABELS[r.status] || r.status)}</span><span class="sp-sep">·</span>`);
+    if (r.kind === 'task' && STATUSES.includes(r.status)) bits.push(`<span class="dot" style="background: var(--${esc(r.status)})"></span><span>${esc(STATUS_LABELS[r.status])}</span><span class="sp-sep">·</span>`);
     const where = [r.wsLabel, r.folder].filter(Boolean).join(' · ');
     bits.push(`<span class="sp-where">${esc(where)}${r.kind === 'file' ? ` · ${esc(r.ext)}` : ''}</span>`);
     const snip = r.kind !== 'file' && r.snippet ? `<span class="sp-snip">${SearchCore.highlight(r.snippet, q)}</span>` : '';
@@ -291,7 +310,8 @@ const SearchPanel = (() => {
     } else if (e.key === 'Enter' && !e.isComposing) {
       e.preventDefault();
       // Typed faster than the debounce: search for what is in the box first, then pick from that.
-      if (S.pending) run().then(() => { if (S.sel >= 0) pick(S.sel); });
+      // Escape (or the backdrop) while that search was out: the panel is closed, so nothing is picked.
+      if (S.pending) run().then(() => { if (S.open && S.sel >= 0) pick(S.sel); });
       else if (S.sel >= 0) pick(S.sel);
     }
   }
@@ -321,8 +341,12 @@ const SearchPanel = (() => {
   // ---- The shortcuts ----
   // Capture phase on document, so the key is seen before anything inside the page acts on it. Inside a terminal,
   // the text editor, a sheet cell editor or any other text field the key is theirs (SearchCore.keyIntent).
+  // Overlays that sit above the panel own the key: the document and diagram viewers, Settings, the sign-in screen,
+  // the Morning read card, and a terminal's shortcut sheet or terminal picker.
+  const overlayAbove = () => !!(DGV || DOCV) || sheetOpen() || $('app').classList.contains('hidden')
+    || !$('km-card').classList.contains('hidden') || !!document.querySelector('.tw-sheet, .tw-pick');
   document.addEventListener('keydown', (e) => {
-    if (DGV || DOCV || sheetOpen() || $('app').classList.contains('hidden')) return;   // an overlay above owns the key
+    if (overlayAbove()) return;
     const t = e.target instanceof Element ? e.target : null;
     const inPanel = !!(root && t && root.contains(t));
     const intent = SearchCore.keyIntent({
@@ -331,6 +355,8 @@ const SearchPanel = (() => {
       inEditable: !inPanel && !!(t && (t.isContentEditable || t.closest('input, textarea, select'))),
       inTerminal: !!(t && t.closest('.xterm')),
     });
+    // Holding the keys down: the first press acted; the repeats must not flicker the panel shut and open again.
+    if (e.repeat) { if (intent === 'open' || intent === 'close-to-browser') e.preventDefault(); return; }
     if (intent === 'open') { e.preventDefault(); open(); }
     else if (intent === 'close-to-browser') close();   // no preventDefault: the browser's own find opens
     else if (S.open && inPanel && (isMac() ? e.metaKey : e.ctrlKey) && String(e.key).toLowerCase() === 'k') e.preventDefault();

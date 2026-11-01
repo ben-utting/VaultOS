@@ -10,7 +10,7 @@
 // DGV, DOCV). One global, KbMorning = { init, check }.
 //
 // It never opens over something else (the task drawer, a doc or diagram
-// viewer, Settings, sign-in, a focused terminal): that check is skipped, and
+// viewer, Settings, sign-in, a focused terminal, the search panel): that check is skipped, and
 // the next one (the tab coming back into view, a workspace switch) asks again.
 // Text from the vault goes in with textContent.
 // ========================================================================
@@ -24,7 +24,8 @@ const KbMorning = (() => {
 
   const isOpen = () => !$('km-card').classList.contains('hidden');
   const blocked = () => isOpen() || sheetOpen() || !$('drawer').classList.contains('hidden') || !!DGV || !!DOCV
-    || !$('login').classList.contains('hidden') || !!(document.activeElement && document.activeElement.closest('.xterm'));
+    || !$('login').classList.contains('hidden') || !!(document.activeElement && document.activeElement.closest('.xterm'))
+    || !!(window.SearchPanel && window.SearchPanel.isOpen());
 
   async function check() {
     if (!ME.features.morningRead || checking || blocked()) return;
