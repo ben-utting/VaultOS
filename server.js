@@ -2432,6 +2432,7 @@ const SEARCH_KINDS = new Set(['task', 'article', 'note']);
 app.get('/api/search', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'q is required' });
+  if (q.length > 200) return res.status(400).json({ error: 'q is too long (200 characters at most)' });
   const s = SETTINGS();
   const boards = s ? visibleBoards(s) : [];
   const kind = req.query.kind ? String(req.query.kind) : '';
@@ -2441,7 +2442,7 @@ app.get('/api/search', async (req, res) => {
   if (wsKey && !wsBoard) return res.status(400).json({ error: 'unknown ws' });
   const status = kind === 'task' && req.query.status ? String(req.query.status) : '';
   const n = parseInt(String(req.query.limit || ''), 10);
-  const limit = Math.min(50, Math.max(1, Number.isFinite(n) ? n : 20));
+  const limit = Math.min(50, Math.max(1, Number.isFinite(n) ? n : 30));
   const terms = tokenize(q).length;
   if (!terms) return res.json({ results: [], terms: 0 });
   const byDir = new Map(boards.map((b) => [b.dir, b]));

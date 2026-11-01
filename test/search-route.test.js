@@ -32,12 +32,12 @@ const FILES = {
   'Loose/stuff/note.md': 'boiler loose\n',
 };
 
-async function srvWith(t, today = true) {
+async function srvWith(t, today = true, extra = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-searchroute-'));
   const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home') };
   fs.mkdirSync(d.vault);
   fs.mkdirSync(d.home);
-  seedVault(d.vault, { '.vaultos/settings.json': settings(today), ...FILES });
+  seedVault(d.vault, { '.vaultos/settings.json': settings(today), ...FILES, ...extra });
   writePassword(d.data, PASSWORD);
   const srv = await startServer({ vault: d.vault, data: d.data, home: d.home });
   t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -131,4 +131,17 @@ test('/api/me carries todayDir only when Today is on', async (t) => {
   const off = await srvWith(t, false);
   const me2 = await (await fetch(`${off.srv.base}/api/me`, { headers: { cookie: off.cookie } })).json();
   assert.equal(me2.todayDir, '');
+});
+
+test('limit defaults to 30', async (t) => {
+  const s = await srvWith(t, true, Object.fromEntries(
+    Array.from({ length: 40 }, (_, i) => [`Work/bulk/n${i}.md`, `zebrafinch sighting ${i}\n`])));
+  assert.equal((await paths(s, 'q=zebrafinch')).length, 30);
+});
+
+test('q is capped at 200 characters', async (t) => {
+  const s = await srvWith(t);
+  assert.equal((await get(s, 'q=' + 'a'.repeat(201))).status, 400);
+  assert.equal((await get(s, 'q=' + 'a'.repeat(200))).status, 200);
+  assert.equal((await get(s, 'q=' + encodeURIComponent('  ' + 'a'.repeat(200) + '  '))).status, 200);
 });
