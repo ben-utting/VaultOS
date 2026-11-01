@@ -1052,6 +1052,7 @@ app.get('/api/me', (req, res) => {
     ...(localRead ? { localRead: true } : {}),
     todayDir: s && s.features.today ? s.today.dir : '',
     features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead) },
+    notes: s ? { enabled: !!s.features.notes, dir: s.notes.dir, inbox: s.notes.inbox, main: s.notes.main, tags: s.notes.tags } : { enabled: false },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)) } : null,
   });
 });
@@ -1439,9 +1440,9 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
 app.post('/api/settings/features', settingsGuard, (req, res) => withSettingsLock(() => setFeatures(req, res)));
 async function setFeatures(req, res) {
   try {
-    const { today: wantToday, terminal, morningRead, timezone } = req.body || {};
-    if ([wantToday, terminal, morningRead].some((v) => v !== undefined && typeof v !== 'boolean')) {
-      return res.status(400).json({ error: 'today, terminal and morningRead must be true or false' });
+    const { today: wantToday, terminal, morningRead, notes, timezone } = req.body || {};
+    if ([wantToday, terminal, morningRead, notes].some((v) => v !== undefined && typeof v !== 'boolean')) {
+      return res.status(400).json({ error: 'today, terminal, morningRead and notes must be true or false' });
     }
     if (timezone !== undefined && !validTimeZone(timezone)) return res.status(400).json({ error: 'Unknown time zone' });
     // Read inside the queue slot, after any earlier change has saved.
@@ -1453,6 +1454,7 @@ async function setFeatures(req, res) {
         ...(wantToday !== undefined ? { today: wantToday } : {}),
         ...(terminal !== undefined ? { terminal } : {}),
         ...(morningRead !== undefined ? { morningRead } : {}),
+        ...(notes !== undefined ? { notes } : {}),
       },
       today: { ...s.today, ...(timezone !== undefined ? { timezone } : {}) },
     };

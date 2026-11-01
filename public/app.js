@@ -115,14 +115,15 @@ function ws(url) {
 // agent: null | { profile, label, startCommand } }, where agent is null whenever the terminal is off.
 // Signed out: { authed: false, setup } (setup: the server wants the setup page). The UI offers only
 // what is on: no Today without Today, and no terminal or Start agent without the terminal.
-let ME = { authed: false, features: { today: false, terminal: false, morningRead: false }, agent: null };
+let ME = { authed: false, features: { today: false, terminal: false, morningRead: false }, agent: null, notes: { enabled: false } };
 const todayOn = () => !!ME.features.today;
 const termOn = () => !!ME.features.terminal;
+const notesOn = () => !!(ME.notes && ME.notes.enabled);   // Notes mode and capture (ME.notes: { enabled, dir, inbox, main, tags })
 const homeMode = () => (todayOn() ? 'today' : 'board');   // the mode VaultOS opens on
 const agentLabel = () => (ME.agent ? ME.agent.label : null);   // null: no agent, or the terminal is off
 async function fetchMe() {
   const me = await fetch('/api/me').then((r) => r.json()).catch(() => ({ authed: false }));
-  return { ...me, features: me.features || { today: false, terminal: false, morningRead: false }, agent: me.agent || null };
+  return { ...me, features: me.features || { today: false, terminal: false, morningRead: false }, agent: me.agent || null, notes: me.notes || { enabled: false } };
 }
 function applyMe() {
   const today = todayOn();
@@ -2449,6 +2450,7 @@ async function loadFeatures() {
     TERMINAL_ALLOWED = d.terminalAllowed;
     $('ft-today').checked = d.settings.features.today;
     $('ft-morning').checked = d.settings.features.morningRead;
+    $('ft-notes').checked = !!d.settings.features.notes;
     $('ft-tz').value = d.settings.today.timezone;
     $('ft-term').checked = d.terminalAllowed && d.settings.features.terminal;
     $('ft-term').disabled = !d.terminalAllowed;
@@ -2462,7 +2464,7 @@ $('ft-save').addEventListener('click', async () => {
   const timezone = $('ft-tz').value.trim();
   if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return $('ft-tz').focus(); }
   $('ft-err').textContent = '';
-  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked } : {}) };
+  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked } : {}) };
   $('ft-save').disabled = true;
   try {
     await api('/api/settings/features', { method: 'POST', body: JSON.stringify(body) });

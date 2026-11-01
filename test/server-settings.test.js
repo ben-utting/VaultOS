@@ -173,6 +173,16 @@ test('features validate their input', async (t) => {
   assert.equal(r.body.settings.features.terminal, false);
 });
 
+test('Notes on: /api/me carries the notes folders; a bad value is 400', async (t) => {
+  const s = await ready(t);
+  const off = await call(s.base, 'GET', '/api/me', { cookie: s.cookie });
+  assert.equal(off.body.notes.enabled, false);
+  assert.equal((await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { notes: true } })).status, 200);
+  const me = await call(s.base, 'GET', '/api/me', { cookie: s.cookie });
+  assert.deepEqual(me.body.notes, { enabled: true, dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags' });
+  assert.equal((await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { notes: 'yes' } })).status, 400);
+});
+
 test('password change', async (t) => {
   const s = await ready(t);
   const post = (body) => call(s.base, 'POST', '/api/settings/password', { cookie: s.cookie, body });

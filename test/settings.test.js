@@ -12,8 +12,9 @@ const withBoards = (...boards) => ({ ...S.defaults(), boards });
 test('defaults validate', () => {
   assert.deepEqual(S.defaults(), {
     version: 1, setupDone: false, boards: [],
-    features: { today: false, terminal: true, morningRead: true },
+    features: { today: false, terminal: true, morningRead: true, notes: false },
     today: { dir: 'Today', timezone: 'UTC' }, agent: { profile: 'none' },
+    notes: { dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' },
   });
   assert.deepEqual(S.validate(S.defaults()), S.defaults());
   assert.equal(S.SETTINGS_REL, '.vaultos/settings.json');
@@ -24,6 +25,23 @@ test('morningRead defaults on, and must be true or false', () => {
   assert.equal(S.validate({ version: 1, features: { today: true } }).features.morningRead, true);
   assert.equal(S.validate({ version: 1, features: { morningRead: false } }).features.morningRead, false);
   assert.throws(() => S.validate({ version: 1, features: { morningRead: 'yes' } }), /features\.morningRead must be true or false/);
+});
+
+test('notes values must stay inside the vault', () => {
+  for (const notes of [{ dir: '../x' }, { dir: '/abs' }, { inbox: 'a/../../b' }, { main: '' }, { tags: 'a\u0000b' }]) {
+    assert.throws(() => S.validate({ version: 1, notes }), /notes\.\w+ must be a folder inside the vault/, JSON.stringify(notes));
+  }
+});
+
+test('notes folders must differ', () => {
+  assert.throws(() => S.validate({ version: 1, notes: { inbox: 'X', main: 'X' } }),
+    /notes\.inbox, notes\.main and notes\.tags must be different folders/);
+});
+
+test('notes keeps given values and fills the rest', () => {
+  const s = S.validate({ version: 1, features: { notes: true }, notes: { dir: 'Z', inbox: 'R' } });
+  assert.equal(s.features.notes, true);
+  assert.deepEqual(s.notes, { dir: 'Z', inbox: 'R', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' });
 });
 
 test('validate fills missing sections', () => {
