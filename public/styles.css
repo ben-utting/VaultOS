@@ -3651,3 +3651,48 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   button.ghost.sp-pick { min-height: 36px; }
   .sp-row { padding: 10px 8px; }
 }
+
+/* ---------- Capture box (capture.js) ----------
+   The pen / Ctrl+J: a centred card 560px wide on a dimmed backdrop; at 700px and under, a sheet from the top, so the
+   phone keyboard never covers it. Above toasts (60) and the search panel (65). */
+.toast.toast-info { background: var(--panel); color: var(--text); border-color: var(--line); }
+.toast:has(.toast-act) { display: flex; align-items: center; gap: 4px; width: max-content; }
+.toast-act {
+  flex: none; margin-left: 10px; padding: 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: transparent; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer;
+}
+.toast-act:hover { border-color: currentColor; }
+.toast:not(.toast-info) .toast-act { color: inherit; border-color: var(--toast-border); }
+.cp {
+  position: fixed; inset: 0; z-index: 66; display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 14vh; background: rgba(0,0,0,.45); animation: fade-in 160ms var(--ease-out);
+}
+.cp-card {
+  width: min(560px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 14px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-4);
+  color: var(--text);
+}
+.cp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cp-head h2 { margin: 0; font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+#cp-text {
+  width: 100%; box-sizing: border-box; min-height: 150px; max-height: 50vh; resize: vertical; padding: 10px 12px;
+  font: inherit; font-size: var(--t-md); line-height: 1.55; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md);
+}
+#cp-text::placeholder { color: var(--muted); }
+#cp-text:focus { outline: none; border-color: var(--accent); }
+.cp-err { margin: 0; color: var(--danger-fg); font-size: var(--t-sm); }
+.cp-err:empty { display: none; }
+.cp-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cp-hint { color: var(--muted); font-size: var(--t-xs); }
+@media (max-width: 700px) {
+  .cp { padding-top: 0; }
+  .cp-card {
+    width: 100%; border-top: 0; border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    padding: calc(10px + env(safe-area-inset-top)) 16px 14px;
+  }
+  #cp-text { min-height: 34vh; font-size: 16px; }   /* 16px: iOS zooms into a smaller field */
+  .cp-hint { display: none; }
+  .cp-foot { justify-content: flex-end; }
+  .cp-foot .su-btn { min-height: 44px; min-width: 120px; }
+}

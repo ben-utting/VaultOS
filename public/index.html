@@ -39,6 +39,8 @@
         <button id="mode-files" class="mode" data-mode="files">Files</button>
         <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
       </nav>
+      <!-- New thought (capture.js): shown at every width while Notes is on, so the way to write something down is always in sight. -->
+      <button type="button" id="capture-btn" class="ghost hidden" aria-label="New thought" title="New thought (Ctrl+J)" aria-haspopup="dialog" aria-controls="cp-box"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
       <!-- Opens the search panel (search-panel.js). The chip beside it names the filter now narrowing the current mode: its text reopens the panel with it, its × clears it. -->
       <button type="button" id="search-btn" class="ghost" aria-label="Search" title="Search" aria-haspopup="dialog"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
       <span id="search-chip" class="search-chip hidden"><button type="button" class="sc-text" title="Search for this again"></button><button type="button" class="sc-x" aria-label="Clear filter">×</button></span>
@@ -166,6 +168,10 @@
       <div class="row">
         <div class="lbl">Search</div>
         <div class="ss-keys"><kbd class="kbd" data-key="find">Ctrl F</kbd> or <kbd class="kbd" data-key="k">Ctrl K</kbd></div>
+      </div>
+      <div class="row" id="capture-keys-row">
+        <div class="lbl">New thought</div>
+        <div class="ss-keys"><kbd class="kbd" data-key="j">Ctrl J</kbd></div>
       </div>
       <div class="row" id="term-where-row">
         <div class="lbl">Terminals open in</div>
@@ -450,6 +456,15 @@
 
   <div id="scrim" class="scrim hidden"></div>
   <div id="toast" class="toast hidden"></div>
+  <!-- The capture box (capture.js): one textarea, Save. Esc or a click outside keeps the draft for next time. -->
+  <div id="cp-box" class="cp hidden">
+    <div class="cp-card" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+      <div class="cp-head"><h2 id="cp-title">New thought</h2><button type="button" class="ghost cp-close" id="cp-close" aria-label="Close (keeps the draft)"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <textarea id="cp-text" rows="6" placeholder="What's on your mind?" aria-labelledby="cp-title" enterkeyhint="enter"></textarea>
+      <p id="cp-err" class="cp-err" aria-live="polite"></p>
+      <div class="cp-foot"><span class="cp-hint" id="cp-hint">Ctrl+Enter saves. Esc keeps it for later.</span><button type="button" id="cp-save" class="su-btn primary">Save</button></div>
+    </div>
+  </div>
   <!-- The morning read (kb-morning.js): once a day, one Knowledge Base article to pick back up. -->
   <div id="km-scrim" class="km-scrim hidden"></div>
   <section id="km-card" class="km-card hidden" role="dialog" aria-modal="true" aria-labelledby="km-title" aria-describedby="km-reason">
@@ -482,6 +497,7 @@
   <script src="termtoast.js"></script>
   <script src="termui.js"></script>
   <script src="search-core.js"></script>
+  <script src="notes-core.js"></script>
   <script src="app.js"></script>
   <script src="today-next.js"></script>
   <script src="today.js"></script>
@@ -492,5 +508,6 @@
   <script src="text-edit.js"></script>
   <script src="workbench.js"></script>
   <script src="search-panel.js"></script>
+  <script src="capture.js"></script>
 </body>
 </html>

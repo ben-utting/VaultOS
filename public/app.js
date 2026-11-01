@@ -133,6 +133,7 @@ function applyMe() {
   }
   for (const el of [$('termbtn'), $('mnav-term'), $('term-where-row'), $('term-sound-row')]) el.classList.toggle('hidden', !term);
   $('d-agent').classList.toggle('hidden', !ME.agent);
+  for (const el of [$('capture-btn'), $('capture-keys-row')]) el.classList.toggle('hidden', !notesOn());
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
   renderDrawerAgent();
@@ -843,12 +844,24 @@ function render() {
 
 // ---------- Toast ----------
 let TOAST_T;
-function toast(msg) {
+// toast(msg, { action, onAction, ms, tone }): with an action the toast carries one button ("Open", "Undo") that runs
+// onAction and hides the toast. The default tone is the error one most toasts are; tone 'info' is neutral, for news
+// that isn't a problem ("Saved to Inbox").
+function toast(msg, { action, onAction, ms = 5000, tone } = {}) {
   const el = $('toast');
   el.textContent = msg;
+  el.classList.toggle('toast-info', tone === 'info');
+  if (action) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toast-act';
+    b.textContent = action;
+    b.addEventListener('click', () => { el.classList.add('hidden'); clearTimeout(TOAST_T); if (onAction) onAction(); });
+    el.append(' ', b);
+  }
   el.classList.remove('hidden');
   clearTimeout(TOAST_T);
-  TOAST_T = setTimeout(() => el.classList.add('hidden'), 5000);
+  TOAST_T = setTimeout(() => el.classList.add('hidden'), ms);
 }
 
 // ---------- Copy to clipboard ----------
@@ -2058,8 +2071,10 @@ $('search-btn').addEventListener('click', () => { if (window.SearchPanel) window
 {
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   // Desktop has no Search control (the shortcut is the way in); Settings → Appearance names the keys.
-  for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + (k.dataset.key === 'k' ? 'K' : 'F');
+  for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + ({ k: 'K', j: 'J' }[k.dataset.key] || 'F');
   $('search-btn').title = `Search (${mac ? '⌘F' : 'Ctrl+F'})`;
+  $('capture-btn').title = `New thought (${mac ? '⌘J' : 'Ctrl+J'})`;
+  $('cp-hint').textContent = `${mac ? '⌘' : 'Ctrl+'}Enter saves. Esc keeps it for later.`;
 }
 $('clear-filters').addEventListener('click', clearAllFilters);
 // Refresh reloads the whole app, not just the data: an installed home-screen
@@ -2642,6 +2657,14 @@ async function start({ restore = false } = {}) {
   await load();
   if (todayOn()) Today.init();
   if (!(restore && restoreAfterReload())) setMode(homeMode());
+  // The home-screen shortcut "New thought" lands on /?capture=1: open the box, then drop the parameter so a
+  // reload doesn't open it again.
+  const params = new URLSearchParams(location.search);
+  if (params.get('capture') === '1') {
+    params.delete('capture');
+    history.replaceState(null, '', location.pathname + (params.toString() ? `?${params}` : '') + location.hash);
+    if (notesOn() && !ME.localRead) Capture.open();
+  }
   KbMorning.init();   // checks ME.features.morningRead itself
   cxCheck();   // the Settings dot, if a connector's sign-in has run out
 }
