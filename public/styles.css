@@ -313,7 +313,7 @@ header button.ws-chip {
 }
 .clear-filters:hover { border-color: var(--accent); background: color-mix(in oklab, var(--accent) 8%, transparent); }
 
-/* The one row never wraps a control: only the search box gives way (down to 110px), at every width.
+/* The one row never wraps a control: only the search chip's text gives way (ellipsis), at every width.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
 /* Search is a button that opens the search panel, with the shortcut beside it; the chip next to it names the filter

@@ -1045,8 +1045,10 @@ Sign out leaves the header (the sheet's `#logout-sheet` is the way out) and Sett
 keeps the name); at 861–1366px a filter's "Clear all filters" takes the count's place; at 861–1100px the count and
 divider go, "Clear all filters" reads "Clear" (`.cf-more`; `aria-label` keeps the full name), the gaps close to 8px
 and the workspace name is cut at 14ch; at 861–960px a running Pomodoro chip also hides the wordmark. Below 861px it
-wraps to two rows. Only the search box shrinks (`flex: 0 1 260px`, min 110px, 80px under 1101px); every other
-control is `flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
+wraps to two rows. `#search-btn` is fixed (`flex: none`; its `Ctrl F` hint hides at 861–1100px, and at ≤700px it is a 40px icon
+button). Only the filter chip gives way: `#search-chip` is `flex: 0 1 auto` with `max-width: 22ch` (14ch at 861–1100px)
+and its `.sc-text` ellipsizes (≤700px: `max-width: 28vw`, min 48px). Every other control is
+`flex: none; white-space: nowrap`, so nothing wraps inside itself. The preview runs `TERMINAL=0`, which
 hides `#termbtn`: a header-fit check that doesn't unhide it misses about 50px. `/opt/vault/look-check/t2.js` runs the
 matrix (880–1600px × Board/KB/Files/Today × Terminal, search, chip) and must stay green after any header change.
 The sections kept the popovers' element ids (`filter-list`, `cols-list`,
