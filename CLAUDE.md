@@ -1195,7 +1195,8 @@ Ben wanted the terminal to look and work like [herdr](https://github.com/herdrde
 multiplexer for coding agents: one overview, splits you control, fast ways to get somewhere. Built on
 branch `herdr-terminals` (worktree `/opt/vault/board-herdr`), design in
 `docs/superpowers/specs/2026-10-07-herdr-terminals-design.md`. **Status: built and reviewed, Tasks 0–12 done, plus the
-final-review fix wave. The release (Task 13) has NOT happened yet.** Master is untouched, so none of this is live on :7684.
+final-review fix wave, and released: it has been on `main` and live on :7684 since at least 2026-10-16.** The branch and
+`/opt/vault/board-herdr` worktree are gone.
 
 - **Modules and load order.** Each is an IIFE (or, for `termui.js`, the one file of globals) that exposes
   exactly one global; nothing in `term*.js` may reference `app.js` or `workbench.js`, and a clash with an
@@ -1324,7 +1325,7 @@ final-review fix wave. The release (Task 13) has NOT happened yet.** Master is u
   node:22-bookworm-slim node --test test/termtree.test.js test/term-meta.test.js`. **Never kill processes
   by pattern** (`pkill`, `killall`): this host's process table includes other containers' processes,
   including Ben's live sessions in vault-board; kill only PIDs you started.
-- **Release order (Task 13, not done).** 1) Fast-forward master. That makes the frontend live on :7684
+- **Release order (Task 13, done; kept for the record).** 1) Fast-forward master. That makes the frontend live on :7684
   at once (`public/` is a live mount), but the server isn't restarted yet, so names fall back to folders.
   2) Restart `vault-board` for the server part, **only with Ben's OK**: a restart kills every live pty,
   including overnight `claude` sessions (check `docker exec vault-board ps -eo pid,etime,args` first). An
@@ -1368,7 +1369,7 @@ Write a thought down from anywhere, then grow it into a note. Spec: `docs/superp
   `node scripts/notes-e2e.js [--phone] [--theme=sepia] C1 … C7 N1 … N8` — run all four variants before a release.
   Never point it at `:7684`.
 
-## Today mode (built on branch `today-mode`, not yet released)
+## Today mode (released; on `main` and live since at least 2026-10-16)
 
 VaultOS opens on **Today**: date stepper, daily quote, eight habits with a 7-day grid and streaks,
 today's task checklist with rollover, and a server-held Pomodoro. Spec:
