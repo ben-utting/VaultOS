@@ -14,6 +14,22 @@
   <link rel="stylesheet" href="/vendor/xterm.css">
   <link rel="preload" href="/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="styles.css">
+  <!-- Behind Cloudflare Access every file is gated, styles.css included. On a home-screen
+       launch the page can arrive while the stylesheet got Access's login redirect instead
+       (HTML, so the browser drops it), and VaultOS shows unstyled until relaunched. This does
+       the relaunch: if styles.css didn't apply, reload once. At most one try a minute, so if
+       Access really wants a sign-in the reload lands on its login rather than looping. -->
+  <script>
+    addEventListener('load', function () {
+      if (getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()) return;
+      var KEY = 'vaultboard.cssRetry';
+      try {
+        if (Date.now() - (+sessionStorage.getItem(KEY) || 0) < 60000) return;
+        sessionStorage.setItem(KEY, String(Date.now()));
+      } catch (e) { return; } // no storage, no loop guard: don't risk reloading forever
+      location.reload();
+    });
+  </script>
 </head>
 <body>
 

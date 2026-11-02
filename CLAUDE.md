@@ -1071,6 +1071,16 @@ gear gets a dot (`updateSetDot`) whenever the folder filter or columns are hidin
 Escape is handled on `window` capture, so it closes only the sheet.
 The search panel (below) also takes Escape on `window` capture and closes only itself, ahead of the drawer.
 
+**Cloudflare Access gates every file, so the page heals a lost stylesheet (2026-11-02).**
+`vb.ctrlaltautomate.com` is behind Cloudflare Access, which answers *any* request without its cookie
+(`styles.css`, `app.js`, the manifest) with a 302 to its login page. On an iPhone home-screen launch
+the page sometimes arrived while `styles.css` got that redirect: HTML, so the browser dropped it and
+VaultOS showed unstyled until relaunched. An inline script at the end of `index.html`'s `<head>`
+checks on `load` whether `--bg` is set on `:root`; if not, it reloads once (at most once a minute, via
+`sessionStorage['vaultboard.cssRetry']`; no storage, no reload). If Access really wants a sign-in, that
+reload lands on its login. The real cause is in Access and iOS's cookie handling, not VaultOS. An
+Access Bypass rule for the static files would remove it (the frontend is in the public repo anyway).
+
 **Refresh app = `location.reload()`, deliberately.** An iOS home-screen web app
 resumes the old page forever, so a data-only rescan never picked up new
 VaultOS code. Mode + open KB article ride across the reload in
