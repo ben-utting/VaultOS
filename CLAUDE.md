@@ -448,9 +448,18 @@ A security audit of a fork, run at `c792a11`, led to these. Each has a test; don
   printed the session secret into the PDF. Anything the PDF shows must be inline or a data: URI,
   which the inlining above already guarantees; a real 8-page article with diagrams came out the
   same, byte for byte bar the timestamp.
-- **Still open:** the app renders the same unsanitised HTML into `innerHTML` (`#d-body`,
-  `#docv-body`), so `<img onerror=…>` in any vault markdown runs on the board's own origin. It
-  needs a sanitiser or a page-wide CSP, and a browser pass over every mode.
+- **Vault HTML is sanitised in the browser (closed 2026-11-02).** marked passes raw HTML through,
+  so `<img onerror=…>` in any vault markdown used to run on the board's origin. Every render site
+  now goes through `safeHtml()` / `safeSvg()` (`public/safe-html.js`, over DOMPurify 3.4.17 committed
+  as `public/purify.min.js`, loaded before `app.js`): the task drawer, the doc viewer, the KB article,
+  Files `.md`, Notes, and the three diagram SVG sites (inline figure, KB spotlight, `#dgv-stage`).
+  It's client-side on purpose: no new npm dependency, so no image rebuild. The config came from
+  running DOMPurify over every task, doc, article, note and diagram on the live board: it lets back
+  only `target` (screenshot links, forced `rel=noopener`) and, for SVG, `role` and `text-transform`;
+  it forbids `<style>` and `<form>`, which no document used. If DOMPurify fails to load, documents
+  show as escaped source, never as live HTML. `test/safe-html.test.js` fails on any `innerHTML = x.html`,
+  `${x.html}` or `.svg` sink not wrapped, and on the script order. **A new render site of server HTML
+  takes the wrapper.** The server's `renderBody` is unchanged; the PDF route has its own CSP.
 
 ## Workbench: Files mode + terminal dock (merged 2026-09-27, live on :7684)
 

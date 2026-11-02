@@ -577,7 +577,7 @@ function renderView({ keepScroll = false } = {}) {
   if (TextEdit.isEditing(p) && TextEdit.canEdit(f, mode)) {
     TextEdit.mount(view, p, f);
   } else if (f.kind === 'md' && mode === 'rendered') {
-    view.innerHTML = `<div class="fx-doc"><h1 class="fx-title">${esc(f.title)}</h1>${metaBlock(f.meta)}<article class="markdown fx-md">${f.html}</article></div>`;
+    view.innerHTML = `<div class="fx-doc"><h1 class="fx-title">${esc(f.title)}</h1>${metaBlock(f.meta)}<article class="markdown fx-md">${safeHtml(f.html)}</article></div>`;
     wireDocLinks(view, p);
     const diagrams = hydrateDiagrams(view);
     if (restore) diagrams.then(restore, restore);

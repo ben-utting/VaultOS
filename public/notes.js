@@ -151,7 +151,7 @@ const Notes = (() => {
       ta.focus();
       return;
     }
-    pane.innerHTML = `<div class="nt-col">${header()}<article id="nt-body" class="markdown nt-md">${f.html || ''}</article></div>`;
+    pane.innerHTML = `<div class="nt-col">${header()}<article id="nt-body" class="markdown nt-md">${safeHtml(f.html)}</article></div>`;
     linkify($('nt-body'));
   }
 

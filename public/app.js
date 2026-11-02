@@ -1133,7 +1133,7 @@ function showTask(t, { keepScroll = false } = {}) {
   for (const el of $('d-docs').querySelectorAll('.d-doc')) {
     el.addEventListener('click', () => openDoc(el.dataset.path));
   }
-  $('d-body').innerHTML = t.html;
+  $('d-body').innerHTML = safeHtml(t.html);
   OPEN = { path: t.path, mtime: t.mtime };
   if (restore) restore(); else $('drawer').scrollTop = 0;
   const diagrams = hydrateDiagrams($('d-body'));
@@ -1337,7 +1337,7 @@ async function paintSpotlightDiagram(pick) {
     DIAGRAMS.set(pick.path, d);
     const [, , vw, vh] = d.viewBox;
     slot.style.aspectRatio = `${vw} / ${vh}`;
-    slot.innerHTML = d.svg;
+    slot.innerHTML = safeSvg(d.svg);
     const el = slot.querySelector('svg');
     if (el) fluidSvg(el);
   } catch {
@@ -1652,7 +1652,7 @@ async function openArticle(p, { keepScroll = false } = {}) {
         ${chips}
         ${metaBits ? `<div class="d-meta">${metaBits}</div>` : ''}
         <p class="kb-readline" id="kb-readline" data-minutes="${a.minutes}">${a.minutes} min read · ${readLabel(a)}</p>
-        ${a.html}
+        ${safeHtml(a.html)}
         <div class="kb-read-end" aria-hidden="true"></div>
         ${related}
       </article>
@@ -1753,7 +1753,7 @@ async function hydrateDiagrams(root) {
     const [, , vw, vh] = d.viewBox;
     slot.style.aspectRatio = `${vw} / ${vh}`;
     slot.style.maxWidth = `${Math.round(MAX_DIAGRAM_H * (vw / vh))}px`;
-    slot.innerHTML = d.svg;
+    slot.innerHTML = safeSvg(d.svg);
     const el = slot.querySelector('svg');
     if (el) fluidSvg(el);
 
@@ -1856,7 +1856,7 @@ function openDiagram(p) {
   $('dgv-desc').textContent = d.desc || '';
   $('dgv-desc').classList.toggle('hidden', !d.desc);
 
-  stage.innerHTML = d.svg;
+  stage.innerHTML = safeSvg(d.svg);
   const el = fluidSvg(stage.querySelector('svg'));
   dgvExpandBackdrop(el, d.viewBox);
   DGV = { base: [...d.viewBox], box: [...d.viewBox], svg: el, dragging: null };
@@ -2000,7 +2000,7 @@ async function paintDoc(p, { keepScroll = false } = {}) {
   DOCV = d.path;
   $('docv-title').textContent = d.title;
   $('docv-path').textContent = d.path;
-  $('docv-body').innerHTML = d.html;
+  $('docv-body').innerHTML = safeHtml(d.html);
   if (restore) restore(); else $('docv-body').scrollTop = 0;
   const diagrams = hydrateDiagrams($('docv-body'));
   if (restore) diagrams.then(restore, restore);
