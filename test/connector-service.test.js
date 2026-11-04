@@ -599,3 +599,67 @@ test('a sign-out between the probe and the 401 check does not throw', async (t) 
   await svc.disconnect('github');
   await p; // resolves either way, never a TypeError
 });
+
+// ----- Context7: any key opens a session; only a tool call says whether it is good -----
+async function startContext7(t, good = 'ctx7sk-good') {
+  const state = { good, calls: 0 };
+  const srv = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => { body += d; });
+    req.on('end', () => {
+      const msg = JSON.parse(body || '{}');
+      if (!('id' in msg)) { res.writeHead(202); res.end(); return; }
+      const reply = (result) => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: '2.0', id: msg.id, result })}\n\n`); };
+      if (msg.method === 'initialize') return reply({ protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'c7', version: '1' } });
+      if (msg.method === 'tools/list') return reply({ tools: [{ name: 'resolve-library-id' }, { name: 'query-docs' }] });
+      state.calls++;
+      const auth = req.headers.authorization;
+      if (auth && auth !== `Bearer ${state.good}`) return reply({ content: [{ type: 'text', text: "Invalid API key. Please check your API key. API keys should start with 'ctx7sk' prefix." }], isError: true });
+      return reply({ content: [{ type: 'text', text: 'Available Libraries: ...' }] });
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-c7-'));
+  const svc = createConnectorService({
+    home, port: 7684, env: { CONNECTOR_UPSTREAM_CONTEXT7: `http://127.0.0.1:${srv.address().port}` },
+    fetch: (...a) => globalThis.fetch(...a), run: fakeRun(), spawn: fakeSpawn(), now: () => 1000000,
+    installedAgents: async () => ['cursor'],
+  });
+  await svc.init();
+  t.after(async () => { await new Promise((r) => srv.close(r)); fs.rmSync(home, { recursive: true, force: true }); });
+  return { svc, home, state };
+}
+
+test('context7: a good key is checked with a real lookup, saved, and added to the agents', async (t) => {
+  const { svc, home, state } = await startContext7(t);
+  await svc.saveToken('context7', { token: ' ctx7sk-good ' });
+  assert.equal(state.calls, 1);
+  assert.deepStrictEqual({ method: store(home).connectors.context7.method, key: store(home).connectors.context7.key }, { method: 'token', key: 'ctx7sk-good' });
+  const r = await row(svc, 'context7');
+  assert.equal(r.state, 'connected');
+  assert.equal(r.tokenHelp, 'https://context7.com/dashboard');
+  assert.equal(r.lastTest.tools, 2);
+  assert.equal(await svc.relayTarget('context7').authorization(), 'Bearer ctx7sk-good');
+  assert.equal(cursorJson(home).mcpServers.context7.url, 'http://127.0.0.1:7684/mcp/context7');
+});
+
+test('context7: a key the lookup refuses is not saved and the old one stays', async (t) => {
+  const { svc, home } = await startContext7(t);
+  await svc.saveToken('context7', { token: 'ctx7sk-good' });
+  await assert.rejects(svc.saveToken('context7', { token: 'ctx7sk-wrong' }),
+    (e) => e.message === "Context7 didn't accept this key. Copy it again from your Context7 dashboard." && !e.message.includes('wrong'));
+  assert.equal(store(home).connectors.context7.key, 'ctx7sk-good');
+});
+
+test('context7: Test marks a key that stopped working as needs-sign-in; a good key clears it', async (t) => {
+  const { svc, state } = await startContext7(t);
+  await svc.saveToken('context7', { token: 'ctx7sk-good' });
+  state.good = 'ctx7sk-rotated';
+  const bad = await svc.test('context7');
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error, 'Context7 no longer accepts this key.');
+  assert.equal((await row(svc, 'context7')).state, 'needs-sign-in');
+  state.good = 'ctx7sk-good';
+  assert.equal((await svc.test('context7')).ok, true);
+  assert.equal((await row(svc, 'context7')).state, 'connected');
+});

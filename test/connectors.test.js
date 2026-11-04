@@ -9,7 +9,7 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'github', 'mslearn']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'github', 'mslearn', 'context7']);
 });
 
 test('PLANNED has the six ids in order', () => {
@@ -64,4 +64,13 @@ test('entryFor github and mslearn point at the loopback relay with the key', () 
       kind: 'http', url: `http://127.0.0.1:8080/mcp/${id}`, headers: { 'X-VaultOS-Key': 'k' },
     });
   }
+});
+
+test('context7 is relayed, takes a pasted key, and points agents at the loopback relay', () => {
+  assert.deepEqual(CONNECTORS.context7, {
+    id: 'context7', label: 'Context7', by: 'Current docs for code libraries', kind: 'relayed', signIn: ['token'],
+    base: 'https://mcp.context7.com', mcpPath: '/mcp', tokenHelp: 'https://context7.com/dashboard',
+  });
+  assert.equal(baseFor('context7', { CONNECTOR_UPSTREAM_CONTEXT7: 'http://127.0.0.1:3' }), 'http://127.0.0.1:3');
+  assert.deepEqual(entryFor('context7', { port: 7684, key: 'k' }), { kind: 'http', url: 'http://127.0.0.1:7684/mcp/context7', headers: { 'X-VaultOS-Key': 'k' } });
 });

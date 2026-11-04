@@ -307,3 +307,51 @@ test('entra buttons hit enable and disconnect', async () => {
   assert.deepEqual(calls.filter((c) => c[0] === 'POST'), [['POST', '/api/connectors/entra/enable'], ['POST', '/api/connectors/entra/disconnect']]);
   pane.stop();
 });
+
+// ----- Context7 -----
+const C7 = { id: 'context7', label: 'Context7', by: 'Current docs for code libraries', state: 'not-connected', tokenHelp: 'https://context7.com/dashboard', agents: [] };
+const withC7 = (over) => ({ connectors: [...FOUR, { ...C7, ...over }], planned: PLANNED5 });
+
+test('context7 not connected shows the key card, a password input and the dashboard link', () => {
+  const html = C.paneHtml({ view: withC7({}), picked: 'context7' });
+  assert.match(html, /Paste a Context7 API key/);
+  assert.match(html, /<label for="cx-c7-key">API key<\/label>/);
+  assert.match(html, /id="cx-c7-key"[^>]*type="password"/);
+  assert.match(html, /data-act="c7-token"[^>]*>Save key</);
+  assert.match(html, /href="https:\/\/context7\.com\/dashboard"[^>]*>Get a key</);
+  assert.doesNotMatch(html, /cx-gh-token/);
+});
+
+test('context7 connected shows the tool count, Replace key and the sign-out note; replacing shows the card', () => {
+  const row = { state: 'connected', method: 'token', lastTest: { ok: true, tools: 2, at: new Date().toISOString() }, agents: [{ id: 'claude', label: 'Claude Code', chip: 'Added' }] };
+  const html = C.paneHtml({ view: withC7(row), picked: 'context7' });
+  assert.match(html, /Connected with an API key/);
+  assert.match(html, /Context7 answered with 2 tools/);
+  assert.match(html, /data-act="c7-replace"[^>]*>Replace key</);
+  assert.match(html, /Signing out here doesn't delete the key on Context7\./);
+  const replacing = C.paneHtml({ view: withC7(row), picked: 'context7', options: { context7: true } });
+  assert.match(replacing, /data-act="c7-keep"[^>]*>Keep my current key</);
+});
+
+test('context7 needs-sign-in says the key stopped working', () => {
+  const html = C.paneHtml({ view: withC7({ state: 'needs-sign-in' }), picked: 'context7' });
+  assert.match(html, /Context7 no longer accepts your key\. Paste a new one\./);
+  assert.match(html, /data-act="test"/);
+});
+
+test('context7 save posts the trimmed key; Enter in the field saves too; an empty field is refused', async () => {
+  const calls = [];
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const ui = { api: async (m, u, b) => { calls.push([m, u, b]); return m === 'GET' ? withC7({}) : {}; } };
+  const pane = C.mountConnectors(el, ui);
+  await pane.refresh();
+  await els.click({ target: { closest: (s) => (s === '.cx-ready .ap-tile' ? { dataset: { id: 'context7' } } : null) } });
+  await els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'c7-token' } } : null) } });
+  assert.equal(calls.filter((c) => c[0] === 'POST').length, 0);
+  assert.match(el.innerHTML, /Paste the Context7 API key first\./);
+  els.input({ target: { id: 'cx-c7-key', value: '  ctx7sk-abc\n' } });
+  await els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'c7-token' } } : null) } });
+  assert.deepEqual(calls.find((c) => c[0] === 'POST'), ['POST', '/api/connectors/context7/token', { token: 'ctx7sk-abc' }]);
+  pane.stop();
+});

@@ -43,3 +43,12 @@ test('github and mslearn connector marks are single-colour 24px and distinct', (
   assert.notEqual(all[2], AgentMarks.connector('nope'));
   assert.notEqual(all[3], AgentMarks.connector('nope'));
 });
+
+test('the context7 mark is single-colour 24px and differs from the other connector marks', () => {
+  const s = AgentMarks.connector('context7');
+  assert.match(s, /^<svg [^>]*viewBox="0 0 24 24"/);
+  assert.match(s, /currentColor/);
+  assert.doesNotMatch(s, /<script|\son\w+=|#[0-9a-f]{3,6}\b|url\(/i);
+  const others = ['atlassian', 'azure', 'entra', 'github', 'mslearn', 'nope'].map((id) => AgentMarks.connector(id));
+  assert.ok(!others.includes(s));
+});
