@@ -248,7 +248,7 @@ function treeRows(dir, depth, out) {
   for (const it of FX.tree.get(dir) || []) {
     const open = it.dir && FX.expanded.has(it.path);
     out.push(`<div class="fx-row${it.dir ? ' dir' : ''}${it.path === FX.active ? ' active' : ''}${open ? ' open' : ''}"`
-      + ` role="treeitem" tabindex="-1" data-path="${esc(it.path)}"${it.dir ? ' data-dir="1"' : ''}`
+      + ` role="treeitem" tabindex="-1" draggable="true" data-path="${esc(it.path)}"${it.dir ? ' data-dir="1"' : ''}`
       + (it.dir ? ` aria-expanded="${open}"` : '')
       + ` style="--depth:${depth}" title="${esc(it.path)}">`
       + `<span class="fx-caret">${it.dir ? FX_ICONS.caret : ''}</span>`
@@ -269,7 +269,7 @@ function renderTree() {
     $('fx-tree-title').textContent = FX.found.total > FX.found.items.length
       ? `${FX.found.items.length} of ${FX.found.total} matches` : `${FX.found.total} match${FX.found.total === 1 ? '' : 'es'}`;
     el.innerHTML = FX.found.items.length ? FX.found.items.map((it) =>
-      `<div class="fx-row fx-hit${it.dir ? ' dir' : ''}${it.path === FX.active ? ' active' : ''}" role="treeitem" tabindex="-1"`
+      `<div class="fx-row fx-hit${it.dir ? ' dir' : ''}${it.path === FX.active ? ' active' : ''}" role="treeitem" tabindex="-1" draggable="true"`
       + ` data-path="${esc(it.path)}"${it.dir ? ' data-dir="1"' : ''} style="--depth:0" title="${esc(it.path)}">`
       + `<span class="fx-ico">${it.dir ? FX_ICONS.folder : fileIcon(it.kind)}</span>`
       + `<span class="fx-name">${esc(it.name)}<small>${esc(dirOf(it.path))}</small></span></div>`).join('')
@@ -824,6 +824,8 @@ function fxRenameStart(p, isDir) {
     return;
   }
   if (cell.querySelector('.fx-rename-input')) return;
+  const row = cell.closest('.fx-row');
+  if (row) row.draggable = false; // selecting text in the box must not start a move
   const saved = cell.innerHTML;
   const input = document.createElement('input');
   input.type = 'text';
@@ -839,6 +841,7 @@ function fxRenameStart(p, isDir) {
     done = true;
     const name = input.value.trim();
     cell.innerHTML = saved;
+    if (row) row.draggable = true;
     if (go && name && name !== old) fxRename(p, name);
   };
   for (const ev of ['click', 'dblclick', 'pointerdown', 'contextmenu']) input.addEventListener(ev, (e) => e.stopPropagation());
@@ -862,6 +865,21 @@ async function fxRename(p, name) {
   catch (err) { toast(err.message); return; }
   await fxRenamed(p, r.path);
   toast(`Renamed to ${r.name}. Links to the old name in other notes are not updated.`);
+}
+
+// Drag a tree row onto a folder: the server keeps the name and refuses the names VaultOS reads, a name taken in the
+// target folder, and a folder dropped into itself.
+async function fxMove(p, folder) {
+  const open = FX.tabs.map((t) => t.path).filter((x) => underPath(x, p));
+  const unsaved = open.find((x) => TextEdit.isDirty(x) || (window.SheetFiles && SheetFiles.isDirty(x)));
+  if (unsaved) { toast(`Save or discard your changes to ${baseOf(unsaved)} first`); return; }
+  let r;
+  try { r = await api('/api/fs/move', { method: 'POST', body: JSON.stringify({ path: p, to: folder }) }); }
+  catch (err) { toast(err.message); return; }
+  await fxLoadDir(dirOf(p)).catch(() => {}); // the folder it left
+  if (folder) { FX.expanded.add(folder); FX.tree.delete(folder); }
+  await fxRenamed(p, r.path);
+  toast(`Moved ${r.name} to ${folder || 'the vault root'}. Links to it in other notes are not updated.`);
 }
 
 // Point everything that remembered the old path (tabs, cached files, views, open folders) at the new one.
@@ -1015,7 +1033,11 @@ async function fxUpload(folder, items) {
 }
 
 // --- Drag and drop ---
+// Files dragged in from the desktop upload; a tree row dragged onto a folder moves (FX_MOVING is the row's path).
 const isFileDrag = (e) => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+const FX_MOVE_TYPE = 'application/x-vaultos-path';
+let FX_MOVING = null;
+const isMoveDrag = (e) => !!FX_MOVING && !!e.dataTransfer && [...e.dataTransfer.types].includes(FX_MOVE_TYPE);
 let FX_DROP_EL = null;
 let FX_DROP_T = null;
 let FX_DROP_HOVER = null;
@@ -1032,8 +1054,35 @@ function fxDropMark(el, folder) {
     FX_DROP_EL = el;
     if (el) el.classList.add('fx-drop');
   }
-  $('files-view').dataset.dropHint = folder == null ? '' : `Drop to upload into ${folder || 'the vault root'}`;
+  $('files-view').dataset.dropHint = folder == null ? '' : `Drop to ${FX_MOVING ? 'move' : 'upload'} into ${folder || 'the vault root'}`;
 }
+// Where a moved row would land: the folder row under the pointer, a file row's folder, or the root for the
+// tree's empty space. null where it can't go: its own folder, or (for a folder) itself or anything inside it.
+function fxMoveTarget(e) {
+  if (!e.target.closest('#fx-tree')) return null;
+  const row = e.target.closest('#fx-tree .fx-row[data-path]');
+  const folder = !row ? '' : row.dataset.dir ? row.dataset.path : dirOf(row.dataset.path);
+  if (folder === dirOf(FX_MOVING) || underPath(folder, FX_MOVING)) return null;
+  return { el: row && row.dataset.dir ? row : null, folder, row };
+}
+// Spring-load: hovering a closed folder opens it after 700ms.
+function fxSpring(t) {
+  const dirRow = t && t.row && t.row.dataset.dir && !FX.expanded.has(t.row.dataset.path) ? t.row.dataset.path : null;
+  if (dirRow !== FX_DROP_HOVER) {
+    clearTimeout(FX_DROP_T);
+    FX_DROP_HOVER = dirRow;
+    if (dirRow) FX_DROP_T = setTimeout(() => fxToggleDir(dirRow, true), 700);
+  }
+}
+$('fx-tree').addEventListener('dragstart', (e) => {
+  const row = e.target.closest && e.target.closest('.fx-row[data-path]');
+  if (!row || !row.draggable) return;
+  FX_MOVING = row.dataset.path;
+  e.dataTransfer.setData(FX_MOVE_TYPE, FX_MOVING);
+  e.dataTransfer.setData('text/plain', FX_MOVING);
+  e.dataTransfer.effectAllowed = 'move';
+});
+$('fx-tree').addEventListener('dragend', () => { FX_MOVING = null; fxDropClear(); });
 function fxDropClear() {
   fxDropMark(null, null);
   clearTimeout(FX_DROP_T);
@@ -1041,6 +1090,16 @@ function fxDropClear() {
   $('files-view').classList.remove('fx-dragging');
 }
 $('files-view').addEventListener('dragover', (e) => {
+  if (isMoveDrag(e)) {
+    const t = fxMoveTarget(e);
+    fxSpring(t);
+    if (!t) { e.dataTransfer.dropEffect = 'none'; fxDropMark(null, null); return; }
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    $('files-view').classList.add('fx-dragging');
+    fxDropMark(t.el || $('fx-tree').querySelector(`.fx-row[data-dir][data-path="${CSS.escape(t.folder)}"]`) || $('fx-tree'), t.folder);
+    return;
+  }
   if (!isFileDrag(e)) return;
   const t = fxDropTarget(e);
   if (!t) { e.dataTransfer.dropEffect = 'none'; fxDropMark(null, null); return; }
@@ -1050,18 +1109,22 @@ $('files-view').addEventListener('dragover', (e) => {
   // A file row highlights its parent folder's row when that's on screen.
   const el = t.el || $('fx-tree').querySelector(`.fx-row[data-dir][data-path="${CSS.escape(t.folder)}"]`) || $('fx-tree');
   fxDropMark(el, t.folder);
-  // Spring-load: hovering a closed folder opens it after 700ms.
-  const dirRow = t.row && t.row.dataset.dir && !FX.expanded.has(t.row.dataset.path) ? t.row.dataset.path : null;
-  if (dirRow !== FX_DROP_HOVER) {
-    clearTimeout(FX_DROP_T);
-    FX_DROP_HOVER = dirRow;
-    if (dirRow) FX_DROP_T = setTimeout(() => fxToggleDir(dirRow, true), 700);
-  }
+  fxSpring(t);
 });
 $('files-view').addEventListener('dragleave', (e) => {
   if (!e.relatedTarget || !$('files-view').contains(e.relatedTarget)) fxDropClear();
 });
 $('files-view').addEventListener('drop', (e) => {
+  if (isMoveDrag(e)) {
+    const t = fxMoveTarget(e);
+    const from = FX_MOVING;
+    FX_MOVING = null;
+    fxDropClear();
+    if (!t) return;
+    e.preventDefault();
+    fxMove(from, t.folder);
+    return;
+  }
   if (!isFileDrag(e)) return;
   const t = fxDropTarget(e);
   fxDropClear();

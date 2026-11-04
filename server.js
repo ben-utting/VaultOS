@@ -2969,7 +2969,7 @@ app.post('/api/fs/text/restore', async (req, res) => {
 });
 
 // ---- Rename in Files ----
-// A rename stays in the same folder (no moves). VaultOS finds jobs and the Board by name, so the names it reads
+// A rename stays in the same folder (moving is /api/fs/move). VaultOS finds jobs and the Board by name, so the names it reads
 // are protected: task.md, article.md and Board.md, a `_tasks` folder and anything inside one, and each board's own
 // top-level folder. Links to the old name in other notes are not rewritten.
 const RENAME_PROTECTED_FILES = new Set(['task.md', 'article.md', 'board.md']);
@@ -2995,23 +2995,41 @@ function renameName(raw) {
   return name;
 }
 
+// The file or folder a rename or move acts on: inside the vault, not the vault itself, not a name VaultOS reads.
+async function fsSource(raw, verb) {
+  if (typeof raw !== 'string' || !raw) throw sheetFail(400, 'Missing path');
+  let full;
+  try {
+    full = await safeVaultPath(raw);
+  } catch (err) {
+    if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) throw sheetFail(404, 'Not found');
+    throw sheetFail(400, err && !err.code ? err.message : 'Path not allowed');
+  }
+  if (full === VAULT_DIR) throw sheetFail(400, `The vault itself cannot be ${verb}.`);
+  const rel = relOf(full);
+  const info = await fsp.lstat(full);
+  const refusal = renameRefusal(rel, info.isDirectory());
+  if (refusal) throw sheetFail(422, verb === 'renamed' ? refusal : refusal.replace(/renamed/g, verb));
+  return { full, rel, info };
+}
+
+// The previous-version backups are filed under the old path: move them with the file (best effort).
+async function moveBackups(rel, newRel) {
+  try {
+    const bakRoot = process.env.SHEET_BACKUP_DIR || path.join(DATA_DIR, 'sheet-backups');
+    const from = path.join(bakRoot, ...rel.split('/'));
+    const to = path.join(bakRoot, ...newRel.split('/'));
+    await fsp.stat(from);
+    await fsp.mkdir(path.dirname(to), { recursive: true });
+    await fsp.rename(from, to);
+  } catch { /* no backup, or it could not move: the file itself has moved */ }
+}
+
 app.post('/api/fs/rename', async (req, res) => {
   try {
     const body = req.body || {};
-    if (typeof body.path !== 'string' || !body.path) throw sheetFail(400, 'Missing path');
+    const { full, rel, info } = await fsSource(body.path, 'renamed');
     const name = renameName(body.name);
-    let full;
-    try {
-      full = await safeVaultPath(body.path);
-    } catch (err) {
-      if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) throw sheetFail(404, 'Not found');
-      throw sheetFail(400, err && !err.code ? err.message : 'Path not allowed');
-    }
-    if (full === VAULT_DIR) throw sheetFail(400, 'The vault itself cannot be renamed.');
-    const rel = relOf(full);
-    const info = await fsp.lstat(full);
-    const refusal = renameRefusal(rel, info.isDirectory());
-    if (refusal) throw sheetFail(422, refusal);
     if (name === path.basename(full)) throw sheetFail(400, 'That is already its name.');
     const dest = path.join(path.dirname(full), name);
     const newRel = relOf(dest);
@@ -3025,14 +3043,43 @@ app.post('/api/fs/rename', async (req, res) => {
       }
       await fsp.rename(full, dest);
     });
-    // The previous-version backups are filed under the old path: move them with the file (best effort).
+    await moveBackups(rel, newRel);
+    res.json({ path: newRel, oldPath: rel, name, dir: info.isDirectory() });
+  } catch (err) {
+    sheetError(res, err);
+  }
+});
+
+// ---- Move in Files (drag a row onto a folder) ----
+// The same names are protected as for a rename, and nothing can be moved into a `_tasks` folder or into itself.
+// The name is kept; one that is taken in the target folder is refused. Links in other notes are not rewritten.
+app.post('/api/fs/move', async (req, res) => {
+  try {
+    const body = req.body || {};
+    const { full, rel, info } = await fsSource(body.path, 'moved');
+    if (typeof body.to !== 'string') throw sheetFail(400, 'Missing folder');
+    let folder;
     try {
-      const bakRoot = process.env.SHEET_BACKUP_DIR || path.join(DATA_DIR, 'sheet-backups');
-      const from = path.join(bakRoot, ...rel.split('/'));
-      const to = path.join(bakRoot, ...newRel.split('/'));
-      await fsp.stat(from);
-      await fsp.rename(from, to);
-    } catch { /* no backup, or it could not move: the file itself has been renamed */ }
+      folder = await safeVaultPath(body.to);
+    } catch (err) {
+      if (err && (err.code === 'ENOENT' || err.code === 'ENOTDIR')) throw sheetFail(404, 'That folder no longer exists.');
+      throw sheetFail(400, err && !err.code ? err.message : 'Path not allowed');
+    }
+    const fstat = await fsp.stat(folder);
+    if (!fstat.isDirectory()) throw sheetFail(400, 'Drop it on a folder.');
+    const toRel = folder === VAULT_DIR ? '' : relOf(folder);
+    if (toRel.split('/').some((x) => x.toLowerCase() === '_tasks')) throw sheetFail(422, 'The _tasks folder is read by name, so nothing can be moved into it.');
+    if (path.dirname(full) === folder) throw sheetFail(400, 'It is already in that folder.');
+    if (info.isDirectory() && (folder === full || folder.startsWith(full + path.sep))) throw sheetFail(400, 'A folder cannot be moved into itself.');
+    const name = path.basename(full);
+    const dest = path.join(folder, name);
+    const newRel = relOf(dest);
+    const { store } = sheetLib();
+    await store.withLock(full, async () => {
+      if (await fsp.lstat(dest).catch(() => null)) throw sheetFail(409, `There is already a file or folder named ${name} in ${toRel || 'the vault root'}.`);
+      await fsp.rename(full, dest);
+    });
+    await moveBackups(rel, newRel);
     res.json({ path: newRel, oldPath: rel, name, dir: info.isDirectory() });
   } catch (err) {
     sheetError(res, err);
