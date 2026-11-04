@@ -1942,6 +1942,14 @@ body.dock-open .kb-layout { height: calc(100dvh - var(--header-h) - var(--dock-s
 body.dock-open .drawer { bottom: var(--dock-space); }
 #termbtn.on { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, transparent); }
 
+/* ---------- A file in its own browser tab (/?view=…, FX_SOLO in workbench.js) ---------- */
+/* Only the file's bar and its viewer: no header, phone nav, terminal dock, tree or tab strip. */
+body.fx-solo header, body.fx-solo .mobile-nav, body.fx-solo #term-dock,
+body.fx-solo .fx-side, body.fx-solo .fx-scrim, body.fx-solo .fx-tabs-row { display: none !important; }
+html body.fx-solo, html body.fx-solo.dock-open { --header-h: 0px; --dock-space: 0px; --mnav-h: 0px; }
+body.fx-solo .fx-layout { grid-template-columns: minmax(0, 1fr); }
+body.fx-solo .fx-crumb { cursor: default; }
+
 /* ---------- Files layout ---------- */
 .fx-layout {
   position: relative;

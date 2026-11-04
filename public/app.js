@@ -2665,6 +2665,9 @@ async function start({ restore = false } = {}) {
   await loadWorkspaces();
   await importLocalReads();   // before the first KB load, so it shows the imported history
   await load();
+  // A file in its own browser tab (/?view=, workbench.js FX_SOLO): Files mode and that file, nothing else. No
+  // Today, no Morning read card, no restoring the last mode.
+  if (FX_SOLO) { setMode('files'); return; }
   if (todayOn()) Today.init();
   if (!(restore && restoreAfterReload())) setMode(homeMode());
   // The home-screen shortcut "New thought" lands on /?capture=1: open the box, then drop the parameter so a

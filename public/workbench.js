@@ -16,14 +16,21 @@ const FX_KEYS = {
 function lsGet(k, fb) { try { const v = localStorage.getItem(k); return v == null ? fb : JSON.parse(v); } catch { return fb; } }
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } }
 
+// A file in its own browser tab (right-click → Open in new browser tab) lands on /?view=<path>: that file's viewer
+// and its bar, nothing else (body.fx-solo hides the header, tree, tabs and dock). Its one tab is never saved: the
+// tab list lives in localStorage, which every VaultOS tab in this browser shares, so saving it would overwrite the
+// main window's tabs. app.js start() puts it straight into Files mode.
+const FX_SOLO = (() => { try { return new URLSearchParams(location.search).get('view') || null; } catch { return null; } })();
+if (FX_SOLO) document.body.classList.add('fx-solo');
+
 const FX = {
   loaded: false,
   rootState: 'loading',                              // the vault's top folder: 'loading' | 'ok' | 'error' (first load only)
   recentState: 'loading',                            // "Changed recently": 'loading' | 'ok' | 'error' (first load and its Retry)
   tree: new Map(),                                   // dir path ('' = root) -> items
   expanded: new Set(lsGet(FX_KEYS.expanded, [])),
-  tabs: lsGet(FX_KEYS.tabs, []),                     // [{ path, pinned }]
-  active: lsGet(FX_KEYS.active, null),
+  tabs: FX_SOLO ? [{ path: FX_SOLO, pinned: true }] : lsGet(FX_KEYS.tabs, []),   // [{ path, pinned }]
+  active: FX_SOLO || lsGet(FX_KEYS.active, null),
   views: lsGet(FX_KEYS.views, {}),                   // path -> 'rendered' | 'source'
   files: new Map(),                                  // path -> payload from /api/fs/file
   changed: new Set(),                                // open tabs whose file changed while in the background
@@ -53,6 +60,7 @@ const FX_ICONS = {
   rename: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
   upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
   sheet: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>'),
+  newtab: svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
   history: svg('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>'),
 };
 
@@ -66,6 +74,7 @@ function ago(ms) {
   return `${Math.round(s / 86400)}d ago`;
 }
 function saveTabs() {
+  if (FX_SOLO) return;   // see FX_SOLO: the main window's tabs are not ours to overwrite
   lsSet(FX_KEYS.tabs, FX.tabs);
   lsSet(FX_KEYS.active, FX.active);
 }
@@ -377,6 +386,13 @@ function fxClearSearch() {
 // opening from a path you clicked in the terminal or the drawer — pins it.
 function fxOpen(p, { pin = false, reveal = false } = {}) {
   if (STATE.mode !== 'files') setMode('files');
+  // A file in its own browser tab holds one file: a link (or a search hit) swaps it for the new one, asking first
+  // if it has unsaved edits. renderTabs() then points the URL and the title at the new file.
+  if (FX_SOLO && FX.active && FX.active !== p) {
+    fxClose(FX.active);
+    if (FX.tabs.length) return Promise.resolve();   // unsaved edits, and the answer was to keep them
+    pin = true;
+  }
   let tab = FX.tabs.find((t) => t.path === p);
   if (!tab) {
     let previewIdx = FX.tabs.findIndex((t) => !t.pinned);
@@ -445,7 +461,18 @@ function renderTabs() {
   }).join('');
   const act = el.querySelector('.fx-tab.active');
   if (act) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (FX_SOLO) fxSoloSync();
 }
+// The address and the browser tab's title follow the file shown (a link, a rename), so a reload or a bookmark
+// opens the same file and several of these tabs can be told apart.
+function fxSoloSync() {
+  const p = FX.active;
+  document.title = p ? `${baseOf(p)} · VaultOS` : 'VaultOS';
+  if (p && new URLSearchParams(location.search).get('view') !== p) {
+    history.replaceState(null, '', fxSoloUrl(p) + location.hash);
+  }
+}
+const fxSoloUrl = (p) => location.pathname + '?view=' + encodeURIComponent(p);
 function fxKindOf(p) {
   const f = FX.files.get(p);
   if (f) return f.kind;
@@ -565,11 +592,11 @@ function renderView({ keepScroll = false } = {}) {
     ${TextEdit.barHtml(p, f, mode)}
     <button type="button" class="ghost fx-bar-btn fx-sheet-btn" id="fx-more" aria-label="More file actions" aria-controls="fx-more-menu" title="Show in the tree, copy, download, terminal, refresh">${FX_ICONS.more}<span class="fx-sheet-label">More</span></button>
     <div id="fx-more-menu" class="fx-menu more-menu hidden" role="menu" aria-label="File actions">
-      <button type="button" role="menuitem" id="fx-locate" title="Show this file in the tree">${FX_ICONS.locate}Show in the tree</button>
+      ${FX_SOLO ? '' : `<button type="button" role="menuitem" id="fx-locate" title="Show this file in the tree">${FX_ICONS.locate}Show in the tree</button>`}
       ${f.source != null ? `<button type="button" role="menuitem" id="fx-copyall" title="Copy the whole file (or Ctrl+A in the file, then Ctrl+C)">${ICONS.copy}Copy file</button>` : ''}
       <button type="button" role="menuitem" id="fx-copy" title="Copy the file's path in the vault">${FX_ICONS.link}Copy vault path</button>
       <button type="button" role="menuitem" id="fx-download" title="Download this file">${FX_ICONS.download}Download</button>
-      ${termOn() ? `<button type="button" role="menuitem" id="fx-term" title="Open the terminal in this folder">${FX_ICONS.terminal}Terminal here</button>` : ''}
+      ${termOn() && !FX_SOLO ? `<button type="button" role="menuitem" id="fx-term" title="Open the terminal in this folder">${FX_ICONS.terminal}Terminal here</button>` : ''}
       <button type="button" role="menuitem" id="fx-reload" title="Re-read from disk">${FX_ICONS.refresh}Refresh file</button>
     </div>`;
   fxMoreAttach();
@@ -686,6 +713,7 @@ $('fx-bar').addEventListener('click', (e) => {
   const p = FX.active;
   if (!p) return;
   const crumb = e.target.closest('.fx-crumb');
+  if (crumb && FX_SOLO) return;   // no tree to show the folder in
   if (crumb) {
     fxClearSearch();
     fxReveal(crumb.dataset.dir, { self: true });
@@ -763,6 +791,7 @@ function fxMenuOpen(x, y, target) {
       + item('copy', FX_ICONS.link, 'Copy vault path')
       + term
     : item('open', FX_ICONS.md, 'Open')
+      + item('newtab', FX_ICONS.newtab, 'Open in new browser tab')
       + item('rename', FX_ICONS.rename, 'Rename…')
       + item('download', FX_ICONS.download, 'Download')
       + item('copy', FX_ICONS.link, 'Copy vault path')
@@ -790,6 +819,7 @@ fxMenu.addEventListener('click', (e) => {
   fxMenuClose();
   const folder = t.dir ? t.path : dirOf(t.path);
   if (b.dataset.act === 'open') fxOpen(t.path, { pin: true });
+  else if (b.dataset.act === 'newtab') window.open(fxSoloUrl(t.path), '_blank', 'noopener');
   else if (b.dataset.act === 'download') fxDownload(t.path);
   else if (b.dataset.act === 'copy') copyText(t.path).then(() => toast('Copied ' + t.path));
   else if (b.dataset.act === 'term') termOpen({ cwd: folder });
