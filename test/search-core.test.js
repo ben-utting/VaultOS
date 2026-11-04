@@ -14,6 +14,11 @@ test('keyIntent: second Ctrl+F in the panel hands back to the browser; Ctrl+K st
   assert.equal(k({ key: 'k', panelOpen: true, inPanel: true }), null);
   assert.equal(k({ key: 'k' }), 'open');
 });
+test('keyIntent: with a document on screen Ctrl+F is the browser\'s find, Ctrl+K still opens', () => {
+  assert.equal(k({ inDoc: true }), null);
+  assert.equal(k({ key: 'k', inDoc: true }), 'open');
+  assert.equal(k({ isMac: true, ctrlKey: false, metaKey: true, inDoc: true }), null);
+});
 test('keyIntent: Mac uses the meta key', () => {
   assert.equal(k({ isMac: true, ctrlKey: false, metaKey: true }), 'open');
   assert.equal(k({ isMac: true }), null);

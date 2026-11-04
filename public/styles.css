@@ -333,7 +333,8 @@ header button#search-btn { display: none; }
   font: inherit; font-size: var(--t-xs); color: var(--muted); padding: 0 5px;
   border: 1px solid var(--line); border-radius: var(--radius-sm); line-height: 1.5;
 }
-.ss-keys { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--t-sm); }
+.ss-keys { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); font-size: var(--t-sm); }
+.ss-keys-note { flex-basis: 100%; }
 header #search-chip {
   flex: 0 1 auto; min-width: 0; max-width: 22ch; display: inline-flex; align-items: stretch;
   border: 1px solid var(--line); border-radius: var(--radius-md); font-size: var(--t-sm);

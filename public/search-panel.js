@@ -346,6 +346,9 @@ const SearchPanel = (() => {
   // the text editor, a sheet cell editor or any other text field the key is theirs (SearchCore.keyIntent).
   // Overlays that sit above the panel own the key: the document and diagram viewers, Settings, the sign-in screen,
   // the Morning read card, and a terminal's shortcut sheet or terminal picker.
+  // A file open in Files (rendered or source view, both plain HTML) leaves Ctrl+F to the browser's find, so it can
+  // search the page; Ctrl+K still opens the panel there.
+  const docOnScreen = () => STATE.mode === 'files' && !!document.querySelector('#fx-view .fx-md, #fx-view .fx-source');
   const overlayAbove = () => !!(DGV || DOCV) || sheetOpen() || $('app').classList.contains('hidden')
     || !$('km-card').classList.contains('hidden') || !!document.querySelector('.tw-sheet, .tw-pick');
   document.addEventListener('keydown', (e) => {
@@ -357,6 +360,7 @@ const SearchPanel = (() => {
       panelOpen: S.open, inPanel,
       inEditable: !inPanel && !!(t && (t.isContentEditable || t.closest('input, textarea, select'))),
       inTerminal: !!(t && t.closest('.xterm')),
+      inDoc: !inPanel && docOnScreen(),
     });
     // Holding the keys down: the first press acted; the repeats must not flicker the panel shut and open again.
     if (e.repeat) { if (intent === 'open' || intent === 'close-to-browser') e.preventDefault(); return; }

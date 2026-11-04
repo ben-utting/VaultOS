@@ -18,13 +18,15 @@
   const GROUPS = [['task', 'Tasks'], ['article', 'Articles'], ['note', 'Notes'], ['file', 'Files']];
 
   // Ctrl+F / Ctrl+K (Cmd on a Mac) open; a second Ctrl+F inside the open panel gives the key back to the browser.
-  function keyIntent({ key, ctrlKey, metaKey, shiftKey, altKey, isMac, panelOpen, inPanel, inEditable, inTerminal } = {}) {
+  // With a document on screen (inDoc: a file open in Files), Ctrl+F is the browser's find; Ctrl+K still opens.
+  function keyIntent({ key, ctrlKey, metaKey, shiftKey, altKey, isMac, panelOpen, inPanel, inEditable, inTerminal, inDoc } = {}) {
     if (shiftKey || altKey) return null;
     if (!(isMac ? metaKey : ctrlKey)) return null;
     const kk = String(key || '').toLowerCase();
     if (kk !== 'f' && kk !== 'k') return null;
     if (panelOpen) return kk === 'f' && inPanel ? 'close-to-browser' : null;
     if (inTerminal || inEditable) return null;
+    if (inDoc && kk === 'f') return null;
     return 'open';
   }
 
