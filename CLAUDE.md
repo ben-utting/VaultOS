@@ -375,6 +375,18 @@ parts of `server.js`, and `public/connectors.js` (the pane).
   shared full-rights login, so an agent that can run shell commands can still use `az` (R21; the pane says
   so). The server is pinned (`@azure/mcp@4.0.0-beta.3`, the version whose `--read-only` was checked). Install is about 900 MB (`@azure/mcp` plus a venv with `azure-cli`): check
   `df -h /` first. Sign-in is `az login --use-device-code`; the device page is `login.microsoft.com/device`.
+- **Azure DevOps is local too, and rides the Azure sign-in** (added 2026-11-04, `lib/connector-ado.js`,
+  `lib/ado-mcp.js`). Microsoft's `@azure-devops/mcp` (pinned 2.11.0, installed with the pane's Install button into
+  `~/.local`, about 150 MB) runs with `--authentication azcli`, so it uses `az`'s login and has no sign-in of its own;
+  turning it on needs Azure connected and an organization (`POST /api/connectors/azuredevops/enable {org}`, a name or a
+  pasted `dev.azure.com/<org>` address). The org is checked by starting the server and listing projects before it is
+  saved. The agent entry runs `node /app/lib/ado-mcp.js --server ~/.local/bin/mcp-server-azuredevops --org <org>`.
+  Microsoft's server has no read-only mode, so the wrapper is it: without `--allow-changes` (the pane's own switch,
+  `POST /api/connectors/azuredevops/settings`, separate from Azure's) it drops every tool not on `READ` from
+  `tools/list` and answers a call to one itself, plus `wit_backlog` `reorder`. A tool a later version adds is hidden
+  until it is added to `READ`. 2.11.0 has 44 tools: 28 read, 16 change things. Everything else passes through
+  untouched (the server's project-picker prompts included). Azure signing out takes it off the agents and keeps the
+  organization. The same shell caveat as Azure applies.
 - **Relay rules.**
   - **Loopback only, key required.** Wrong or missing key, or a peer that isn't loopback: `403`,
     nothing forwarded, and the key header is never sent upstream. It runs before the JSON parser and is

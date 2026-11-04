@@ -298,10 +298,53 @@
       + `<div class="ap-btns">${btn('test', 'Test again')}${btn('en-off', 'Turn off')}</div>${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody };
+  // Azure DevOps: Microsoft's server, started for each agent, signed in with the Azure connector's az login.
+  const ADO_ALLOW_NOTE = 'Off, agents can read work items, repos, pipelines and the wiki but not change them. On, they can also create and edit work items, push files, open and update pull requests and run pipelines. Agents that can run shell commands can still use az with this sign-in. Applies to agents you start after changing it.';
+
+  function adoOrgCard(c, st, replacing) {
+    const val = st.adoOrg != null ? st.adoOrg : (c.org || '');
+    return '<div class="cx-opts"><div class="cx-opt main"><h5>Your organization</h5>'
+      + '<p>The name after dev.azure.com/ in your organization\'s address. You can paste the whole address. VaultOS starts Azure DevOps once to check it before saving.</p>'
+      + '<div class="su-field"><label for="cx-ado-org">Organization</label>'
+      + `<input id="cx-ado-org" class="su-input" type="text" autocomplete="off" spellcheck="false" placeholder="your-organization" value="${esc(val)}"></div>`
+      + `<div class="ap-btns">${btn('ado-on', replacing ? 'Save' : 'Turn on', ' primary')}${replacing ? btn('ado-keep', 'Keep ' + (c.org || 'the current one')) : ''}</div>${errP(st, 'ado')}</div></div>`;
+  }
+
+  function adoBody(c, st, now) {
+    const intro = "<li>Work items, repos, pull requests, pipelines and the wiki, through Microsoft's Azure DevOps tools. It uses your Azure sign-in, so there is nothing else to sign in to.</li>";
+    if (c.state === 'not-installed') {
+      return `<ul class="ap-facts">${intro}<li>The install takes about 150 MB in VaultOS's home folder.</li></ul>`
+        + (c.install ? `<p class="ap-cmd"><span aria-hidden="true">$ </span>${esc(c.install)}</p>` : '')
+        + `<div class="ap-btns">${st.canTerm !== false ? btn('install', 'Install', ' primary') : ''}</div>${errP(st, 'ado')}`;
+    }
+    const on = c.state === 'connected' || c.state === 'error';
+    if (!on) {
+      if (c.needsAzure) {
+        return `<ul class="ap-facts">${intro}<li>Connect Azure first. Azure DevOps uses the same sign-in.</li></ul>`
+          + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '');
+      }
+      return `<ul class="ap-facts">${intro}</ul>`
+        + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+        + adoOrgCard(c, st, false);
+    }
+    if (st.options.azuredevops) return `<ul class="ap-facts">${intro}</ul>${adoOrgCard(c, st, true)}`;
+    const t = c.lastTest;
+    const found = t && t.ok ? `: ${t.tools} tools${typeof t.projects === 'number' ? `, ${t.projects} project${t.projects === 1 ? '' : 's'}` : ''}` : '';
+    const tested = t ? (t.ok ? `Tested ${ago(t.at, now)}${found}` : `Tested ${ago(t.at, now)}: it didn't answer`) : '';
+    return `<ul class="ap-facts"><li>${esc(`Organization: ${c.org || ''}`)}</li>${tested ? `<li>${esc(tested)}</li>` : ''}`
+      + `<li>${c.allowChanges ? 'Agents can make changes.' : 'Read-only: agents can look things up but not change them.'}</li></ul>`
+      + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+      + '<div class="su-row cx-switchrow"><div class="su-row-t"><label for="cx-ado-allow" class="su-label">Allow changes</label>'
+      + `<span class="su-hint">${esc(ADO_ALLOW_NOTE)}</span></div>`
+      + `<input type="checkbox" id="cx-ado-allow" class="su-switch" role="switch"${c.allowChanges ? ' checked' : ''}></div>`
+      + agentRowsHtml(c)
+      + `<div class="ap-btns">${btn('test', 'Test again')}${btn('ado-change', 'Change organization')}${btn('ado-off', 'Turn off')}</div>${errP(st, 'actions')}`;
+  }
+
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', options: {}, azure: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, options: {}, azure: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -328,7 +371,7 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', waiting: false, azure: null, options: {}, canTerm: true };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, waiting: false, azure: null, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
@@ -372,8 +415,9 @@
       if (az) {
         if (az.state === 'connecting' && !azTimer) startAzPoll();
         if (az.state !== 'connecting') { st.azure = null; stopAzPoll(); }
-        if (az.state !== 'not-installed') stopInstPoll();
       }
+      const inst = st.installing && list.find((c) => c.id === st.installing);
+      if (!inst || inst.state !== 'not-installed') { st.installing = null; stopInstPoll(); }
     }
 
     async function call(method, url, body) {
@@ -524,10 +568,23 @@
       if (act === 'test') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/test`); await refresh(); });
       if (act === 'disconnect') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/disconnect`); st.azure = null; await refresh(); });
       if (act === 'install') {
-        const c = st.view.connectors.find((x) => x.id === 'azure');
-        if (c && c.install) { ui.openTerm(c.install); startInstPoll(); }
+        const c = st.view.connectors.find((x) => x.id === id);
+        if (c && c.install) { ui.openTerm(c.install); st.installing = id; startInstPoll(); }
         return;
       }
+      if (act === 'ado-on') {
+        return run('ado', async () => {
+          const cur = st.view.connectors.find((x) => x.id === 'azuredevops') || {};
+          const org = (st.adoOrg != null ? st.adoOrg : (cur.org || '')).trim();
+          if (!org) throw new Error('Enter your Azure DevOps organization first.');
+          await call('POST', '/api/connectors/azuredevops/enable', { org });
+          st.adoOrg = null; delete st.options.azuredevops;
+          await refresh();
+        });
+      }
+      if (act === 'ado-change') { st.options.azuredevops = true; st.err.ado = ''; render(); return; }
+      if (act === 'ado-keep') { delete st.options.azuredevops; st.err.ado = ''; st.adoOrg = null; render(); return; }
+      if (act === 'ado-off') return run('actions', async () => { await call('POST', '/api/connectors/azuredevops/disconnect'); await refresh(); });
       if (act === 'azure-start') {
         return run('azure', async () => {
           const r = await call('POST', '/api/connectors/azure/start');
@@ -554,12 +611,17 @@
     el.addEventListener('input', (e) => {
       if (e.target.id === 'cx-email') st.email = e.target.value;
       else if (e.target.id === 'cx-token') st.token = e.target.value;
+      else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });
     el.addEventListener('change', (e) => {
       if (e.target.id === 'cx-allow') {
         const on = e.target.checked;
         run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { allowChanges: on }); await refresh(); })
+          .then((ok) => { if (!ok) { render(true); } });
+      } else if (e.target.id === 'cx-ado-allow') {
+        const on = e.target.checked;
+        run('actions', async () => { await call('POST', '/api/connectors/azuredevops/settings', { allowChanges: on }); await refresh(); })
           .then((ok) => { if (!ok) { render(true); } });
       } else if (e.target.id === 'cx-sub') {
         const pick = e.target.value;
@@ -570,6 +632,7 @@
     el.addEventListener('keydown', (e) => {
       const ki = keyedInput(e.target.id);
       if (e.key === 'Enter' && ki) { e.preventDefault(); onAct(`${ki.act}-token`); return; }
+      if (e.key === 'Enter' && e.target.id === 'cx-ado-org') { e.preventDefault(); onAct('ado-on'); return; }
       if (e.key === 'Enter' && (e.target.id === 'cx-email' || e.target.id === 'cx-token')) { e.preventDefault(); onAct('token'); return; }
       const tile = e.target.closest && e.target.closest('.cx-ready .ap-tile');
       if (!tile || !st.view) return;

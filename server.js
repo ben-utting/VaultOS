@@ -1594,7 +1594,11 @@ app.get('/api/connectors/atlassian/callback', (req, res, next) => (sessionAuthed
 app.post('/api/connectors/:id/token', settingsGuard, connectorRoute('save the sign-in', (req) =>
   connectors.saveToken(req.params.id, req.body || {})));
 app.post('/api/connectors/:id/enable', settingsGuard, connectorRoute('turn the connector on', (req) =>
-  connectors.enable(req.params.id)));
+  connectors.enable(req.params.id, req.body || {})));
+app.post('/api/connectors/azuredevops/settings', settingsGuard, connectorRoute('save the Azure DevOps settings', (req) => {
+  const { allowChanges } = req.body || {};
+  return connectors.adoSettings({ allowChanges });
+}));
 app.post('/api/connectors/azure/start', settingsGuard, async (req, res) => {
   try { res.json(await connectors.azureStart()); } catch (err) {
     // az's own message (why the sign-in could not start) is for the person to read.

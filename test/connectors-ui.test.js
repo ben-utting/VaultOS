@@ -355,3 +355,36 @@ test('context7 save posts the trimmed key; Enter in the field saves too; an empt
   assert.deepEqual(calls.find((c) => c[0] === 'POST'), ['POST', '/api/connectors/context7/token', { token: 'ctx7sk-abc' }]);
   pane.stop();
 });
+
+// ----- Azure DevOps -----
+const adoView = (c) => ({ connectors: [{ id: 'azuredevops', label: 'Azure DevOps', by: 'x', agents: [], ...c }], planned: [] });
+
+test('azure devops: needs Azure first, then asks for the organization', () => {
+  const gate = C.paneHtml({ view: adoView({ state: 'not-connected', needsAzure: true }), picked: 'azuredevops' });
+  assert.match(gate, /Connect Azure first/);
+  assert.doesNotMatch(gate, /cx-ado-org/);
+  const form = C.paneHtml({ view: adoView({ state: 'not-connected', org: 'old<b>' }), picked: 'azuredevops' });
+  assert.match(form, /id="cx-ado-org"[^>]*value="old&lt;b&gt;"/);
+  assert.match(form, /data-act="ado-on"[^>]*>Turn on</);
+});
+
+test('azure devops: not installed offers the install', () => {
+  const html = C.paneHtml({ view: adoView({ state: 'not-installed', install: 'npm install -g --prefix ~/.local @azure-devops/mcp@2.11.0' }), picked: 'azuredevops' });
+  assert.match(html, /@azure-devops\/mcp@2\.11\.0/);
+  assert.match(html, /data-act="install"/);
+});
+
+test('azure devops: connected shows the organization, the test, read-only and the switch', () => {
+  const view = adoView({ state: 'connected', org: 'contoso', allowChanges: false, lastTest: { ok: true, tools: 29, projects: 1, at: new Date(1000).toISOString() } });
+  const html = C.paneHtml({ view, picked: 'azuredevops' }, 1000);
+  assert.match(html, /Organization: contoso/);
+  assert.match(html, /Tested just now: 29 tools, 1 project</);
+  assert.match(html, /Read-only: agents can look things up/);
+  assert.match(html, /id="cx-ado-allow"(?![^>]*checked)/);
+  assert.match(html, /data-act="ado-change"/);
+  const on = C.paneHtml({ view: adoView({ state: 'connected', org: 'contoso', allowChanges: true }), picked: 'azuredevops' });
+  assert.match(on, /id="cx-ado-allow"[^>]*checked/);
+  assert.match(on, /Agents can make changes/);
+  const change = C.paneHtml({ view, picked: 'azuredevops', options: { azuredevops: true } });
+  assert.match(change, /data-act="ado-keep"[^>]*>Keep contoso</);
+});
