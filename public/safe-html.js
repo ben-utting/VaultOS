@@ -20,9 +20,14 @@
   var ready = !!(P && P.isSupported);
 
   if (ready) {
-    // Links that open a new tab (screenshots) must not hand the new page window.opener.
+    // A web link in a document opens in a new browser tab (from the installed app, the browser itself) instead of
+    // replacing VaultOS. Links between notes (relative paths) stay in VaultOS: Files and the rest handle those.
+    // mailto: needs nothing, it never leaves the page. Any link that opens a new tab (these, and screenshots that
+    // carry target already) must not hand the new page window.opener or tell it where it came from.
     P.addHook('afterSanitizeAttributes', function (node) {
-      if (node.nodeName === 'A' && node.hasAttribute('target')) node.setAttribute('rel', 'noopener noreferrer');
+      if (node.nodeName !== 'A') return;
+      if (/^\s*(https?:)?\/\//i.test(node.getAttribute('href') || '')) node.setAttribute('target', '_blank');
+      if (node.hasAttribute('target')) node.setAttribute('rel', 'noopener noreferrer');
     });
   }
 
