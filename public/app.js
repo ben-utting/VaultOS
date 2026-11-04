@@ -215,7 +215,7 @@ const PREF = {
 function segSet(id, val) {
   for (const b of document.querySelectorAll('#' + id + ' button')) b.classList.toggle('on', b.dataset.v === val);
 }
-function applyPrefs() {
+function applyPrefs({ save = true } = {}) {
   const r = document.documentElement;
   PREF.scale = Math.min(FS_MAX, Math.max(FS_MIN, Math.round(PREF.scale * 100) / 100));
   r.setAttribute('data-theme', PREF.theme);
@@ -227,6 +227,7 @@ function applyPrefs() {
   $('fsVal').textContent = Math.round(PREF.scale * 100) + '%';
   segSet('segTheme', PREF.theme);
   segSet('segFont', PREF.font);
+  if (!save) return;
   localStorage.setItem('vaultboard.theme', PREF.theme);
   localStorage.setItem('vaultboard.font', PREF.font);
   localStorage.setItem('vaultboard.fs', PREF.scale);
@@ -236,6 +237,17 @@ for (const b of document.querySelectorAll('#segTheme button')) b.addEventListene
 for (const b of document.querySelectorAll('#segFont button')) b.addEventListener('click', () => { PREF.font = b.dataset.v; applyPrefs(); });
 $('fsUp').addEventListener('click', () => { PREF.scale += FS_STEP; applyPrefs(); });
 $('fsDown').addEventListener('click', () => { PREF.scale -= FS_STEP; applyPrefs(); });
+// Another VaultOS tab changed one (Settings in the main window, while a file sits in its own tab, which has no
+// Settings): follow along. Only the setting that changed, from the event's own value, and nothing is saved back:
+// a write from here could carry a stale copy of another setting that has just changed too and undo it there.
+window.addEventListener('storage', (e) => {
+  if (e.newValue == null) return;
+  if (e.key === 'vaultboard.theme') PREF.theme = e.newValue;
+  else if (e.key === 'vaultboard.font') PREF.font = e.newValue;
+  else if (e.key === 'vaultboard.fs') PREF.scale = parseFloat(e.newValue) || 1;
+  else return;
+  applyPrefs({ save: false });
+});
 
 // ---------- Header ----------
 // The header wraps to a second row on narrow screens and grows with the A−/A+
