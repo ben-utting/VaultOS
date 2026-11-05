@@ -2,10 +2,12 @@
 // End-to-end scenarios for Connectors, run against the connectors preview container (127.0.0.1:7695) with
 // the fake Atlassian/GitHub (scripts/fake-mcp-oauth.js) inside it. Never the live board (:7684).
 //
-//   node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6 C7 C8
+//   node scripts/connectors-e2e.js C1 C2 C3 C4 C5 C6 C7 C8 C9
 //
 // C7 is GitHub against the fake. C8 is Microsoft Learn against the REAL https://learn.microsoft.com/api/mcp, so
 // it needs outbound internet and the preview must run without CONNECTOR_UPSTREAM_MSLEARN.
+// C9 is Teams transcripts against scripts/fake-msapp.js (a fake Microsoft login + Graph on :5557, control on :5558, started
+// inside the container); the preview needs CONNECTOR_UPSTREAM_TRANSCRIPTS_LOGIN and _GRAPH set to http://127.0.0.1:5557.
 // Scenarios build on each other (C1 signs in, C6 signs out; C7 and C8 stand alone after C1), so run them in order. C1 installs Claude Code and
 // the Cursor CLI into the preview's home when they are missing (about 1.5 minutes, a few hundred MB: check
 // `df -h /` first). Neither agent is signed in to its own model provider, which `mcp list` does not need.
@@ -21,6 +23,10 @@ const CONTAINER = 'connectors-preview';
 const BASE = 'http://127.0.0.1:7695';
 const FAKE = 'http://127.0.0.1:5555';
 const CTRL = 'http://127.0.0.1:5556';
+const MSCTRL = 'http://127.0.0.1:5558';
+const T_TENANT = '11111111-2222-3333-4444-555555555555';
+const T_CLIENT = '66666666-7777-8888-9999-000000000000';
+const T_GONE = 'The Teams transcripts sign-in has run out. Open Settings → Connectors in VaultOS and sign in again.';
 const HOME = '/home/vaultos';
 const EXPIRED = 'Atlassian sign-in has run out. Open Settings → Connectors in VaultOS to sign in again.';
 const INSTALL = {
@@ -30,8 +36,8 @@ const INSTALL = {
 
 const args = process.argv.slice(2);
 if (args.some((a) => /^https?:\/\//.test(a) || /7684/.test(a))) { console.error(`this harness only runs against the preview, ${BASE}`); process.exit(2); }
-const NAMES = args.filter((a) => /^C[1-8]$/.test(a));
-if (!NAMES.length || NAMES.length !== args.length) { console.error('usage: node scripts/connectors-e2e.js C1 [C2 … C8]'); process.exit(2); }
+const NAMES = args.filter((a) => /^C[1-9]$/.test(a));
+if (!NAMES.length || NAMES.length !== args.length) { console.error('usage: node scripts/connectors-e2e.js C1 [C2 … C9]'); process.exit(2); }
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -289,6 +295,92 @@ const SCENARIOS = {
     check('the mslearn entry is gone from both agents', !('mslearn' in c2) && !('mslearn' in u2));
     const gone = await mcp('tools/call', { name: 'microsoft_docs_search', arguments: { query: 'x' } }, 'mslearn');
     check('the next relay call says it is not connected', /isn't connected yet/.test(JSON.stringify(gone.msg)), gone);
+  },
+  async C9() {
+    const row = async () => (await view()).connectors.find((c) => c.id === 'transcripts');
+    const msctrl = async (p) => { const r = sh(`curl -s ${MSCTRL}${p}`); try { return JSON.parse(r.out); } catch { return { error: r.out }; } };
+    const startMs = async () => {
+      sh("for p in $(ps -eo pid,args | grep '[f]ake-msapp' | awk '{print $1}'); do kill $p; done; sleep 1");
+      spawnSync('docker', ['exec', '-d', '-u', '1000', CONTAINER, 'node', '/app/scripts/fake-msapp.js', '--port', '5557', '--control', '5558', '--state', '/tmp/fake-msapp-state.json']);
+      for (let i = 0; i < 20; i++) { if ((await msctrl('/state')).graph === 0) return true; await sleep(500); }
+      return false;
+    };
+    const rawFiles = () => ({ claude: sh(`cat ${HOME}/.claude.json`).out, cursor: sh(`cat ${HOME}/.cursor/mcp.json`).out });
+    const tool = async (name, args) => { const r = await mcp('tools/call', { name, arguments: args || {} }, 'transcripts'); return { r, text: r.msg && r.msg.result && r.msg.result.content ? r.msg.result.content.map((x) => x.text || '').join('') : '', isError: !!(r.msg && r.msg.result && r.msg.result.isError) }; };
+    const health = async () => { for (let i = 0; i < 40; i++) { try { if ((await fetch(BASE + '/health')).ok) return true; } catch { /* starting */ } await sleep(500); } return false; };
+    sh(`rm -f /tmp/fake-msapp-state.json`);
+    try {
+      check('fake Microsoft answers inside the container', await startMs());
+      await api('POST', '/api/connectors/transcripts/disconnect');
+      const bad = await api('POST', '/api/connectors/transcripts/start', { tenantId: 'not-a-guid', clientId: T_CLIENT });
+      check('a tenant ID that is not a GUID is refused before any request', bad.status >= 400 && (await msctrl('/state')).devicecodes === 0, { status: bad.status, body: bad.body });
+      const start = await api('POST', '/api/connectors/transcripts/start', { tenantId: T_TENANT, clientId: T_CLIENT });
+      check('start with made-up GUIDs shows a code and a page to enter it on', start.status === 200 && start.body && start.body.code === 'FAKE1234' && /^http/.test(start.body.url || ''), { status: start.status, body: start.body });
+      const ms0 = await msctrl('/state');
+      check('the fake saw one device-code request with the exact scopes', ms0.devicecodes === 1 && ms0.scopes.join(' ') === 'OnlineMeetingTranscript.Read.All OnlineMeetings.Read Calendars.Read User.Read offline_access', ms0);
+      check('status is waiting before the code is entered', (await api('GET', '/api/connectors/transcripts/status')).body.status === 'waiting');
+      await msctrl('/approve');
+      let st = null;
+      for (let i = 0; i < 30; i++) { st = (await api('GET', '/api/connectors/transcripts/status')).body; if (st && st.status !== 'waiting') break; await sleep(1000); }
+      check('status becomes done after the code is entered', st && st.status === 'done', st);
+      const t = await row();
+      check('Teams transcripts shows connected as alex@example.com', t && t.state === 'connected' && t.account === 'alex@example.com', t && { state: t.state, account: t.account });
+      check('the view row carries the IDs', t && t.tenantId === T_TENANT && t.clientId === T_CLIENT, t && { tenantId: t.tenantId, clientId: t.clientId });
+      check('both agents were set up', t && t.agents.length === 2 && t.agents.every((x) => x.chip === 'Added'), t && t.agents);
+      const raw = rawFiles();
+      const e = JSON.parse(raw.claude).mcpServers.transcripts;
+      const c = JSON.parse(raw.cursor).mcpServers.transcripts;
+      check('~/.claude.json has the transcripts entry with the relay URL and key', e && /^http:\/\/127\.0\.0\.1:8080\/mcp\/transcripts$/.test(e.url) && e.headers['X-VaultOS-Key'] === relayKey(), e && { url: e.url });
+      check('~/.cursor/mcp.json has the transcripts entry with the relay URL and key', c && /^http:\/\/127\.0\.0\.1:8080\/mcp\/transcripts$/.test(c.url) && c.headers['X-VaultOS-Key'] === relayKey(), c && { url: c.url });
+      const refreshToken = (JSON.parse(sh(`cat ${HOME}/.vaultos/connectors.json`).out).connectors.transcripts || {}).refreshToken;
+      check('a refresh token is saved in the store', typeof refreshToken === 'string' && refreshToken.length > 8);
+      check('no refresh or access token is in either agent file', !raw.claude.includes(refreshToken) && !raw.cursor.includes(refreshToken) && !/\b(rt|at)-[0-9a-f]{24}\b/.test(raw.claude + raw.cursor));
+      for (const cwd of ['/vault', '/tmp']) {
+        const cl = sh('claude mcp list', { cwd, timeout: 120000 });
+        check(`claude mcp list from ${cwd} shows transcripts connected`, /transcripts[^\n]*Connected/.test(cl.out) && !/transcripts[^\n]*(Failed|authentication)/.test(cl.out), cl.out.slice(-300));
+        const ag = sh('agent mcp list', { cwd, timeout: 120000 });
+        check(`agent mcp list from ${cwd} shows transcripts ready`, /transcripts[^\n]*ready/i.test(ag.out), ag.out.slice(-300));
+      }
+      const list = await tool('transcripts_list', {});
+      const ids = /meetingId=(\S+) transcriptId=(\S+)/.exec(list.text);
+      check('transcripts_list through the relay returns the fake meeting', list.r.status === 200 && !list.isError && /Weekly planning/.test(list.text) && !!ids, list.text || list.r);
+      const got = await tool('transcript_get', { meetingId: ids && ids[1], transcriptId: ids && ids[2] });
+      check('transcript_get returns the header and both speakers\' lines', !got.isError && /Subject: Weekly planning/.test(got.text) && /\[00:00\] Alex Example: Let's go through the plan for the week\./.test(got.text) && /\[00:00\] Sam Sample: The migration is on track for Thursday\./.test(got.text), got.text || got.r);
+      const rawVtt = await tool('transcript_get', { meetingId: ids && ids[1], transcriptId: ids && ids[2], raw: true });
+      check('transcript_get with raw returns the WebVTT', !rawVtt.isError && /WEBVTT/.test(rawVtt.text) && /<v Sam Sample>/.test(rawVtt.text), rawVtt.text.slice(0, 200));
+
+      // A restart of VaultOS: the sign-in is rebuilt from the store. The fake dies with the container but keeps its refresh tokens in a file.
+      const rc = spawnSync('docker', ['restart', CONTAINER], { encoding: 'utf8', timeout: 120000 });
+      check('the preview container restarted', rc.status === 0 && await health(), rc.stderr);
+      check('the fake is back after the restart', await startMs());
+      const again = await tool('transcripts_list', {});
+      const ms1 = await msctrl('/state');
+      check('listing after the restart works without signing in again', !again.isError && /Weekly planning/.test(again.text) && ms1.devicecodes === 0 && ms1.deviceTokens === 0, { text: again.text.slice(0, 200), ms1 });
+      check('the restart cost one refresh and the fake accepted it', ms1.refreshes === 1 && ms1.refused === 0, ms1);
+      check('still connected as alex@example.com', (await row()).state === 'connected' && (await row()).account === 'alex@example.com');
+
+      // Microsoft refuses the refresh token.
+      await msctrl('/forget-access');
+      await msctrl('/refuse-refresh');
+      const gone = await tool('transcripts_list', {});
+      check('the call returns the sign-in-ran-out sentence as an error result', gone.r.status !== 401 && gone.isError && gone.text === T_GONE, gone.text || gone.r);
+      const v = await view();
+      check('the row shows needs-sign-in and the view says attention: true', (await row()).state === 'needs-sign-in' && v.attention === true, { state: (await row()).state, attention: v.attention });
+
+      // Disconnect removes the entries and keeps the app's IDs.
+      const d = await api('POST', '/api/connectors/transcripts/disconnect');
+      check('disconnect answers 200', d.status === 200, d.status);
+      const after = rawFiles();
+      check('the transcripts entry is gone from both agents', !('transcripts' in JSON.parse(after.claude).mcpServers) && !('transcripts' in JSON.parse(after.cursor).mcpServers));
+      const t2 = await row();
+      check('the row is not connected but keeps the tenant and client IDs', t2.state === 'not-connected' && t2.tenantId === T_TENANT && t2.clientId === T_CLIENT, t2 && { state: t2.state, tenantId: t2.tenantId, clientId: t2.clientId });
+      const saved = JSON.parse(sh(`cat ${HOME}/.vaultos/connectors.json`).out).connectors.transcripts;
+      check('the store keeps only the method and the IDs', saved && !saved.refreshToken && saved.tenantId === T_TENANT && saved.clientId === T_CLIENT, saved && Object.keys(saved));
+      const nope = await tool('transcripts_list', {});
+      check('the next relay call says it is not connected', /isn't connected yet/.test(JSON.stringify(nope.r.msg)) || nope.isError, nope.text || nope.r);
+    } finally {
+      sh("for p in $(ps -eo pid,args | grep '[f]ake-msapp' | awk '{print $1}'); do kill $p; done; rm -f /tmp/fake-msapp-state.json");
+    }
   },
 };
 
