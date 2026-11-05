@@ -103,8 +103,8 @@ test('transcripts_list: /me cached, window, nextLink, one lookup per meeting, ne
   assert.equal(m1.length, 2); // once per call, not per transcript
   assert.equal(m1[0].search, '?$select=subject,startDateTime,endDateTime');
   const lines = out(r1).split('\n');
-  assert.ok(lines[0].startsWith('2026-11-04 14:00 · Weekly planning · meetingId=m1 transcriptId=t'));
-  assert.ok(lines.some((l) => l.endsWith('transcriptId=t1')));
+  assert.equal(lines[0], '2026-11-04 15:00 · Weekly planning · meetingId=m1 transcriptId=t3');
+  assert.equal(lines[1], '2026-11-04 14:00 · Weekly planning · meetingId=m1 transcriptId=t1');
   assert.ok(lines.some((l) => l === '2026-11-03 10:00 · Review · meetingId=m2 transcriptId=t2'));
   assert.equal(lines.filter((l) => l.includes('·')).length, 3);
 });
@@ -156,7 +156,7 @@ test('150 transcripts over 3 pages: 100 lines and a note; failed lookups are (no
   const e = await rpc(evil.t, 'transcripts_list', {});
   assert.ok(!evil.calls.some((c) => c.url.includes('evil.example')));
   assert.equal(out(e).split('\n').filter((l) => l.includes('meetingId=')).length, 2);
-  assert.ok(calls.length > 0);
+  assert.equal(calls.filter((c) => c.path.includes('getAllTranscripts')).length, 3);
 });
 
 test('a bad meetingId from Graph gets (no subject) and no lookup', async () => {
@@ -169,13 +169,14 @@ test('a bad meetingId from Graph gets (no subject) and no lookup', async () => {
 const VTT = 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\n<v Sam>Hello there</v>\n';
 const getRoutes = (content = VTT) => (u) => {
   if (u.pathname === '/v1.0/me/onlineMeetings/m1/transcripts/t1/content') return reply(200, content);
-  if (u.pathname === '/v1.0/me/onlineMeetings/m1') return reply(200, { subject: 'Weekly planning', startDateTime: '2026-11-04T14:00:00Z', endDateTime: '2026-11-04T14:30:00Z' });
+  if (u.pathname === '/v1.0/me/onlineMeetings/m1/transcripts/t1') return reply(200, { createdDateTime: '2026-11-04T14:05:00Z', endDateTime: '2026-11-04T14:35:00Z' });
+  if (u.pathname === '/v1.0/me/onlineMeetings/m1') return reply(200, { subject: 'Weekly planning', startDateTime: '2026-10-01T09:00:00Z', endDateTime: '2026-10-01T09:30:00Z' });
 };
 
 test('transcript_get: header then text; raw; $format', async () => {
   const { t, calls } = make(getRoutes());
   const s = out(await rpc(t, 'transcript_get', { meetingId: 'm1', transcriptId: 't1' }));
-  assert.equal(s, 'Subject: Weekly planning\nStart: 2026-11-04 14:00\nEnd: 2026-11-04 14:30\n\n[00:00] Sam: Hello there');
+  assert.equal(s, 'Subject: Weekly planning\nStart: 2026-11-04 14:05\nEnd: 2026-11-04 14:35\n\n[00:00] Sam: Hello there');
   const c = calls.find((x) => x.path.endsWith('/content'));
   assert.equal(c.search, '?$format=text/vtt');
   const raw = out(await rpc(t, 'transcript_get', { meetingId: 'm1', transcriptId: 't1', raw: true }));
@@ -249,4 +250,18 @@ test('every request is a GET with redirect manual', async () => {
   await t.probe();
   assert.ok(calls.length >= 2);
   for (const c of calls) { assert.equal(c.init.method, 'GET'); assert.equal(c.init.redirect, 'manual'); }
+});
+
+test('paging continues past the cap so newer transcripts on later pages are not missed', async () => {
+  const old = Array.from({ length: 120 }, (_, i) => ({ id: `o${i}`, meetingId: 'm1', createdDateTime: new Date(NOW - (i + 10) * 3600000).toISOString() }));
+  const { t } = make((u) => {
+    if (u.pathname === '/v1.0/me') return reply(200, ME);
+    if (u.pathname.startsWith(listPath)) {
+      return u.searchParams.get('p') ? reply(200, { value: [{ id: 'newest', meetingId: 'm1', createdDateTime: new Date(NOW - 60000).toISOString() }] })
+        : reply(200, { value: old, '@odata.nextLink': `${GRAPH}/users/${ME.id}/onlineMeetings/getAllTranscripts(a)?p=2` });
+    }
+    if (u.pathname === '/v1.0/me/onlineMeetings/m1') return reply(200, { subject: 'S' });
+  });
+  const s = out(await rpc(t, 'transcripts_list', { days: 30 }));
+  assert.ok(s.split('\n')[0].endsWith('transcriptId=newest'));
 });
