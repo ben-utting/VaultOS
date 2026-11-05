@@ -225,3 +225,59 @@ test('signing in again with other IDs replaces the saved sign-in on completion',
   assert.strictEqual(saved(home).refreshToken, REFRESH);
   assert.strictEqual(saved(home).account, 'alex@example.com');
 });
+
+// Wait until the saved record has a refresh token (the sign-in finished) without calling msappStatus.
+const untilSaved = async (home) => { for (let i = 0; i < 1000; i++) { try { if (saved(home) && saved(home).refreshToken) return; } catch { /* not written yet */ } await settle(); } };
+
+test('a finished sign-in nobody polled for shows up in view() with the account and the agent entry', async (t) => {
+  const { svc, home } = await setup(t);
+  await svc.msappStart('transcripts', { tenantId: TENANT, clientId: CLIENT });
+  await untilSaved(home);
+  const v = await row(svc);
+  assert.strictEqual(v.state, 'connected');
+  assert.strictEqual(v.account, 'alex@example.com');
+  assert.ok(cursor(home).transcripts);
+});
+
+test('a finished sign-in nobody polled for works through a tool call', async (t) => {
+  const { svc, home } = await setup(t);
+  await svc.msappStart('transcripts', { tenantId: TENANT, clientId: CLIENT });
+  await untilSaved(home);
+  assert.match((await listCall(svc)).json.result.content[0].text, /Standup/);
+});
+
+test('a refresh held open on the replaced app cannot overwrite a same-ID re-sign-in', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-tr-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const net = fakeNet();
+  const base = net.fetch;
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let hold = false;
+  net.fetch = async (url, init) => {
+    const form = String(url).includes('/token') ? new URLSearchParams(String(init.body)) : null;
+    if (hold && form && form.get('grant_type') === 'refresh_token') {
+      hold = false;
+      await held;
+      return reply(400, { error: 'invalid_grant', error_description: 'AADSTS70008: gone' });
+    }
+    return base(url, init);
+  };
+  const svc = build(home, net);
+  await svc.init();
+  await signIn(svc);
+  // a restarted service holds a refreshable app whose access token must be refreshed
+  const old = build(home, net);
+  await old.init();
+  hold = true;
+  const pending = listCall(old);
+  await settle();
+  // re-sign-in on the same service as `old`, same IDs, as a different user
+  await old.msappStart('transcripts', { tenantId: TENANT, clientId: CLIENT });
+  await untilDone(old);
+  release();
+  await pending;
+  await settle();
+  assert.strictEqual(saved(home).needsSignIn, undefined);
+  assert.strictEqual(saved(home).refreshToken, REFRESH);
+});
