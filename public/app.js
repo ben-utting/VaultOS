@@ -2088,12 +2088,14 @@ function renderSearchChip() {
 }
 $('search-chip').querySelector('.sc-text').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open({ q: currentFilter() }); });
 $('search-chip').querySelector('.sc-x').addEventListener('click', () => applyFilter(''));
-$('search-btn').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open(); });
+// via 'button': the panel grows out of the button and the button plays its click animation (search-panel.js).
+$('search-btn').addEventListener('click', () => { if (window.SearchPanel) window.SearchPanel.open({ via: 'button' }); });
 {
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
-  // Desktop has no Search control (the shortcut is the way in); Settings → Appearance names the keys.
+  // The header's Search button names the shortcut in its tooltip and label; Settings → Appearance names all the keys.
   for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + ({ k: 'K', j: 'J' }[k.dataset.key] || 'F');
   $('search-btn').title = `Search (${mac ? '⌘F' : 'Ctrl+F'})`;
+  $('search-btn').setAttribute('aria-label', $('search-btn').title);
   $('capture-btn').title = `New thought (${mac ? '⌘J' : 'Ctrl+J'})`;
   $('cp-hint').textContent = `${mac ? '⌘' : 'Ctrl+'}Enter saves. Esc keeps it for later.`;
 }

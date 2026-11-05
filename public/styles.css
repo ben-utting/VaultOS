@@ -316,10 +316,10 @@ header button.ws-chip {
 /* The one row never wraps a control: only the chips give way (the search chip, the workspace chip's label and Today's chip), their text ellipsizing.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
 #logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
-/* On a desktop the header has no Search control: Ctrl+F / Ctrl+K open the panel (Settings → Appearance names them).
-   A phone or touch tablet has no such keys, so there it is a 40px icon button. The chip beside it names the filter
-   narrowing the current mode and only shows while one is set; its text gives way. */
-header button#search-btn { display: none; }
+/* The Search button sits beside the last mode tab in every mode, sized like Refresh and Terminal; Ctrl+F / Ctrl+K open
+   the same panel (Settings → Appearance names the keys). On a phone or touch tablet it is a 40px icon button. The chip
+   beside it names the filter narrowing the current mode and only shows while one is set; its text gives way. */
+header button#search-btn { display: inline-flex; align-items: center; flex: none; position: relative; }
 @media (max-width: 700px), (hover: none) and (pointer: coarse) {
   header button#search-btn {
     display: inline-flex; flex: none; align-items: center; justify-content: center;
@@ -329,6 +329,56 @@ header button#search-btn { display: none; }
   header button#search-btn:hover { color: var(--text); }
 }
 #search-btn .icon { width: 15px; height: 15px; flex: none; }
+
+/* ---------- Search button: the click (and shortcut) animation ----------
+   search-panel.js adds .sb-go when the button or Ctrl+F / Ctrl+K opens the panel, and drops it at the end; a repeat
+   restarts it. Four parts over 460ms, transform and opacity only: the press (dip to .92, spring past 1), the lens
+   swing (-18deg, 12deg, 0, like it's scanning), the glint (a gold streak across the lens, clipped to it in the SVG)
+   and the ripple (a thin gold ring growing out of the button as it fades). The ripple is a border, not an outline:
+   the gold outline means keyboard focus only. */
+#search-btn .sb-lens { transform-origin: 46% 46%; }
+#search-btn .sb-glint { opacity: 0; }
+#search-btn .sb-glint-grad stop { stop-color: var(--accent); }   /* a soft sheen, fading at both edges: a hard bar read as a "no" slash */
+#search-btn::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  border: 1.5px solid var(--accent); opacity: 0;
+}
+#search-btn.sb-go { animation: sb-press 460ms linear; }
+#search-btn.sb-go .sb-lens { animation: sb-swing 460ms linear; }
+#search-btn.sb-go .sb-glint { animation: sb-glint 460ms linear; }
+#search-btn.sb-go::after { animation: sb-ripple 460ms var(--ease-out); }
+@keyframes sb-press {
+  0%   { transform: scale(1);    animation-timing-function: cubic-bezier(.3, 0, .6, 1); }
+  20%  { transform: scale(.92);  animation-timing-function: cubic-bezier(.2, .9, .3, 1.2); }
+  55%  { transform: scale(1.05); animation-timing-function: ease-in-out; }
+  80%  { transform: scale(.99);  animation-timing-function: ease-out; }
+  100% { transform: scale(1); }
+}
+@keyframes sb-swing {
+  0%   { transform: rotate(0);      animation-timing-function: ease-out; }
+  28%  { transform: rotate(-18deg); animation-timing-function: ease-in-out; }
+  62%  { transform: rotate(12deg);  animation-timing-function: ease-in-out; }
+  100% { transform: rotate(0); }
+}
+@keyframes sb-glint {
+  0%, 18% { transform: translateX(-6px); opacity: 0; }
+  32%     { opacity: .9; }
+  70%     { opacity: .7; }
+  86%, 100% { transform: translateX(15px); opacity: 0; }
+}
+@keyframes sb-ripple {
+  0%   { transform: scale(1);   opacity: .75; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+/* A click grows the panel out of the button (search-panel.js sets --sp-from to the button's centre, in the box's
+   coordinates). Ctrl+F / Ctrl+K open it as before: no .sp-grow. */
+.sp.sp-grow .sp-box { transform-origin: var(--sp-from, 50% 0); animation: sp-grow 280ms var(--ease-out); }
+@keyframes sp-grow { from { opacity: 0; transform: scale(.96); } }
+/* The global rule only shortens animations to 1ms; this one plays none of it (search-panel.js doesn't start it either). */
+@media (prefers-reduced-motion: reduce) {
+  #search-btn.sb-go, #search-btn.sb-go .sb-lens, #search-btn.sb-go .sb-glint, #search-btn.sb-go::after,
+  .sp.sp-grow .sp-box { animation: none; }
+}
 .kbd {
   font: inherit; font-size: var(--t-xs); color: var(--muted); padding: 0 5px;
   border: 1px solid var(--line); border-radius: var(--radius-sm); line-height: 1.5;

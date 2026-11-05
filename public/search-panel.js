@@ -3,7 +3,8 @@
 // ========================================================================
 // SearchPanel — the Ctrl+F / Ctrl+K overlay (window.SearchPanel). One box that finds tasks, articles and notes
 // (GET /api/search) and other files by name (GET /api/fs/find) across the visible workspaces.
-//   SearchPanel.open({ q })               opens it (the header button, the shortcuts, the filter chip's text)
+//   SearchPanel.open({ q, via })          opens it (the header button, the shortcuts, the filter chip's text);
+//                                         via 'button' | 'key' plays the header button's animation
 //   SearchPanel.close({ restoreFocus })   Escape, the backdrop, the ×, a pick
 //   SearchPanel.isOpen()
 // The pure parts (which key does what, grouping, which files are visible, <mark>) are SearchCore's
@@ -133,14 +134,42 @@ const SearchPanel = (() => {
     run();
   }
 
+  // ---- The header button's animation ----
+  // Press, lens swing, glint and ripple (styles.css, "Search button"), played when the button or a shortcut opens the
+  // panel, so the two read as one control. Only a click grows the panel out of the button; a key opens it as before.
+  // The panel opens at once and never waits on any of it. A repeat restarts it from the top (class off, reflow, on).
+  // Under prefers-reduced-motion none of it plays.
+  const still = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const BTN = $('search-btn');
+  BTN.addEventListener('animationend', (e) => { if (e.target === BTN) BTN.classList.remove('sb-go'); });
+  function playButton() {
+    BTN.classList.remove('sb-go');   // first, always: a run cut short (motion turned off mid-way) never ends on its own
+    if (still() || !BTN.getClientRects().length) return;
+    void BTN.offsetWidth;
+    BTN.classList.add('sb-go');
+  }
+  // transform-origin at the button's centre, in the box's own coordinates (it may sit outside the box: that's fine).
+  function growFromButton(on) {
+    root.classList.remove('sp-grow');
+    if (!on || still() || !BTN.getClientRects().length) return;
+    const b = BTN.getBoundingClientRect();
+    const box = root.querySelector('.sp-box').getBoundingClientRect();
+    root.style.setProperty('--sp-from', `${Math.round(b.left + b.width / 2 - box.left)}px ${Math.round(b.top + b.height / 2 - box.top)}px`);
+    void root.offsetWidth;
+    root.classList.add('sp-grow');
+  }
+
   // ---- Open / close ----
-  function open({ q = '' } = {}) {
+  // via: 'button' (the header button) or 'key' (Ctrl+F / Ctrl+K) play the button's animation; anything else is silent.
+  function open({ q = '', via = '' } = {}) {
     if (!root) build();
     if (S.open) { if (q) { input.value = q; run(); } input.focus(); return; }
     const a = document.activeElement;
     S.back = a && a !== document.body && !root.contains(a) ? a : null;
     S.open = true;
     root.classList.remove('hidden');
+    growFromButton(via === 'button');
+    if (via === 'button' || via === 'key') playButton();
     $('search-btn').setAttribute('aria-expanded', 'true');
     input.value = q;
     list.innerHTML = '';
@@ -364,7 +393,7 @@ const SearchPanel = (() => {
     });
     // Holding the keys down: the first press acted; the repeats must not flicker the panel shut and open again.
     if (e.repeat) { if (intent === 'open' || intent === 'close-to-browser') e.preventDefault(); return; }
-    if (intent === 'open') { e.preventDefault(); open(); }
+    if (intent === 'open') { e.preventDefault(); open({ via: 'key' }); }
     else if (intent === 'close-to-browser') close();   // no preventDefault: the browser's own find opens
     else if (S.open && inPanel && (isMac() ? e.metaKey : e.ctrlKey) && String(e.key).toLowerCase() === 'k') e.preventDefault();
   }, true);
