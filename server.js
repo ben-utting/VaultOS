@@ -1608,6 +1608,12 @@ app.post('/api/connectors/azure/start', settingsGuard, async (req, res) => {
 });
 app.get('/api/connectors/azure/status', settingsGuard, connectorRoute('read the Azure sign-in', () => connectors.azureStatus()));
 app.post('/api/connectors/azure/cancel', settingsGuard, connectorRoute('cancel the Azure sign-in', () => connectors.azureCancel()));
+app.post('/api/connectors/transcripts/start', settingsGuard, connectorRoute('start the Teams transcripts sign-in', (req) => {
+  const { tenantId, clientId } = req.body || {};
+  return connectors.msappStart('transcripts', { tenantId, clientId });
+}));
+app.get('/api/connectors/transcripts/status', settingsGuard, connectorRoute('read the Teams transcripts sign-in', () => connectors.msappStatus('transcripts')));
+app.post('/api/connectors/transcripts/cancel', settingsGuard, connectorRoute('cancel the Teams transcripts sign-in', () => connectors.msappCancel('transcripts')));
 app.post('/api/connectors/azure/settings', settingsGuard, connectorRoute('save the Azure settings', (req) => {
   const { allowChanges, subscription } = req.body || {};
   return connectors.azureSettings({ allowChanges, subscription });

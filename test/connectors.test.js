@@ -9,7 +9,7 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'azuredevops', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'transcripts', 'azuredevops', 'github', 'mslearn', 'context7']);
 });
 
 test('PLANNED has the six ids in order', () => {
@@ -73,4 +73,13 @@ test('context7 is relayed, takes a pasted key, and points agents at the loopback
   });
   assert.equal(baseFor('context7', { CONNECTOR_UPSTREAM_CONTEXT7: 'http://127.0.0.1:3' }), 'http://127.0.0.1:3');
   assert.deepEqual(entryFor('context7', { port: 7684, key: 'k' }), { kind: 'http', url: 'http://127.0.0.1:7684/mcp/context7', headers: { 'X-VaultOS-Key': 'k' } });
+});
+
+test('transcripts is a builtin that signs in with an app, and gets the relay entry', () => {
+  assert.deepEqual(CONNECTORS.transcripts, {
+    id: 'transcripts', label: 'Teams transcripts', by: 'Meeting transcripts from an app you register', kind: 'builtin', signIn: ['msapp'],
+  });
+  assert.deepEqual(entryFor('transcripts', { port: 7684, key: 'k' }), {
+    kind: 'http', url: 'http://127.0.0.1:7684/mcp/transcripts', headers: { 'X-VaultOS-Key': 'k' },
+  });
 });

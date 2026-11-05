@@ -83,11 +83,11 @@ test('connectors need a session', async (t) => {
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/start')).status, 401);
 });
 
-test('GET /api/connectors lists the seven connectors not connected, and six planned', async (t) => {
+test('GET /api/connectors lists the eight connectors not connected, and six planned', async (t) => {
   const s = await ready(t);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure', 'entra', 'azuredevops', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'azure', 'entra', 'transcripts', 'azuredevops', 'github', 'mslearn', 'context7']);
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'not-connected');
   assert.notEqual(r.body.connectors.find((c) => c.id === 'azure').state, 'connected');
   assert.equal(r.body.planned.length, 6);
@@ -239,4 +239,15 @@ test('the atlassian token flow still works through /api/connectors/atlassian/tok
   assert.match(r.body.error, /Enter your email/);
   const az = await call(s.base, 'POST', '/api/connectors/azure/cancel', { cookie: s.cookie });
   assert.equal(az.status, 200);
+});
+
+test('Teams transcripts sign-in routes need a session (401)', async (t) => {
+  const s = await readyWithFakes(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/transcripts/start', { body: { tenantId: 'x', clientId: 'y' } })).status, 401);
+  assert.equal((await call(s.base, 'GET', '/api/connectors/transcripts/status')).status, 401);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/transcripts/cancel')).status, 401);
+  const bad = await call(s.base, 'POST', '/api/connectors/transcripts/start', { cookie: s.cookie, body: { tenantId: 'x', clientId: 'y' } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /Directory \(tenant\) ID/);
+  assert.deepEqual((await call(s.base, 'GET', '/api/connectors/transcripts/status', { cookie: s.cookie })).body, { status: 'idle' });
 });
