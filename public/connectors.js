@@ -367,7 +367,7 @@
       + '<div class="su-field"><label for="tr-client">Application (client) ID</label>'
       + `<input id="tr-client" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(client)}"></div>`
       + '<details class="cx-need"><summary>What the app registration needs</summary><ul class="ap-facts">'
-      + '<li>Public client flows allowed (device code sign-in needs this). No client secret.</li>'
+      + '<li>Allow public client flows (device code sign-in needs this). No client secret.</li>'
       + `<li>Delegated permissions: ${TR_SCOPES.map((x) => `<code>${x}</code>`).join(', ')}</li>`
       + '<li>Granted with admin consent.</li></ul></details>'
       + (again ? agentRowsHtml(c) : '')
