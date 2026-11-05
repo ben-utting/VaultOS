@@ -59,7 +59,9 @@ sign-in. Agents never see a token.
   (`AADSTS7000218` public client flows off, `AADSTS700016` app not found, `AADSTS90002` tenant not found,
   `invalid_scope`) → shown on the card in plain words.
 - Tenant and client IDs are validated as GUIDs before any request. The authority host is fixed
-  (`login.microsoftonline.com`).
+  (`login.microsoftonline.com`), and Graph is `graph.microsoft.com`. The only exception is for the e2e preview:
+  `CONNECTOR_UPSTREAM_TRANSCRIPTS_LOGIN` / `CONNECTOR_UPSTREAM_TRANSCRIPTS_GRAPH` point both at a local fake, the same
+  pattern as `CONNECTOR_UPSTREAM_<ID>` for relayed connectors.
 
 **`lib/connector-transcripts.js`** — the MCP server and Graph calls. Same `handle(rpc)` / `probe()` interface as
 `connector-entra.js`.
@@ -97,9 +99,9 @@ Graph errors become tool errors in plain words:
 ### Storage
 
 In `~/.vaultos/connectors.json` (0600, existing store), under `connectors.transcripts`:
-`{ on, tenantId, clientId, refreshToken, user }`. The access token is memory only. Sign-out clears
-`refreshToken` and `user` but keeps the IDs so signing in again is one click. Turning the connector off keeps
-the record (like other connectors).
+`{ method: 'msapp', tenantId, clientId, refreshToken, account }`. The access token is memory only. Signed in = on
+(no separate switch, like the other sign-in connectors). Sign-out clears `refreshToken` and `account` but keeps the
+IDs so signing in again is one click. After a VaultOS restart the sign-in is rebuilt from the saved record.
 
 ### Service changes (`lib/connector-service.js`)
 
@@ -117,7 +119,7 @@ A new `msapp` card type:
   disclosure, and **Sign in**.
 - Waiting: the code, a "Copy code" button and a link to `https://microsoft.com/devicelogin`, plus **Cancel**
   (same layout as Azure's).
-- Signed in: "Signed in as {user}", the on/off switch, **Test**, **Sign out**, and the agent rows.
+- Signed in: "Signed in as {user}", **Test**, **Sign out**, and the agent rows.
 - Errors in plain words; `config` errors name what to ask the app's owner for.
 
 ## Testing
