@@ -122,9 +122,11 @@ test('Conditional Access block shows the first line of error_description', async
 test('unknown error and server error still end as failed with a message', async () => {
   const a = await failWith(err('weird', 'AADSTS99999: Something odd.\r\nTrace ID: x'));
   assert.equal(a.error, 'AADSTS99999: Something odd.');
-  const b = await failWith(reply(503, 'oops'));
-  assert.equal(b.status, 'failed');
-  assert.ok(b.error);
+  // a 503 keeps the poll going until the code expires
+  const { app, clock } = make([reply(200, DEVICE), reply(503, 'oops'), () => { clock.t += 901000; return reply(503, 'oops'); }]);
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  await wait(() => app.status().status === 'failed');
+  assert.equal(app.status().error, 'The code expired before it was entered. Start again.');
 });
 
 test('cancel stops polling', async () => {
@@ -207,10 +209,65 @@ test('signed-out, forget, signOut', async () => {
   await assert.rejects(app.accessToken(), (e) => e.kind === 'signed-out');
 });
 
-test('errors never contain tokens', async () => {
+test('errors never contain live secrets', async () => {
   const { app } = make([err('invalid_grant', 'AADSTS50173: bad rt1 secret\r\nx')]);
   app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rt1' });
-  await assert.rejects(app.accessToken(), (e) => !/dc-secret/.test(e.message));
+  await assert.rejects(app.accessToken(), (e) => !/rt1/.test(e.message) && /AADSTS50173/.test(e.message));
+  const s = await failWith(err('invalid_grant', 'AADSTS53003: blocked dc-secret here\r\nx'));
+  assert.ok(!/dc-secret/.test(s.error));
+});
+
+function deferred() { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; }
+
+test('signOut during a refresh discards the result and does not persist', async () => {
+  const d = deferred();
+  const { app, saved } = make([() => d.promise]);
+  app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rt1' });
+  const p = app.accessToken();
+  await wait(() => false);
+  app.signOut();
+  d.resolve(tok('at2', 'rt2'));
+  await assert.rejects(p, (e) => e.kind === 'signed-out');
+  assert.deepEqual(saved, []);
+  await assert.rejects(app.accessToken(), (e) => e.kind === 'signed-out');
+});
+
+test('cancel during the poll token request does not persist or finish', async () => {
+  const d = deferred();
+  const { app, saved } = make([reply(200, DEVICE), () => d.promise]);
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  await wait(() => false);
+  app.cancel();
+  d.resolve(tok());
+  await wait(() => false);
+  assert.deepEqual(saved, []);
+  assert.equal(app.status().status, 'idle');
+});
+
+test('signOut then restore of another account does not join the old refresh', async () => {
+  const d = deferred();
+  const { app, calls } = make([() => d.promise, tok('atB', 'rtB2')]);
+  app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rtA' });
+  const old = app.accessToken();
+  await wait(() => false);
+  app.signOut();
+  app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rtB' });
+  const fresh = app.accessToken();
+  d.resolve(tok('atA', 'rtA2'));
+  await assert.rejects(old, (e) => e.kind === 'signed-out');
+  assert.equal(await fresh, 'atB');
+  assert.equal(calls[1].body.refresh_token, 'rtB');
+});
+
+test('429 is transient at refresh and polling keeps going through it', async () => {
+  const r = make([err('too_many_requests', 'slow down please', 429)]);
+  r.app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rt1' });
+  await assert.rejects(r.app.accessToken(), (e) => e.kind === 'transient');
+  assert.equal(M.classify(429, { error: 'x' }).kind, 'transient');
+  const { app } = make([reply(200, DEVICE), err('x', 'y', 429), reply(503, 'down'), tok()]);
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  await wait(() => app.status().status === 'done');
+  assert.equal(app.status().status, 'done');
 });
 
 test('classify', () => {
