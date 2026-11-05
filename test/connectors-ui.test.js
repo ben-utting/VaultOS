@@ -388,3 +388,83 @@ test('azure devops: connected shows the organization, the test, read-only and th
   const change = C.paneHtml({ view, picked: 'azuredevops', options: { azuredevops: true } });
   assert.match(change, /data-act="ado-keep"[^>]*>Keep contoso</);
 });
+
+// ---- Teams transcripts card ----
+const TR_T = '11111111-2222-3333-4444-555555555555', TR_C = '66666666-7777-8888-9999-000000000000';
+const trView = (c) => ({ connectors: [{ id: 'transcripts', label: 'Teams transcripts', by: 'Meeting transcripts from an app you register', state: 'not-connected', agents: [], ...c }], planned: [] });
+
+test('transcripts: signed out shows the two IDs, the registration needs and Sign in', () => {
+  const html = C.paneHtml({ view: trView({ tenantId: TR_T, clientId: TR_C }), picked: 'transcripts' });
+  assert.match(html, /id="tr-tenant"[^>]*value="11111111-2222-3333-4444-555555555555"/);
+  assert.match(html, /id="tr-client"[^>]*value="66666666-7777-8888-9999-000000000000"/);
+  assert.match(html, /<details[^>]*>[\s\S]*What the app registration needs/);
+  for (const s of ['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read']) assert.ok(html.includes(s), s);
+  assert.match(html, /public client flows/);
+  assert.match(html, /admin consent/);
+  assert.match(html, /data-act="tr-start"[^>]*>Sign in</);
+});
+
+test('transcripts: connecting with a code reuses the code panel', () => {
+  const html = C.paneHtml({ view: trView({ state: 'connecting' }), picked: 'transcripts', transcripts: { url: 'https://microsoft.com/devicelogin', code: 'ABCD1234', expiresAt: 10 * 60 * 1000 } }, 0);
+  assert.match(html, /ABCD1234/);
+  assert.match(html, /Copy code/);
+  assert.match(html, /href="https:\/\/microsoft\.com\/devicelogin"/);
+  assert.match(html, /data-act="tr-cancel"[^>]*>Cancel</);
+  assert.doesNotMatch(html, /azure-cancel/);
+  assert.doesNotMatch(html, /id="tr-tenant"/);
+});
+
+test('transcripts: connected shows the account, Test, Sign out and agents, no inputs', () => {
+  const html = C.paneHtml({ view: trView({ state: 'connected', account: 'alex@example.com', agents: [{ id: 'claude', label: 'Claude Code', chip: 'Added' }] }), picked: 'transcripts' });
+  assert.match(html, /Signed in as alex@example\.com/);
+  assert.match(html, /data-act="test"/);
+  assert.match(html, /data-act="disconnect"[^>]*>Sign out</);
+  assert.match(html, /Claude Code/);
+  assert.doesNotMatch(html, /id="tr-tenant"/);
+});
+
+test('transcripts: needs sign-in offers Sign in again with the IDs kept', () => {
+  const html = C.paneHtml({ view: trView({ state: 'needs-sign-in', tenantId: TR_T, clientId: TR_C }), picked: 'transcripts' });
+  assert.match(html, /data-act="tr-start"[^>]*>Sign in again</);
+  assert.match(html, /value="11111111-2222-3333-4444-555555555555"/);
+});
+
+test('transcripts: server text is escaped', () => {
+  const a = C.paneHtml({ view: trView({ state: 'connected', account: '<img src=x>', error: '<b>x</b>' }), picked: 'transcripts' });
+  assert.doesNotMatch(a, /<img src=x>|<b>x<\/b>/);
+  assert.match(a, /&lt;img src=x&gt;/);
+  const b = C.paneHtml({ view: trView({ tenantId: '"><i>', error: '<b>x</b>' }), picked: 'transcripts' });
+  assert.doesNotMatch(b, /<i>|<b>x<\/b>/);
+});
+
+test('transcripts: Sign in posts the two IDs and shows the code', async () => {
+  const calls = []; let status = 'waiting', state = 'not-connected';
+  let html = ''; const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url, body) => {
+    calls.push([method, url, body]);
+    if (url.endsWith('/transcripts/start')) { state = 'connecting'; return { url: 'https://microsoft.com/devicelogin', code: 'WXYZ9876', expiresAt: Date.now() + 600000 }; }
+    if (url.endsWith('/transcripts/status')) { if (status === 'done') state = 'connected'; return { status }; }
+    return trView({ state, account: 'alex@example.com' });
+  }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  handlers.input({ target: { id: 'tr-tenant', value: TR_T } });
+  handlers.input({ target: { id: 'tr-client', value: TR_C } });
+  handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'tr-start' } } : null) } });
+  await tick(); await tick(); await tick();
+  assert.deepEqual(calls.find((c) => c[1].endsWith('/transcripts/start')), ['POST', '/api/connectors/transcripts/start', { tenantId: TR_T, clientId: TR_C }]);
+  assert.match(html, /WXYZ9876/);
+  m.stop && m.stop();
+});
+
+test('transcripts: Cancel posts to the cancel route', async () => {
+  const calls = []; let html = ''; const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url) => { calls.push([method, url]); return trView({}); }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'tr-cancel' } } : null) } });
+  await tick(); await tick();
+  assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === '/api/connectors/transcripts/cancel'));
+});

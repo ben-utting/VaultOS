@@ -155,19 +155,19 @@
       + (c.state === 'needs-sign-in' ? `<div class="ap-btns">${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}` : '');
   }
 
-  function codePanelHtml(st, now) {
-    const a = st.azure;
+  function codePanelHtml(st, now, o = { code: st.azure, start: 'azure-start', cancel: 'azure-cancel', err: 'azure' }) {
+    const a = o.code;
     const open = a && httpsUrl(a.url);
     const mins = a ? minutesLeft(a.expiresAt, now) : 0;
     if (!a) {
       return '<div class="cx-wait" aria-live="polite"><div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span><span>Waiting for Microsoft…</span></div>'
-        + `<div class="ap-btns">${btn('azure-start', 'Sign in')}${btn('azure-cancel', 'Cancel')}</div>${errP(st, 'azure')}</div>`;
+        + `<div class="ap-btns">${btn(o.start, 'Sign in')}${btn(o.cancel, 'Cancel')}</div>${errP(st, o.err)}</div>`;
     }
     return '<div class="cx-code" aria-live="polite">'
       + `<div class="cx-codebox" id="cx-code">${esc(a.code)}</div>`
       + `<div class="ap-btns">${btn('copy', 'Copy code')}${open ? `<a class="su-btn primary" href="${esc(open.href)}" target="_blank" rel="noopener noreferrer">Open ${esc(hostPath(a.url))}</a>` : ''}</div>`
       + `<div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span><span>Waiting for Microsoft… the code works for ${mins} more minute${mins === 1 ? '' : 's'}</span></div>`
-      + `<div class="ap-btns">${btn('azure-cancel', 'Cancel')}</div>${errP(st, 'azure')}</div>`;
+      + `<div class="ap-btns">${btn(o.cancel, 'Cancel')}</div>${errP(st, o.err)}</div>`;
   }
 
   function azureBody(c, st, now) {
@@ -341,10 +341,43 @@
       + `<div class="ap-btns">${btn('test', 'Test again')}${btn('ado-change', 'Change organization')}${btn('ado-off', 'Turn off')}</div>${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody };
+  // Teams transcripts: the person's own app registration, signed in with a device code.
+  const TR_SCOPES = ['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read'];
+  function transcriptsBody(c, st, now) {
+    const intro = '<li>Teams meeting transcripts, through an app registration you own</li>';
+    const tested = testedLine(c, now, c.label);
+    const err = c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
+    if (c.state === 'connecting') {
+      return `<ul class="ap-facts">${intro}<li>Sign in with the code below.</li></ul>`
+        + codePanelHtml(st, now, { code: st.transcripts, start: 'tr-start', cancel: 'tr-cancel', err: 'tr' });
+    }
+    if (c.state === 'connected' || c.state === 'error') {
+      return `<ul class="ap-facts">${intro}<li>${esc(c.account ? `Signed in as ${c.account}` : 'Signed in')}</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
+        + err + agentRowsHtml(c)
+        + `<div class="ap-btns">${btn('test', 'Test')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${errP(st, 'tr')}`;
+    }
+    const again = c.state === 'needs-sign-in';
+    const tenant = st.trTenant != null ? st.trTenant : (c.tenantId || '');
+    const client = st.trClient != null ? st.trClient : (c.clientId || '');
+    return `<ul class="ap-facts">${intro}<li>Sign in with a code you type on Microsoft's page.</li></ul>`
+      + (again ? '<p class="su-err cx-err" role="alert">Your Microsoft sign-in has run out. Sign in again.</p>' : '')
+      + err
+      + '<div class="su-field"><label for="tr-tenant">Directory (tenant) ID</label>'
+      + `<input id="tr-tenant" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(tenant)}"></div>`
+      + '<div class="su-field"><label for="tr-client">Application (client) ID</label>'
+      + `<input id="tr-client" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(client)}"></div>`
+      + '<details class="cx-need"><summary>What the app registration needs</summary><ul class="ap-facts">'
+      + '<li>Public client flows allowed (device code sign-in needs this). No client secret.</li>'
+      + `<li>Delegated permissions: ${TR_SCOPES.map((x) => `<code>${x}</code>`).join(', ')}</li>`
+      + '<li>Granted with admin consent.</li></ul></details>'
+      + (again ? agentRowsHtml(c) : '')
+      + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${errP(st, 'tr')}${errP(st, 'actions')}`;
+  }
+
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, options: {}, azure: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -371,11 +404,11 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, waiting: false, azure: null, options: {}, canTerm: true, installing: null };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
-    let atlTimer = null, azTimer = null, instTimer = null;
+    let atlTimer = null, azTimer = null, trTimer = null, instTimer = null;
     let atlUntil = 0;
     const active = () => (ui.active ? ui.active() : true);
 
@@ -384,7 +417,7 @@
       st.canTerm = ui.canTerm ? !!ui.canTerm() : true;
       // The pane redraws only when something it shows changed: a poll answering the same view must not replace a
       // field that is being typed in. Typed text is kept in st and the focus is put back.
-      const key = JSON.stringify([st.view, st.picked, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
+      const key = JSON.stringify([st.view, st.picked, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], st.transcripts && [st.transcripts.code, minutesLeft(st.transcripts.expiresAt, now)], st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
       if (!force && key === lastKey) return;
       lastKey = key;
       const had = el.ownerDocument && el.ownerDocument.activeElement;
@@ -415,6 +448,11 @@
       if (az) {
         if (az.state === 'connecting' && !azTimer) startAzPoll();
         if (az.state !== 'connecting') { st.azure = null; stopAzPoll(); }
+      }
+      const tr = list.find((c) => c.id === 'transcripts');
+      if (tr) {
+        if (tr.state === 'connecting' && !trTimer) startTrPoll();
+        if (tr.state !== 'connecting') { st.transcripts = null; stopTrPoll(); }
       }
       const inst = st.installing && list.find((c) => c.id === st.installing);
       if (!inst || inst.state !== 'not-installed') { st.installing = null; stopInstPoll(); }
@@ -473,6 +511,21 @@
       }, AZURE_POLL_MS);
     }
     function stopAzPoll() { if (azTimer) { clearInterval(azTimer); azTimer = null; } }
+    // Teams transcripts: the same loop, on its own status route.
+    function startTrPoll() {
+      stopTrPoll();
+      const until = Date.now() + GIVE_UP_MS;
+      trTimer = setInterval(async () => {
+        if (!active() || Date.now() > until) { stopTrPoll(); return; }
+        try {
+          const s = await call('GET', '/api/connectors/transcripts/status');
+          if (s.status === 'failed') { st.err.tr = s.error || 'The sign-in did not finish.'; st.transcripts = null; stopTrPoll(); await refresh(); return; }
+          if (s.status === 'done' || s.status === 'idle') { st.transcripts = null; stopTrPoll(); await refresh(); return; }
+          render();
+        } catch (e) { /* the next tick tries again */ }
+      }, AZURE_POLL_MS);
+    }
+    function stopTrPoll() { if (trTimer) { clearInterval(trTimer); trTimer = null; } }
     // After Install the terminal runs on its own: look for the tools every 3 s.
     function startInstPoll() {
       stopInstPoll();
@@ -480,7 +533,7 @@
       instTimer = setInterval(() => { if (!active() || Date.now() > until) stopInstPoll(); else pollRefresh(); }, AZURE_POLL_MS);
     }
     function stopInstPoll() { if (instTimer) { clearInterval(instTimer); instTimer = null; } }
-    function stop() { stopAtlPoll(); stopAzPoll(); stopInstPoll(); }
+    function stop() { stopAtlPoll(); stopAzPoll(); stopTrPoll(); stopInstPoll(); }
 
     // The approve tab says it is done over a same-origin channel (it has no opener); polling is the fallback.
     if (typeof BroadcastChannel !== 'undefined') {
@@ -566,7 +619,7 @@
       if (act === 'switch') { st.options.atlassian = true; st.err.actions = ''; render(); return; }
       if (act === 'keep') { delete st.options.atlassian; render(); return; }
       if (act === 'test') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/test`); await refresh(); });
-      if (act === 'disconnect') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/disconnect`); st.azure = null; await refresh(); });
+      if (act === 'disconnect') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/disconnect`); st.azure = null; st.transcripts = null; await refresh(); });
       if (act === 'install') {
         const c = st.view.connectors.find((x) => x.id === id);
         if (c && c.install) { ui.openTerm(c.install); st.installing = id; startInstPoll(); }
@@ -596,8 +649,24 @@
       if (act === 'azure-cancel') {
         return run('azure', async () => { await call('POST', '/api/connectors/azure/cancel'); st.azure = null; stopAzPoll(); await refresh(); });
       }
+      if (act === 'tr-start') {
+        return run('tr', async () => {
+          const cur = st.view.connectors.find((x) => x.id === 'transcripts') || {};
+          const tenantId = (st.trTenant != null ? st.trTenant : (cur.tenantId || '')).trim();
+          const clientId = (st.trClient != null ? st.trClient : (cur.clientId || '')).trim();
+          const r = await call('POST', '/api/connectors/transcripts/start', { tenantId, clientId });
+          st.transcripts = { url: r.url, code: r.code, expiresAt: r.expiresAt };
+          st.trTenant = null; st.trClient = null;
+          startTrPoll();
+          await refresh();
+        });
+      }
+      if (act === 'tr-cancel') {
+        return run('tr', async () => { await call('POST', '/api/connectors/transcripts/cancel'); st.transcripts = null; stopTrPoll(); await refresh(); });
+      }
       if (act === 'copy') {
-        const ok = st.azure && ui.copy ? await ui.copy(st.azure.code) : false;
+        const code = st.picked === 'transcripts' ? st.transcripts : st.azure;
+        const ok = code && ui.copy ? await ui.copy(code.code) : false;
         if (b) { const t = b.textContent; b.textContent = ok ? 'Copied' : "Couldn't copy"; setTimeout(() => { if (b.isConnected) b.textContent = t; }, 1500); }
       }
     }
@@ -612,6 +681,8 @@
       if (e.target.id === 'cx-email') st.email = e.target.value;
       else if (e.target.id === 'cx-token') st.token = e.target.value;
       else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
+      else if (e.target.id === 'tr-tenant') st.trTenant = e.target.value;
+      else if (e.target.id === 'tr-client') st.trClient = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });
     el.addEventListener('change', (e) => {
