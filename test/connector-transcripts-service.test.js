@@ -281,3 +281,22 @@ test('a refresh held open on the replaced app cannot overwrite a same-ID re-sign
   assert.strictEqual(saved(home).needsSignIn, undefined);
   assert.strictEqual(saved(home).refreshToken, REFRESH);
 });
+
+test('the sign-in follow-up survives /me answering 401 once (no fold waiting on itself)', { timeout: 10000 }, async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-tr-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const net = fakeNet();
+  const base = net.fetch;
+  let first = true;
+  net.fetch = async (url, init) => {
+    if (String(url).includes('/me?') && first) { first = false; return reply(401, {}); }
+    return base(url, init);
+  };
+  const svc = build(home, net);
+  await svc.init();
+  await svc.msappStart('transcripts', { tenantId: TENANT, clientId: CLIENT });
+  await untilSaved(home);
+  const v = await row(svc);
+  assert.strictEqual(v.account, 'alex@example.com');
+  assert.match((await listCall(svc)).json.result.content[0].text, /Standup/);
+});
