@@ -180,3 +180,48 @@ test('one long prose line among short ones is not treated as a margin', () => {
   const sel = '  This is a fairly long sentence that ends well short of the edge of the terminal.\n  Next line.';
   assert.equal(tidySelection(sel, 200), 'This is a fairly long sentence that ends well short of the edge of the terminal.\nNext line.');
 });
+
+// Ben's certutil paste (2026-11-05): long script lines of similar length looked
+// like a Cursor margin, so `})` was glued to the `if` under it and the backtick
+// continuation was joined onto its line.
+test('a PowerShell block of similar-length lines is not glued as prose', () => {
+  const sel = [
+    '  $cert = Get-ChildItem Cert:\\LocalMachine\\My | Where-Object { $_.Subject -like "*app*" } | Sort-Object NotAfter',
+    '  $thumb = ($cert | Select-Object -First 1).Thumbprint; $out = Join-Path $env:TEMP "app.pfx" ; $p = (Read-Host -AsSecureString)',
+    '  $rows = $cert | ForEach-Object { [pscustomobject]@{ Name = $_.FriendlyName; Expires = $_.NotAfter; Thumb = $_.Thumbprint })',
+    '  if (-not $thumb) { Write-Warning "No certificate found"; return }',
+    '  certutil -f -p $pass -exportPFX My $thumb $out `',
+    '      NoChain NoRoot',
+  ].join('\n');
+  for (const cols of [140, 160, 200]) assert.equal(tidySelection(sel, cols), sel.replace(/^ {2}/gm, ''), `cols ${cols}`);
+});
+
+test('an indented script block keeps every line and its nesting', () => {
+  const sel = [
+    '  $certs = Get-ChildItem Cert:\\LocalMachine\\My | Where-Object {',
+    '      $_.Subject -like \'*app*\' -and $_.NotAfter -gt (Get-Date).AddDays(30)',
+    '  }',
+    '  foreach ($c in $certs) {',
+    '      Write-Host "$($c.Thumbprint)  $($c.NotAfter)  $($c.Subject)  $($c.Issuer)"',
+    '  }',
+  ].join('\n');
+  assert.equal(tidySelection(sel, 120), sel.replace(/^ {2}/gm, ''));
+});
+
+test('a backtick at the end of a line is a continuation, even at the edge', () => {
+  assert.equal(tidySelection('  Invoke-Thing -Name a `\n  -Force', 24), 'Invoke-Thing -Name a `\n-Force');
+});
+
+test('code hard-wrapped at the terminal edge (Claude Code) still rejoins', () => {
+  const sel = '  $out = Get-ChildItem C:\\Temp | Where-Object\n  { $_.Length -gt 1MB }';
+  assert.equal(tidySelection(sel, 46), '$out = Get-ChildItem C:\\Temp | Where-Object { $_.Length -gt 1MB }');
+});
+
+test('prose that mentions a variable is still rejoined at the Cursor margin', () => {
+  const sel = [
+    '  The installer reads the proxy from the machine environment, so check that the value you',
+    '  $env:HTTPS_PROXY points at is reachable from the build agent before you run the job again',
+    '  tomorrow morning.',
+  ].join('\n');
+  assert.equal(tidySelection(sel, 160), sel.replace(/\n {2}/g, ' ').trim());
+});

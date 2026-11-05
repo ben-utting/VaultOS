@@ -161,14 +161,37 @@ function copyFlash(pane, msg, bad) {
 // wraps near (not at) the edge of a wide terminal, which leaves more slack than
 // the 4 cells allowed below.
 //
+// A paragraph (run of non-blank lines) holding script syntax - `$x = `,
+// `if (`, a line that starts with a brace, ends in `{`/`;`/a backtick, a
+// `-Param` continuation - is code. Code never takes the Cursor margin: a block
+// of long script lines of similar length looks like wrapped prose to it, which
+// glued `})` onto the `if` below and a backtick line onto its continuation.
+// Code is only rejoined where it was hard-wrapped at the terminal edge.
+//
 // `lead` is how many cells of text sit left of the selection on its first row
 // (a drag started mid-line): that line is wider on screen than its text, and
 // its indent says nothing about the gutter.
 function tidySelection(text, cols, lead = 0) {
-  const CMD_START = /^\s*(\$ |> |PS[ >]|[A-Z][a-z]+-[A-Z][A-Za-z]+\b|\.{0,2}\/|~\/|(sudo|docker|git|npm|npx|node|python3?|pip3?|cd|ls|curl|wget|ssh|scp|kubectl|winget|choco|apt|apt-get|brew|systemctl|journalctl|grep|mkdir|rm|cp|mv|chmod|chown|tar|cargo|dotnet|az|aws|gcloud|terraform)\s)/;
+  const CMD_START = /^\s*(\$ |> |PS[ >]|[A-Z][a-z]+-[A-Z][A-Za-z]+\b|\.{0,2}\/|~\/|(sudo|docker|git|npm|npx|node|python3?|pip3?|cd|ls|curl|wget|ssh|scp|kubectl|winget|choco|apt|apt-get|brew|systemctl|journalctl|grep|mkdir|rm|cp|mv|chmod|chown|tar|cargo|dotnet|az|aws|gcloud|terraform|certutil|netsh|reg|icacls|robocopy|msiexec|pwsh|powershell|wsl|sc|sc\.exe|openssl|keytool)\s)/;
   const isCmd = (l) => CMD_START.test(l) || /[;{]\s*$/.test(l) || /^\s*[}\])]/.test(l);
+  const isCode = (l) => /^\s*\$[\w:{]+(\[[^\]]*\])?(\.\w+)*\s*([-+*/]?=|\||\.|\[|\)|$)/.test(l)  // $x = / $_.Name / $rows |
+    || /^\s*(if|elseif|foreach|for|while|switch|catch|until)\s*\(/i.test(l)
+    || /^\s*(else|try|finally|do|begin|process|end)\s*\{/i.test(l)
+    || /^\s*(function|filter)\s+[\w-]+\s*[({]?\s*$/i.test(l) || /^\s*param\s*\(/i.test(l)
+    || /^\s*[{}]/.test(l) || /^\s*[)\]]\s*[;)}\]|.]*\s*$/.test(l) || /^\s*@[{(]/.test(l)
+    || /^\s*\[[\w.]+(\[\])?\]\s*\$/.test(l)                       // [string]$x
+    || /[{;`]\s*$/.test(l) || /\\$/.test(l)
+    || /^\s+-[A-Za-z]\w*(\s|$)/.test(l);                          // -Param continuation
   const raw = text.replace(/\r/g, '').split('\n').map((l) => l.replace(/\s+$/, ''));
   if (raw.length < 2) return raw.join('').trim();
+  const code = [];
+  for (let s = 0; s < raw.length;) {
+    let e = s;
+    while (e < raw.length && raw[e].trim()) e++;
+    const isBlock = raw.slice(s, e).some(isCode);
+    for (let i = s; i < e; i++) code[i] = isBlock;
+    s = Math.max(e, s + 1);
+  }
   const ind = (l) => l.match(/^ */)[0].length;
   const cells = (i) => raw[i].length + (i === 0 ? lead : 0);   // width on screen
   const rest = raw.slice(1).filter((l) => l.trim()).map(ind);
@@ -182,7 +205,7 @@ function tidySelection(text, cols, lead = 0) {
   // A command-looking line mid-sentence ("...health with / Get-Service or...") is prose.
   const cmd = [];
   raw.forEach((l, i) => { cmd[i] = isCmd(l) && (i === 0 || !raw[i - 1].trim() || cmd[i - 1] || /[.:!?]$/.test(raw[i - 1])); });
-  const prose = raw.map((l, i) => i).filter((i) => !cmd[i] && !/\S{30}/.test(raw[i])).map(cells);
+  const prose = raw.map((l, i) => i).filter((i) => !cmd[i] && !code[i] && !/\S{30}/.test(raw[i])).map(cells);
   const longest = Math.max(0, ...prose);
   const margin = longest >= 60 && prose.filter((w) => w >= longest - 10).length >= 2;
   let out = lead ? raw[0].trimStart() : raw[0].slice(Math.min(cut, ind(raw[0])));
@@ -190,9 +213,9 @@ function tidySelection(text, cols, lead = 0) {
     const prev = raw[i - 1], line = raw[i];
     const width = cells(i - 1);                         // cells used on screen, indent included
     const newCmd = cmd[i] && width < cols - 1 && !/(\||&&)$/.test(prev);
-    const cols_ = margin && !cmd[i - 1] && !cmd[i] ? Math.min(cols, longest + 1) : cols;
+    const cols_ = margin && !cmd[i - 1] && !cmd[i] && !code[i] ? Math.min(cols, longest + 1) : cols;
     const firstWord = line.trimStart().split(/\s/)[0].length;
-    const wrapped = line.trim() && prev.trim() && !/\\$/.test(prev)
+    const wrapped = line.trim() && prev.trim() && !/[\\`]$/.test(prev)
       && line.match(/^ */)[0].length <= cut + 4
       && !/^\s*(\d+[.)]|[-*•])\s/.test(line)               // a list item starts a real line
       && !newCmd;                                         // so does a new command
