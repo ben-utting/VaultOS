@@ -280,3 +280,25 @@ test('classify', () => {
   assert.equal(M.classify(502, { error: 'x' }).kind, 'transient');
   assert.equal(M.classify(400, null).kind, 'transient');
 });
+
+test('onRefreshToken is told which refresh token the request spent (none for the device-code grant)', async () => {
+  const args = [];
+  const { app } = make([reply(200, DEVICE), tok('at1', 'rt1'), tok('at2', 'rt2')], { onRefreshToken: async (...a) => { args.push(a); } });
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  await wait(() => app.status().status === 'done');
+  app.forget();
+  await app.accessToken();
+  assert.deepEqual(args, [['rt1', undefined], ['rt2', 'rt1']]);
+});
+
+test('cancel while the finished sign-in is being saved is too late: it finishes', async () => {
+  const d = deferred();
+  const { app } = make([reply(200, DEVICE), tok()], { onRefreshToken: () => d.promise });
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  await wait(() => false); // the poll is now inside onRefreshToken
+  assert.equal(app.cancel(), false);
+  d.resolve();
+  await wait(() => app.status().status === 'done');
+  assert.equal(app.status().status, 'done');
+  assert.equal(await app.accessToken(), 'at1');
+});

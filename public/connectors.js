@@ -347,6 +347,8 @@
     const intro = '<li>Teams meeting transcripts, through an app registration you own</li>';
     const tested = testedLine(c, now, c.label);
     const err = c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
+    // a failed sign-in's reason comes back on the row and from the status poll: show it once
+    const trErr = st.err && st.err.tr && st.err.tr !== c.error ? errP(st, 'tr') : '';
     if (c.state === 'connecting') {
       return `<ul class="ap-facts">${intro}<li>Sign in with the code below.</li></ul>`
         + codePanelHtml(st, now, { code: st.transcripts, start: 'tr-start', cancel: 'tr-cancel', err: 'tr' });
@@ -354,7 +356,7 @@
     if (c.state === 'connected' || c.state === 'error') {
       return `<ul class="ap-facts">${intro}<li>${esc(c.account ? `Signed in as ${c.account}` : 'Signed in')}</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
         + err + agentRowsHtml(c)
-        + `<div class="ap-btns">${btn('test', 'Test')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${errP(st, 'tr')}`;
+        + `<div class="ap-btns">${btn('test', 'Test')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${trErr}`;
     }
     const again = c.state === 'needs-sign-in';
     const tenant = st.trTenant != null ? st.trTenant : (c.tenantId || '');
@@ -371,7 +373,7 @@
       + `<li>Delegated permissions: ${TR_SCOPES.map((x) => `<code>${x}</code>`).join(', ')}</li>`
       + '<li>Granted with admin consent.</li></ul></details>'
       + (again ? agentRowsHtml(c) : '')
-      + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${errP(st, 'tr')}${errP(st, 'actions')}`;
+      + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${trErr}${errP(st, 'actions')}`;
   }
 
   const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
@@ -452,6 +454,7 @@
       const tr = list.find((c) => c.id === 'transcripts');
       if (tr) {
         if (tr.state === 'connecting' && !trTimer) startTrPoll();
+        if (tr.state === 'connected') { st.trTenant = null; st.trClient = null; } // finished (also when no poll saw it)
         if (tr.state !== 'connecting') { st.transcripts = null; stopTrPoll(); }
       }
       const inst = st.installing && list.find((c) => c.id === st.installing);
@@ -518,9 +521,13 @@
       trTimer = setInterval(async () => {
         if (!active() || Date.now() > until) { stopTrPoll(); return; }
         try {
-          const s = await call('GET', '/api/connectors/transcripts/status');
+          // ui.api, not call(): a failed sign-in answers { status: 'failed', error }, and call() would throw on that error
+          const s = (await ui.api('GET', '/api/connectors/transcripts/status')) || {};
           if (s.status === 'failed') { st.err.tr = s.error || 'The sign-in did not finish.'; st.transcripts = null; stopTrPoll(); await refresh(); return; }
-          if (s.status === 'done' || s.status === 'idle') { st.transcripts = null; stopTrPoll(); await refresh(); return; }
+          if (s.status === 'done' || s.status === 'idle') {
+            if (s.status === 'done') { st.trTenant = null; st.trClient = null; } // typed IDs are kept until a sign-in succeeds
+            st.transcripts = null; stopTrPoll(); await refresh(); return;
+          }
           render();
         } catch (e) { /* the next tick tries again */ }
       }, AZURE_POLL_MS);
@@ -656,7 +663,6 @@
           const clientId = (st.trClient != null ? st.trClient : (cur.clientId || '')).trim();
           const r = await call('POST', '/api/connectors/transcripts/start', { tenantId, clientId });
           st.transcripts = { url: r.url, code: r.code, expiresAt: r.expiresAt };
-          st.trTenant = null; st.trClient = null;
           startTrPoll();
           await refresh();
         });

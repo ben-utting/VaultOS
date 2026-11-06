@@ -103,9 +103,9 @@ test('transcripts_list: /me cached, window, nextLink, one lookup per meeting, ne
   assert.equal(m1.length, 2); // once per call, not per transcript
   assert.equal(m1[0].search, '?$select=subject,startDateTime,endDateTime');
   const lines = out(r1).split('\n');
-  assert.equal(lines[0], '2026-11-04 15:00 · Weekly planning · meetingId=m1 transcriptId=t3');
-  assert.equal(lines[1], '2026-11-04 14:00 · Weekly planning · meetingId=m1 transcriptId=t1');
-  assert.ok(lines.some((l) => l === '2026-11-03 10:00 · Review · meetingId=m2 transcriptId=t2'));
+  assert.equal(lines[0], '2026-11-04 15:00 UTC · Weekly planning · meetingId=m1 transcriptId=t3');
+  assert.equal(lines[1], '2026-11-04 14:00 UTC · Weekly planning · meetingId=m1 transcriptId=t1');
+  assert.ok(lines.some((l) => l === '2026-11-03 10:00 UTC · Review · meetingId=m2 transcriptId=t2'));
   assert.equal(lines.filter((l) => l.includes('·')).length, 3);
 });
 
@@ -176,7 +176,7 @@ const getRoutes = (content = VTT) => (u) => {
 test('transcript_get: header then text; raw; $format', async () => {
   const { t, calls } = make(getRoutes());
   const s = out(await rpc(t, 'transcript_get', { meetingId: 'm1', transcriptId: 't1' }));
-  assert.equal(s, 'Subject: Weekly planning\nStart: 2026-11-04 14:05\nEnd: 2026-11-04 14:35\n\n[00:00] Sam: Hello there');
+  assert.equal(s, 'Subject: Weekly planning\nStart: 2026-11-04 14:05 UTC\nEnd: 2026-11-04 14:35 UTC\n\n[00:00] Sam: Hello there');
   const c = calls.find((x) => x.path.endsWith('/content'));
   assert.equal(c.search, '?$format=text/vtt');
   const raw = out(await rpc(t, 'transcript_get', { meetingId: 'm1', transcriptId: 't1', raw: true }));
@@ -264,4 +264,13 @@ test('paging continues past the cap so newer transcripts on later pages are not 
   });
   const s = out(await rpc(t, 'transcripts_list', { days: 30 }));
   assert.ok(s.split('\n')[0].endsWith('transcriptId=newest'));
+});
+
+test('a config error at refresh time: the tool says to sign in again, the probe records the reason', async () => {
+  const reason = 'That app was not found in this directory. Check the Application (client) ID and the Directory (tenant) ID.';
+  const mk = () => make(meRoute, { token: async () => { throw new MsAppError('config', reason); } }).t;
+  const r = await rpc(mk(), 'transcripts_list', {});
+  assert.equal(out(r), 'The Teams transcripts sign-in has run out. Open Settings → Connectors in VaultOS and sign in again.');
+  const p = await mk().probe();
+  assert.deepEqual(p, { ok: false, tools: 0, error: reason });
 });

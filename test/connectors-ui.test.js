@@ -468,3 +468,74 @@ test('transcripts: Cancel posts to the cancel route', async () => {
   await tick(); await tick();
   assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === '/api/connectors/transcripts/cancel'));
 });
+
+// A mounted pane whose fake server answers the transcripts routes; `srv` holds what the server says.
+function trPane(srv) {
+  const calls = []; let html = ''; const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url, body) => {
+    calls.push([method, url, body]);
+    if (url.endsWith('/transcripts/start')) { srv.onStart && srv.onStart(); return { url: 'https://microsoft.com/devicelogin', code: 'WXYZ9876', expiresAt: Date.now() + 600000 }; }
+    if (url.endsWith('/transcripts/status')) { srv.onStatus && srv.onStatus(); return { status: srv.status, ...(srv.error ? { error: srv.error } : {}) }; }
+    return trView(srv.row);
+  }, openTerm() {}, openTab() {} });
+  const act = (a) => handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: a } } : null) } });
+  return { m, calls, handlers, act, html: () => html };
+}
+
+test('transcripts: Sign in again from needs-sign-in shows the code once the server says connecting', async () => {
+  const srv = { row: { state: 'needs-sign-in', tenantId: TR_T, clientId: TR_C }, status: 'waiting' };
+  srv.onStart = () => { srv.row = { ...srv.row, state: 'connecting' }; };
+  const p = trPane(srv);
+  await p.m.refresh();
+  assert.match(p.html(), /data-act="tr-start"[^>]*>Sign in again</);
+  p.act('tr-start');
+  await tick(); await tick(); await tick();
+  assert.deepEqual(p.calls.find((c) => c[1].endsWith('/transcripts/start'))[2], { tenantId: TR_T, clientId: TR_C });
+  assert.match(p.html(), /WXYZ9876/);
+  assert.doesNotMatch(p.html(), /id="tr-tenant"/);
+  p.m.stop && p.m.stop();
+});
+
+test('transcripts: a failed first sign-in keeps the typed IDs', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const srv = { row: { state: 'not-connected' }, status: 'waiting' };
+  srv.onStart = () => { srv.row = { state: 'connecting' }; };
+  const p = trPane(srv);
+  await p.m.refresh();
+  p.handlers.input({ target: { id: 'tr-tenant', value: TR_T } });
+  p.handlers.input({ target: { id: 'tr-client', value: TR_C } });
+  p.act('tr-start');
+  await tick(); await tick(); await tick();
+  assert.match(p.html(), /WXYZ9876/);
+  srv.status = 'failed'; srv.error = 'AADSTS50126: The user declined the sign-in.';
+  srv.row = { state: 'not-connected', error: srv.error };
+  t.mock.timers.tick(3000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(p.html().split('declined the sign-in').length - 1, 1, 'the reason is shown once');
+  assert.match(p.html(), /id="tr-tenant"[^>]*value="11111111-2222-3333-4444-555555555555"/);
+  assert.match(p.html(), /id="tr-client"[^>]*value="66666666-7777-8888-9999-000000000000"/);
+  p.m.stop && p.m.stop();
+});
+
+test('transcripts: a finished sign-in clears the typed IDs', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const srv = { row: { state: 'not-connected' }, status: 'waiting' };
+  srv.onStart = () => { srv.row = { state: 'connecting' }; };
+  const p = trPane(srv);
+  await p.m.refresh();
+  p.handlers.input({ target: { id: 'tr-tenant', value: TR_T } });
+  p.handlers.input({ target: { id: 'tr-client', value: TR_C } });
+  p.act('tr-start');
+  await tick(); await tick(); await tick();
+  srv.status = 'done'; srv.row = { state: 'connected', account: 'alex@example.com', tenantId: TR_T, clientId: TR_C };
+  t.mock.timers.tick(3000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.match(p.html(), /Signed in as alex@example\.com/);
+  // signed out later: the form shows the saved IDs, not leftovers typed before
+  srv.row = { state: 'not-connected', tenantId: '22222222-2222-3333-4444-555555555555', clientId: TR_C };
+  await p.m.refresh();
+  assert.match(p.html(), /id="tr-tenant"[^>]*value="22222222-2222-3333-4444-555555555555"/);
+  p.m.stop && p.m.stop();
+});
