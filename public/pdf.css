@@ -1,0 +1,317 @@
+/* Knowledge Base → PDF. Read by server.js on every export (no restart needed
+   to tune it). Printed by headless Chromium, so CSS paged media works: the
+   running header/footer and page numbers are @page margin boxes. The per-
+   article strings (title, collection, date) are appended by server.js as a
+   second @page rule. Preview the HTML with /api/kb/article.pdf?format=html. */
+
+:root {
+  --ink: #16191e;
+  --text: #2b2f36;
+  --muted: #6b7079;
+  --faint: #9aa0a8;
+  --rule: #e3e0d9;
+  --paper-2: #f7f5f0;
+  --paper-3: #efebe2;
+  --gold: #d7b46a;       /* VaultOS --brand */
+  --gold-ink: #8a5a12;   /* the same gold, dark enough to print as text */
+  --band: #15181d;
+  --sans: "Inter", "DejaVu Sans", sans-serif;
+  --mono: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  --gutter: 18mm;
+}
+
+/* The header's margin-bottom is what spaces it off the text below — on
+   continuation pages too, where the content has no padding of its own.
+   Every page has zero side margins and the content pads itself in (--gutter),
+   so the cover's dark band can run to the paper edge. Page 1 can't simply get
+   different side margins: Chromium lays every page out at one width, and a
+   first page of a different width comes out rescaled. */
+@page {
+  size: A4;
+  margin: 30mm 0 20mm 0;
+
+  @top-left {
+    margin-left: 18mm;
+    font: 500 7.5pt var(--sans); color: var(--muted);
+    vertical-align: bottom; padding-bottom: 4mm; margin-bottom: 7mm;
+    border-bottom: 0.4pt solid var(--rule);
+  }
+  @top-right {
+    margin-right: 18mm;
+    font: 600 7pt var(--sans); color: var(--gold-ink);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    vertical-align: bottom; padding-bottom: 4mm; margin-bottom: 7mm;
+    border-bottom: 0.4pt solid var(--rule);
+  }
+  @bottom-left {
+    margin-left: 18mm;
+    font: 400 7.5pt var(--sans); color: var(--faint);
+    vertical-align: top; padding-top: 4mm;
+  }
+  @bottom-right {
+    margin-right: 18mm;
+    content: "Page " counter(page) " of " counter(pages);
+    font: 500 7.5pt var(--sans); color: var(--muted);
+    vertical-align: top; padding-top: 4mm;
+  }
+}
+
+/* The band also runs to the top edge, so page 1 has no top margin — and no
+   running header, which would only repeat the title right under it. */
+@page :first {
+  margin-top: 0;
+  @top-left { content: none; }
+  @top-right { content: none; }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 10pt;
+  line-height: 1.6;
+  color: var(--text);
+  background: #fff;
+  font-feature-settings: "cv11", "ss01";
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Cover ---------- */
+
+.band {
+  padding: 20mm var(--gutter) 11mm;
+  background: var(--band);
+  color: #f3efe6;
+  position: relative;
+}
+.band::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: 1.6mm;
+  background: var(--gold);
+}
+.eyebrow {
+  display: flex; align-items: center; gap: 2.2mm;
+  font-size: 7.5pt; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gold);
+}
+.eyebrow .dot { color: #6d6a62; }
+.eyebrow .draft {
+  margin-left: 2mm; padding: 0.4mm 2mm;
+  border: 0.6pt solid var(--gold); border-radius: 1mm;
+  font-size: 6.5pt;
+}
+.band h1 {
+  margin: 5mm 0 0;
+  font-size: 24pt; line-height: 1.16; font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  max-width: 160mm;
+}
+.meta {
+  display: flex; gap: 11mm;
+  margin: 7mm 0 0;
+}
+.meta div { margin: 0; }
+.meta dt {
+  font-size: 6.5pt; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: #8d8a82;
+}
+.meta dd { margin: 1mm 0 0; font-size: 9.5pt; font-weight: 500; color: #f3efe6; }
+
+.cover-body { padding: 8mm var(--gutter) 0; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 1.8mm; margin-bottom: 6mm; }
+.chip {
+  padding: 1mm 2.8mm;
+  font-size: 7.8pt; font-weight: 500;
+  color: var(--ink);
+  background: var(--paper-2);
+  border: 0.5pt solid var(--rule);
+  border-radius: 10mm;
+}
+
+.tldr {
+  position: relative;
+  padding: 5mm 7mm 5mm 8mm;
+  background: var(--paper-2);
+  border-radius: 1.5mm;
+  font-size: 10pt; line-height: 1.6;
+  color: var(--ink);
+  break-inside: avoid;
+}
+.tldr::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 1.2mm; border-radius: 1.5mm 0 0 1.5mm;
+  background: var(--gold);
+}
+.tldr-label {
+  margin-bottom: 2mm;
+  font-size: 7pt; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--gold-ink);
+}
+.tldr p { margin: 0; }
+.tldr p + p { margin-top: 2.5mm; }
+
+.intro { margin-top: 7mm; }
+
+.contents { margin-top: 9mm; }
+.contents-head {
+  padding-bottom: 2.5mm;
+  border-bottom: 0.6pt solid var(--ink);
+  font-size: 7pt; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink);
+  break-after: avoid;
+}
+.contents ol { list-style: none; margin: 0; padding: 0; }
+.contents li {
+  display: flex; align-items: baseline; gap: 5mm;
+  padding: 1.9mm 0;
+  border-bottom: 0.4pt solid var(--rule);
+  font-size: 9.5pt; font-weight: 500; color: var(--ink);
+}
+.contents .n {
+  width: 7mm; flex: none;
+  font: 600 8pt var(--mono); color: var(--gold-ink);
+}
+
+/* ---------- Sections: one per page ---------- */
+
+.sec { break-before: page; padding: 0 var(--gutter); }
+.sec-head {
+  display: flex; align-items: baseline; gap: 4mm;
+  margin-bottom: 7mm; padding-bottom: 3.5mm;
+  border-bottom: 1.4pt solid var(--ink);
+}
+.sec-num { font: 600 10pt var(--mono); color: var(--gold-ink); }
+.sec-head h2 {
+  margin: 0;
+  font-size: 19pt; line-height: 1.2; font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+/* ---------- Body copy ---------- */
+
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: 0 0 3.2mm; orphans: 3; widows: 3; }
+.prose h3 {
+  margin: 7mm 0 2.5mm;
+  font-size: 12pt; font-weight: 650; line-height: 1.3;
+  color: var(--ink);
+  break-after: avoid;
+}
+.prose h4 {
+  margin: 5mm 0 2mm;
+  font-size: 10pt; font-weight: 650;
+  color: var(--ink);
+  break-after: avoid;
+}
+.prose strong { font-weight: 650; color: var(--ink); }
+.prose a { color: var(--gold-ink); text-decoration: none; border-bottom: 0.4pt solid currentColor; }
+
+.prose ul, .prose ol { margin: 0 0 3.5mm; padding-left: 5.5mm; }
+.prose li { margin: 0 0 1.4mm; padding-left: 1mm; }
+.prose li::marker { color: var(--gold-ink); }
+.prose li > p { margin-bottom: 1.4mm; }
+.prose li > ul, .prose li > ol { margin-top: 1.4mm; }
+
+/* Glossary-style items ("- **TERM** (expansion): meaning", tagged .term by
+   server.js because CSS can't see that the bold comes first) read as a
+   definition list: a rule between entries keeps a long list scannable. */
+.prose li.term {
+  list-style: none;
+  margin: 0 0 0 -5.5mm;
+  padding: 2mm 0;
+  border-bottom: 0.4pt solid var(--rule);
+  break-inside: avoid;
+}
+
+.prose hr { border: 0; border-top: 0.5pt solid var(--rule); margin: 6mm 0; }
+
+.prose blockquote {
+  margin: 0 0 4mm;
+  padding: 3.5mm 5mm;
+  background: var(--paper-2);
+  border-left: 1mm solid var(--gold);
+  border-radius: 0 1.2mm 1.2mm 0;
+  color: var(--ink);
+  break-inside: avoid;
+}
+.prose blockquote p:last-child { margin-bottom: 0; }
+
+.prose code {
+  font-family: var(--mono); font-size: 0.86em;
+  padding: 0.2mm 1.1mm;
+  background: var(--paper-3);
+  border-radius: 0.8mm;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.prose pre {
+  margin: 0 0 4mm;
+  padding: 4mm 4.5mm;
+  background: var(--paper-2);
+  border: 0.5pt solid var(--rule);
+  border-radius: 1.2mm;
+  font-size: 8pt; line-height: 1.55;
+  /* Paper can't scroll — wrap long commands rather than lose the end. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.prose pre code { padding: 0; background: none; font-size: inherit; }
+
+.prose table {
+  width: 100%;
+  margin: 0 0 4.5mm;
+  border-collapse: collapse;
+  font-size: 8.6pt; line-height: 1.45;
+}
+.prose thead { display: table-header-group; }   /* repeats on every page */
+.prose th {
+  padding: 2.2mm 2.8mm;
+  text-align: left; font-weight: 650;
+  color: var(--ink);
+  background: var(--paper-3);
+  border-bottom: 0.8pt solid var(--ink);
+}
+.prose td {
+  padding: 2mm 2.8mm;
+  vertical-align: top;
+  border-bottom: 0.4pt solid var(--rule);
+}
+.prose tr { break-inside: avoid; }
+.prose tbody tr:nth-child(even) td { background: #fbfaf7; }
+
+/* ---------- Figures ---------- */
+
+figure { margin: 2mm 0 6mm; break-inside: avoid; }
+.diagram-art {
+  border: 0.5pt solid var(--rule);
+  border-radius: 1.5mm;
+  overflow: hidden;
+}
+.diagram-art svg { display: block; width: 100%; height: auto; max-height: 215mm; }
+.screenshot img {
+  display: block; max-width: 100%; max-height: 200mm; margin: 0 auto;
+  border: 0.5pt solid var(--rule); border-radius: 1.2mm;
+}
+figcaption {
+  margin-top: 2.2mm;
+  font-size: 8pt; color: var(--muted);
+}
+.fig-num {
+  font-weight: 650; color: var(--gold-ink);
+  letter-spacing: 0.04em;
+}
+.diagram-missing {
+  padding: 10mm; text-align: center;
+  font-size: 8.5pt; color: var(--muted);
+  background: var(--paper-2);
+}

@@ -1,0 +1,20 @@
+# Portable VaultOS. Copy .env.example to .env, set VAULT_PATH, then:
+#   docker compose up -d
+name: vaultos
+
+services:
+  vaultos:
+    build: .
+    image: vaultos:latest
+    container_name: vaultos
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${VAULTOS_PORT:-7684}:8080"
+    volumes:
+      - "${VAULT_PATH:?Set VAULT_PATH in .env to the folder VaultOS should use}:/vault"
+      - vaultos-home:/home/vaultos
+      # Company root certificates, if your network inspects HTTPS (see certs/README.md).
+      - ./certs:/certs:ro
+
+volumes:
+  vaultos-home: {}

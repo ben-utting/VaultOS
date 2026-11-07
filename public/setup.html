@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>VaultOS setup</title>
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="preload" href="/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    // The theme this browser already uses (or picks at step 5), before first paint.
+    try {
+      const t = localStorage.getItem('vaultboard.theme');
+      if (t) document.documentElement.dataset.theme = t;
+      if (t === 'light') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#f4ecd9');
+    } catch (e) { /* private mode: the default */ }
+  </script>
+</head>
+<body class="su">
+  <!-- First-run setup. setup.js fills the card one step at a time from /api/setup/state. -->
+  <main id="setup" class="su-wrap">
+    <div class="su-brand">Vault<span class="su-brand-os">OS</span></div>
+    <section class="su-card" id="su-card">
+      <p class="su-loading">Loading…</p>
+    </section>
+  </main>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/addon-web-links.js"></script>
+  <script src="/vendor/addon-webgl.js"></script>
+  <script src="/vendor/addon-unicode11.js"></script>
+  <script src="/term.js"></script>
+  <script src="/agent-marks.js"></script>
+  <script src="/agent-form.js"></script>
+  <script src="/setup.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# Everything here runs inside a Linux container. Keep LF line endings even when
+# cloned on Windows, or shell scripts (the starter kit's hooks) fail with $'\r'.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+*.xlsx binary

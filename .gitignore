@@ -1,0 +1,17 @@
+node_modules/
+config.json
+lockout.json
+workspace-visibility.json
+.env
+.env.*
+*.bak-*
+sheet-backups/
+!.env.example
+certs/*
+!certs/README.md
+.impeccable/
+
+scripts/private-words.txt
+/CLAUDE.md
+/docker-compose.yml
+/docs/superpowers/

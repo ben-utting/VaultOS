@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>VaultOS</title>
+  <!-- use-credentials: Chromium fetches a manifest without cookies by default, so behind
+       Cloudflare Access it got the Access login redirect and Edge offered no install. -->
+  <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="preload" href="/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Behind Cloudflare Access every file is gated, styles.css included. On a home-screen
+       launch the page can arrive while the stylesheet got Access's login redirect instead
+       (HTML, so the browser drops it), and VaultOS shows unstyled until relaunched. This does
+       the relaunch: if styles.css didn't apply, reload once. At most one try a minute, so if
+       Access really wants a sign-in the reload lands on its login rather than looping. -->
+  <script>
+    addEventListener('load', function () {
+      if (getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()) return;
+      var KEY = 'vaultboard.cssRetry';
+      try {
+        if (Date.now() - (+sessionStorage.getItem(KEY) || 0) < 60000) return;
+        sessionStorage.setItem(KEY, String(Date.now()));
+      } catch (e) { return; } // no storage, no loop guard: don't risk reloading forever
+      location.reload();
+    });
+  </script>
+</head>
+<body>
+
+  <div id="login" class="login hidden">
+    <form id="login-form" class="login-card">
+      <h1>Vault<span class="login-brand-os">OS</span></h1>
+      <input type="password" id="password" placeholder="Password" autocomplete="current-password" required autofocus>
+      <button type="submit">Sign in</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+
+  <div id="app" class="hidden">
+    <header>
+      <div class="brand">Vault<span class="brand-os">OS</span></div>
+      <!-- Which workspace Board, Knowledge Base and Today's Next are showing, and the way to change it. Always here,
+           dimmed on Files (it covers the whole vault), so the header is the same shape in every mode. -->
+      <span class="ws-div" aria-hidden="true"></span>
+      <button type="button" id="ws-chip" class="ghost ws-chip hidden" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span class="ws-chip-label"></span><svg class="icon ws-chip-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <nav class="modes">
+        <button id="mode-today" class="mode active" data-mode="today">Today</button>
+        <button id="mode-board" class="mode" data-mode="board">Board</button>
+        <button id="mode-notes" class="mode hidden" data-mode="notes">Notes</button>
+        <button id="mode-files" class="mode" data-mode="files">Files</button>
+        <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
+      </nav>
+      <!-- Opens the search panel (search-panel.js), in every mode, beside the last mode tab. Ctrl+F / Ctrl+K open the same
+           panel and play the button's animation (styles.css, "Search button"): the lens swings, and .sb-glint, clipped to
+           the lens, is the gold streak. The chip beside it names the filter now narrowing the current mode: its text
+           reopens the panel with it, its × clears it. -->
+      <button type="button" id="search-btn" class="ghost" aria-label="Search (Ctrl+F)" title="Search (Ctrl+F)" aria-haspopup="dialog"><svg class="icon sb-lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><clipPath id="sb-lens-clip"><circle cx="11" cy="11" r="6"/></clipPath><linearGradient id="sb-glint-grad" class="sb-glint-grad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-opacity="0"/><stop offset=".5" stop-opacity="1"/><stop offset="1" stop-opacity="0"/></linearGradient></defs><g clip-path="url(#sb-lens-clip)"><g transform="rotate(30 11 11)"><rect class="sb-glint" x="0" y="0" width="6" height="22" fill="url(#sb-glint-grad)" stroke="none"/></g></g><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
+      <span id="search-chip" class="search-chip hidden"><button type="button" class="sc-text" title="Search for this again"></button><button type="button" class="sc-x" aria-label="Clear filter">×</button></span>
+      <!-- New thought (capture.js): shown at every width while Notes is on, so the way to write something down is always in sight. -->
+      <button type="button" id="capture-btn" class="ghost hidden" aria-label="New thought" title="New thought (Ctrl+J)" aria-haspopup="dialog" aria-controls="cp-box"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
+      <div class="spacer"></div>
+      <span id="count" class="count"></span>
+      <!-- The Pomodoro's time left and target, in every mode while a session runs or is paused (today.js). -->
+      <button type="button" id="today-chip" class="today-chip hidden"><span class="tc-time"></span><span class="tc-what"> · <span class="tc-label"></span></span></button>
+      <!-- Appears only when something is narrowing the board. Three filters can stack
+           (search text, folder checkboxes, batch chip) and clearing one used to leave the
+           others on with nothing on screen saying so — this is the one way out. -->
+      <button id="clear-filters" class="clear-filters hidden" type="button" title="Show every task again" aria-label="Clear all filters">Clear<span class="cf-more"> all filters</span></button>
+      <!-- Everything occasional (folder filter, columns, appearance) lives in the Settings sheet;
+           Refresh is used too often to bury there. The workspace has its chip, by the wordmark. -->
+      <button type="button" id="refresh" class="ghost" title="Refresh: reloads VaultOS, picking up app updates (the board also rescans itself every few seconds)" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button id="termbtn" class="ghost" title="Terminal (Ctrl+`)" aria-label="Terminal" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
+      <button id="setbtn" class="ghost" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="setsheet"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="setbtn-lbl">Settings</span><span id="set-dot" class="set-dot hidden" aria-hidden="true"></span></button>
+      <button id="logout" class="ghost">Sign out</button>
+    </header>
+    <!-- The chip's menu sits outside the header: the header is its own stacking context (z-index 20), which would
+         put the menu under the task drawer's scrim. app.js fills it and places it under the chip. -->
+    <div id="ws-menu" class="ws-menu hidden" role="menu" aria-label="Workspace"></div>
+
+    <!-- Settings sheet: one screen for everything the header used to carry as
+         separate popovers (which could stack on top of each other). Sections
+         reuse the old popovers' ids, so their render code is unchanged. -->
+    <div class="ss-scrim hidden" id="ss-scrim"></div>
+    <div class="setsheet hidden" id="setsheet" role="dialog" aria-modal="true" aria-labelledby="ss-title">
+      <div class="ss-head">
+        <h2 id="ss-title">Settings</h2>
+        <button type="button" class="ss-close" id="ss-close" aria-label="Close settings"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <div class="ss-body">
+        <nav class="ss-nav" id="ss-nav" aria-label="Settings sections">
+          <button type="button" data-sec="ws">Workspaces<span class="ss-sub" id="ws-current"></span></button>
+          <button type="button" data-sec="folders" id="ssn-folders">Filter by folder<span id="filter-badge" class="n hidden"></span></button>
+          <button type="button" data-sec="cols" id="ssn-cols">Columns<span id="cols-badge" class="n hidden"></span></button>
+          <button type="button" data-sec="look">Appearance</button>
+          <button type="button" data-sec="features">Features</button>
+          <button type="button" data-sec="agent">Agent</button>
+          <button type="button" data-sec="connectors" id="ssn-connectors">Connectors</button>
+          <button type="button" data-sec="skills">Skills</button>
+          <button type="button" data-sec="password">Password</button>
+        </nav>
+        <div class="ss-panes">
+          <!-- Workspaces: the switcher (visible workspaces, from /api/workspaces), then the
+               managing list (every workspace, from /api/settings). app.js fills both. -->
+          <section class="ss-pane ss-boards" data-sec="ws">
+      <div class="filter-actions">
+        <span class="lbl">Switch to</span>
+      </div>
+      <div id="ws-list" class="filter-list"></div>
+      <div id="bd-manage" class="bd-manage">
+        <div class="filter-actions"><span class="lbl">Your workspaces</span></div>
+        <p class="su-hint">Rename, reorder or hide a workspace. VaultOS opens on the first one that isn't hidden.</p>
+        <div id="bd-list" class="bd-list"></div>
+        <p class="su-err" id="bd-err" aria-live="polite"></p>
+        <form id="bd-add" class="su-field bd-add" novalidate>
+          <label for="bd-add-name">Add a workspace</label>
+          <div class="bd-addrow">
+            <input id="bd-add-name" class="su-input" type="text" maxlength="60" placeholder="Workspace name" autocomplete="off" aria-describedby="bd-add-hint bd-add-name-err">
+            <button type="submit" class="su-btn">Add workspace</button>
+          </div>
+          <p class="su-hint" id="bd-add-hint">A new folder with a workspace's starter files.</p>
+          <p class="su-err" id="bd-add-name-err" aria-live="polite"></p>
+        </form>
+        <form id="bd-existing" class="su-field bd-add" novalidate>
+          <label for="bd-existing-dir">Add an existing folder</label>
+          <div class="bd-addrow" id="bd-existing-row">
+            <select id="bd-existing-dir" class="su-input" aria-describedby="bd-existing-hint bd-existing-err"></select>
+            <button type="submit" class="su-btn">Add folder</button>
+          </div>
+          <p class="su-hint" id="bd-existing-hint"></p>
+          <p class="su-err" id="bd-existing-err" aria-live="polite"></p>
+        </form>
+      </div>
+          </section>
+          <section class="ss-pane" data-sec="folders">
+      <input type="search" id="filter-search" placeholder="Search folders…">
+      <div class="filter-actions">
+        <button id="filter-all" class="linklike">Select all</button>
+        <button id="filter-none" class="linklike">Clear</button>
+      </div>
+      <div id="filter-list" class="filter-list"></div>
+          </section>
+          <section class="ss-pane" data-sec="cols">
+      <div class="filter-actions">
+        <span class="lbl">On the board</span>
+        <button id="cols-all" class="linklike">Show all</button>
+      </div>
+      <label class="filter-item" id="subtasks-row">
+        <input type="checkbox" id="show-subtasks" checked>
+        <span>Subtasks</span>
+        <span class="n" id="subtasks-count"></span>
+      </label>
+      <p class="pop-hint">Untick to fold them into their parent, which keeps its <b>N subtasks</b> chip — click that chip to bring the batch back.</p>
+      <div class="filter-actions"><span class="lbl">Columns</span></div>
+      <div id="cols-list" class="filter-list"></div>
+          </section>
+          <section class="ss-pane ss-look" data-sec="look">
+      <div class="row">
+        <div class="lbl">Theme</div>
+        <div class="seg" id="segTheme">
+          <button data-v="dark">Dark</button>
+          <button data-v="light">Sepia</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl">Reading font</div>
+        <div class="seg" id="segFont">
+          <button data-v="system">Standard</button>
+          <button data-v="dyslexic">OpenDyslexic</button>
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl">Text size</div>
+        <div class="stepper">
+          <button id="fsDown" aria-label="Smaller text">A−</button>
+          <span class="val" id="fsVal">100%</span>
+          <button id="fsUp" aria-label="Larger text">A+</button>
+        </div>
+      </div>
+      <!-- Where a terminal button opens a shell. Hidden on a phone, where a
+           second window is just another browser tab: there it's always the dock. -->
+      <!-- The header's Search button opens the same panel; the shortcuts are named here. -->
+      <div class="row">
+        <div class="lbl">Search</div>
+        <div class="ss-keys"><kbd class="kbd" data-key="find">Ctrl F</kbd> or <kbd class="kbd" data-key="k">Ctrl K</kbd><span class="ss-keys-note">In an open file, <kbd class="kbd" data-key="find">Ctrl F</kbd> finds in the page</span></div>
+      </div>
+      <div class="row" id="capture-keys-row">
+        <div class="lbl">New thought</div>
+        <div class="ss-keys"><kbd class="kbd" data-key="j">Ctrl J</kbd></div>
+      </div>
+      <div class="row" id="term-where-row">
+        <div class="lbl">Terminals open in</div>
+        <div class="seg" id="segTermWhere">
+          <button data-v="window">Window</button>
+          <button data-v="dock">Dock</button>
+        </div>
+      </div>
+      <div class="row" id="term-sound-row">
+        <div class="lbl">Agent sound</div>
+        <div class="seg" id="segTermSound">
+          <button data-v="off">Off</button>
+          <button data-v="on">On</button>
+        </div>
+      </div>
+      <div class="row" id="today-sound-row">
+        <div class="lbl">Today: sound when a session ends</div>
+        <div class="seg" id="segTodaySound">
+          <button data-v="off">Off</button>
+          <button data-v="on">On</button>
+        </div>
+      </div>
+          </section>
+          <!-- Features: Today, the morning read and the terminal for everyone on this VaultOS (settings.json).
+               Saving reloads the page, which is when a change takes effect. -->
+          <section class="ss-pane ss-form" data-sec="features">
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-today">Today mode</label>
+          <p class="su-hint" id="ft-today-d">A daily page with habits, the day's tasks and a focus timer.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-today" role="switch" aria-describedby="ft-today-d">
+      </div>
+      <div class="su-field">
+        <label for="ft-tz">Time zone</label>
+        <input id="ft-tz" class="su-input" type="text" list="ft-tzs" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="ft-tz-hint ft-tz-err">
+        <p class="su-hint" id="ft-tz-hint">Today's days start at midnight here, and the morning read comes between 05:00 and 12:00.</p>
+        <p class="su-err" id="ft-tz-err" aria-live="polite"></p>
+      </div>
+      <datalist id="ft-tzs"></datalist>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-morning">Morning read</label>
+          <p class="su-hint" id="ft-morning-d">Once each morning, one Knowledge Base article you haven't read in a while.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-morning" role="switch" aria-describedby="ft-morning-d">
+      </div>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-notes">Notes</label>
+          <p class="su-hint" id="ft-notes-d">Capture a thought from anywhere (the pen, or Ctrl+J) and the Notes mode.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-notes" role="switch" aria-describedby="ft-notes-d">
+      </div>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-term">Terminal</label>
+          <p class="su-hint" id="ft-term-d"></p></div>
+        <input type="checkbox" class="su-switch" id="ft-term" role="switch" aria-describedby="ft-term-d">
+      </div>
+      <p class="su-err" id="ft-err" aria-live="polite"></p>
+      <div class="ss-actions"><button type="button" id="ft-save" class="su-btn primary">Save and reload</button></div>
+          </section>
+          <!-- Agent: the same agent picker as setup step 4 (AgentForm.mountPicker in agent-form.js).
+               Install and Sign in open an ordinary VaultOS terminal. -->
+          <section class="ss-pane ss-form" data-sec="agent">
+      <p class="su-hint">Start agent on a card opens your default agent in a terminal in the card's folder, to brief you on where the task stands.</p>
+      <div class="ap" id="ag-picker"></div>
+      <p class="su-err" id="ag-err" aria-live="polite"></p>
+      <div class="su-custom" id="ag-custom">
+        <div class="su-custom-foot"><button type="button" class="su-btn" id="ag-custom-save">Save agent</button><p class="su-err" id="ag-custom-err" aria-live="polite"></p></div>
+      </div>
+          </section>
+          <!-- Connectors: Atlassian and Azure, connected once and added to every agent (connectors.js; app.js mounts it
+               the first time the section opens). -->
+          <section class="ss-pane ss-form" data-sec="connectors"><div class="ap cx" id="cx-pane"></div></section>
+          <!-- What Claude in a VaultOS terminal can use, read live from disk
+               (/api/skills) plus a fixed list of Claude Code's own commands. -->
+          <section class="ss-pane ss-skills" data-sec="skills">
+      <input type="search" id="skills-search" placeholder="Search skills…">
+      <div id="skills-list"></div>
+          </section>
+          <!-- Password: the one this VaultOS signs in with. The session secret stays, so
+               other signed-in browsers stay signed in. -->
+          <section class="ss-pane ss-form" data-sec="password">
+      <form id="pw-form" novalidate>
+        <div class="su-field">
+          <label for="pw-cur">Current password</label>
+          <input id="pw-cur" class="su-input" type="password" autocomplete="current-password" aria-describedby="pw-cur-err">
+          <p class="su-err" id="pw-cur-err" aria-live="polite"></p>
+        </div>
+        <div class="su-field">
+          <label for="pw-new">New password</label>
+          <input id="pw-new" class="su-input" type="password" autocomplete="new-password" aria-describedby="pw-new-hint pw-new-err">
+          <p class="su-hint" id="pw-new-hint">At least 8 characters. Browsers already signed in stay signed in.</p>
+          <p class="su-err" id="pw-new-err" aria-live="polite"></p>
+        </div>
+        <div class="su-field">
+          <label for="pw-new2">Confirm new password</label>
+          <input id="pw-new2" class="su-input" type="password" autocomplete="new-password" aria-describedby="pw-new2-err">
+          <p class="su-err" id="pw-new2-err" aria-live="polite"></p>
+        </div>
+        <p class="su-err" id="pw-err" aria-live="polite"></p>
+        <p class="ss-ok" id="pw-ok" role="status"></p>
+        <div class="ss-actions"><button type="submit" class="su-btn primary">Change password</button></div>
+      </form>
+          </section>
+        </div>
+      </div>
+      <div class="ss-foot">
+        <button type="button" id="logout-sheet" class="ghost">Sign out</button>
+      </div>
+    </div>
+
+    <!-- ---------- Today view (today.js builds it) ---------- -->
+    <div id="today-view"></div>
+
+    <!-- ---------- Board view ---------- -->
+    <div id="board-view" class="hidden">
+      <!-- Shown only while a batch chip has the board filtered. Never collapses cards —
+           they stay in their normal columns, there are just fewer of them. -->
+      <div id="batch-bar" class="batch-bar hidden"></div>
+      <main id="board" class="board"></main>
+      <button id="board-prev" class="board-nav board-nav-prev" type="button" aria-label="Scroll board left"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button id="board-next" class="board-nav board-nav-next" type="button" aria-label="Scroll board right"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg></button>
+    </div>
+
+
+    <!-- ---------- Files view (Workbench) ---------- -->
+    <div id="files-view" class="hidden">
+      <div class="fx-layout" id="fx-layout">
+        <aside class="fx-side" id="fx-side">
+          <section class="fx-sec fx-recent-sec" id="fx-recent-sec">
+            <div class="fx-sec-head">
+              <button type="button" class="fx-sec-toggle" id="fx-recent-toggle" aria-expanded="true">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                Changed recently
+              </button>
+              <select id="fx-recent-hours" aria-label="How far back">
+                <option value="1">1h</option>
+                <option value="24" selected>24h</option>
+                <option value="168">7d</option>
+              </select>
+            </div>
+            <div id="fx-recent" class="fx-recent"></div>
+            <div class="fx-recent-resize" id="fx-recent-resize" title="Drag to resize · double-click to reset" aria-hidden="true"></div>
+          </section>
+          <section class="fx-sec fx-tree-sec">
+            <div class="fx-sec-head">
+              <span class="fx-sec-title" id="fx-tree-title">Vault</span>
+              <button type="button" class="fx-icon-btn" id="fx-refresh" title="Refresh the file list" aria-label="Refresh the file list"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+              <button type="button" class="fx-icon-btn" id="fx-collapse" title="Collapse all folders" aria-label="Collapse all folders"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 11 12 6 7 11"/><polyline points="17 18 12 13 7 18"/></svg></button>
+            </div>
+            <div id="fx-tree" class="fx-tree" role="tree"></div>
+          </section>
+        </aside>
+        <div class="fx-scrim" id="fx-scrim"></div>
+        <section class="fx-main">
+          <div class="fx-tabs-row">
+            <button type="button" class="fx-icon-btn fx-side-toggle" id="fx-side-toggle" title="Show the file tree" aria-label="Toggle file tree"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+            <div id="fx-tabs" class="fx-tabs" role="tablist"></div>
+          </div>
+          <div id="fx-bar" class="fx-bar hidden"></div>
+          <div id="fx-view" class="fx-view"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ---------- Knowledge Base view ---------- -->
+    <!-- Notes mode (notes.js): Inbox and Main Notes on the left, the note on the right; one at a time on a phone. -->
+    <div id="notes-view" class="hidden">
+      <div class="nt-layout">
+        <section id="nt-list" class="nt-list" aria-label="Notes"></section>
+        <section id="nt-pane" class="nt-pane" aria-live="polite"></section>
+      </div>
+    </div>
+    <div id="kb-view" class="hidden">
+      <div class="kb-layout">
+        <button id="kb-sidebar-toggle" class="kb-sidebar-toggle" type="button" title="Browse collections" aria-label="Toggle collections panel" aria-expanded="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg></button>
+        <div id="kb-scrim" class="kb-scrim"></div>
+        <section id="kb-list" class="kb-list"></section>
+        <section id="kb-reader" class="kb-reader">
+          <div class="kb-welcome">
+            <h2>Knowledge Base</h2>
+            <p>Finished work, written up to be picked back up fast. Choose a collection, then an article.</p>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- Phone-only bottom tab bar, inside #app so it stays hidden behind the
+         login screen (hidden above 700px — see "Mobile nav" in
+         styles.css). Each button just clicks its header twin, so there's one
+         code path per mode; app.js mirrors the active state back onto these. -->
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Sections">
+      <button type="button" data-for="mode-today" class="active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v8M4.93 10.93l1.41 1.41M2 18h2M20 18h2M19.07 10.93l-1.41 1.41M22 22H2M8 6l4-4 4 4M16 18a4 4 0 0 0-8 0"/></svg><span>Today</span></button>
+      <button type="button" data-for="mode-board"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg><span>Board</span></button>
+      <button type="button" data-for="mode-notes" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg><span>Notes</span></button>
+      <button type="button" data-for="mode-files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
+      <button type="button" data-for="mode-kb"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>KB</span></button>
+      <button type="button" data-for="termbtn" id="mnav-term"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Terminal</span></button>
+    </nav>
+  </div>
+
+  <!-- Task drawer (board view) -->
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <div>
+        <h2 id="d-title"></h2>
+        <div id="d-path" class="path"></div>
+      </div>
+      <!-- Start agent / Go to agent: labelled, with the linked terminal's state as a dot. The tooltip says what it will do. -->
+      <button id="d-agent" class="ghost d-agent" type="button" aria-label="Start agent" data-tip="Start agent"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg><span class="d-agent-label">Agent</span><span class="agent-dot hidden"></span></button>
+      <!-- Everything else the drawer can do is in the More menu (more-menu.js): the task view, Show in Files, Refresh.
+           The items keep their ids / data-v, so their handlers (app.js, workbench.js) are bound the same way. -->
+      <button id="d-more" class="ghost" type="button" aria-label="More actions" aria-haspopup="menu" aria-expanded="false" aria-controls="d-more-menu" data-tip="More"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
+      <button id="d-close" class="ghost" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4 4 20"/><path d="m4 4 16 16"/></svg></button>
+      <div id="d-more-menu" class="fx-menu more-menu hidden" role="menu" aria-label="Task actions">
+        <div class="more-label" id="d-view-label" role="presentation">View as</div>
+        <div role="group" aria-labelledby="d-view-label">
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="side"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="14" y1="3" x2="14" y2="21"/></svg>Side panel</button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="center"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>Centred</button>
+        <button type="button" role="menuitemradio" aria-checked="false" data-v="full"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>Full screen</button>
+        </div>
+        <div class="more-sep" role="separator"></div>
+        <button id="d-files" type="button" role="menuitem"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>Show in Files</button>
+        <button id="d-refresh" type="button" role="menuitem" title="Re-read task.md from disk"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>Refresh task</button>
+      </div>
+    </div>
+    <!-- Back to the task this one's `batch:` points at. Hidden for a standalone task and
+         for a batch with no parent task.md. -->
+    <div id="d-parent" class="d-parent hidden"></div>
+    <!-- One row: which column of the board this task is sitting in (said in words
+         instead of left implied by whichever card you clicked), then the frontmatter
+         that used to sit in its own #d-meta strip below. The status chip doubles as
+         the changer — a real <select> laid transparently over the pill, so there's
+         one control rather than a label and a dropdown saying the same thing. -->
+    <div id="d-facts" class="d-facts"></div>
+    <div id="d-kb-link"></div>
+    <div id="d-docs"></div>
+    <!-- Batch fan-out: every task.md declaring this one's id as its `batch:`. Empty and
+         hidden for a task with no children, which is all but a handful of them. -->
+    <div id="d-subtasks" class="subtasks hidden"></div>
+    <div id="d-body" class="markdown"></div>
+  </aside>
+  <!-- Diagram viewer (pan/zoom lightbox, opened from a thumbnail in an article or task) -->
+  <div id="dgview" class="dgview hidden" role="dialog" aria-modal="true" aria-labelledby="dgv-title">
+    <div class="dgv-panel">
+      <div class="dgv-head">
+        <div class="dgv-titles">
+          <h2 id="dgv-title"></h2>
+          <div id="dgv-path" class="path"></div>
+        </div>
+        <div class="dgv-controls" role="group" aria-label="Zoom">
+          <button id="dgv-out" class="ghost" title="Zoom out (−)" aria-label="Zoom out"></button>
+          <span id="dgv-zoom" class="dgv-zoom">100%</span>
+          <button id="dgv-in" class="ghost" title="Zoom in (+)" aria-label="Zoom in"></button>
+          <button id="dgv-fit" class="ghost" title="Fit to window (0)" aria-label="Fit to window"></button>
+        </div>
+        <button id="dgv-close" class="ghost" title="Close (Esc)" aria-label="Close"></button>
+      </div>
+      <div id="dgv-stage" class="dgv-stage"></div>
+      <div class="dgv-foot">
+        <p id="dgv-desc" class="dgv-desc hidden"></p>
+        <span class="dgv-hint">Drag to pan · scroll to zoom · <kbd>0</kbd> fit · <kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Doc viewer (guides / other .md files that sit beside a task.md) -->
+  <div id="docview" class="dgview hidden" role="dialog" aria-modal="true" aria-labelledby="docv-title">
+    <div class="dgv-panel docv-panel">
+      <div class="dgv-head">
+        <div class="dgv-titles">
+          <h2 id="docv-title"></h2>
+          <div id="docv-path" class="path"></div>
+        </div>
+        <button id="docv-refresh" class="ghost" title="Re-read this file from disk" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+        <button id="docv-close" class="ghost" title="Close (Esc)" aria-label="Close"></button>
+      </div>
+      <div id="docv-body" class="markdown docv-body"></div>
+    </div>
+  </div>
+
+
+  <!-- Terminal dock (Workbench). Lives outside the views so the shells survive
+       every mode switch; body.dock-open shrinks the views to make room. -->
+  <section id="term-dock" class="term-dock hidden" aria-label="Terminals">
+    <div class="term-resize" id="term-resize" title="Drag to resize" aria-hidden="true"></div>
+    <div id="term-slot-dock" class="term-slot">
+      <!-- Filled by createTermWorkspace() in termui.js. -->
+      <div id="term-area"></div>
+    </div>
+  </section>
+
+
+
+  <div id="scrim" class="scrim hidden"></div>
+  <div id="toast" class="toast hidden"></div>
+  <!-- The capture box (capture.js): one textarea, Save. Esc or a click outside keeps the draft for next time. -->
+  <div id="cp-box" class="cp hidden">
+    <div class="cp-card" role="dialog" aria-modal="true" aria-labelledby="cp-title">
+      <div class="cp-head"><h2 id="cp-title">New thought</h2><button type="button" class="ghost cp-close" id="cp-close" aria-label="Close (keeps the draft)"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+      <textarea id="cp-text" rows="6" placeholder="What's on your mind?" aria-labelledby="cp-title" enterkeyhint="enter"></textarea>
+      <p id="cp-err" class="cp-err" aria-live="polite"></p>
+      <div class="cp-foot"><span class="cp-hint" id="cp-hint">Ctrl+Enter saves. Esc keeps it for later.</span><button type="button" id="cp-save" class="su-btn primary">Save</button></div>
+    </div>
+  </div>
+  <!-- The morning read (kb-morning.js): once a day, one Knowledge Base article to pick back up. -->
+  <div id="km-scrim" class="km-scrim hidden"></div>
+  <section id="km-card" class="km-card hidden" role="dialog" aria-modal="true" aria-labelledby="km-title" aria-describedby="km-reason">
+    <div class="km-eyebrow" id="km-eyebrow"></div>
+    <h2 class="km-title" id="km-title"></h2>
+    <p class="km-excerpt" id="km-excerpt"></p>
+    <p class="km-meta" id="km-meta"></p>
+    <p class="km-reason" id="km-reason"></p>
+    <div class="km-actions">
+      <button type="button" class="su-btn primary" id="km-read">Read now</button>
+      <button type="button" class="su-btn" id="km-later">Not today</button>
+      <button type="button" class="km-skip" id="km-skip">Skip this one</button>
+    </div>
+  </section>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/addon-web-links.js"></script>
+  <script src="/vendor/addon-webgl.js"></script>
+  <script src="/vendor/addon-unicode11.js"></script>
+  <script src="term.js"></script>
+  <script src="agent-marks.js"></script>
+  <script src="agent-form.js"></script>
+  <script src="more-menu.js"></script>
+  <script src="connectors.js"></script>
+  <script src="termtree.js"></script>
+  <script src="termside.js"></script>
+  <script src="termpick.js"></script>
+  <script src="termkeys.js"></script>
+  <script src="termtoast.js"></script>
+  <script src="termui.js"></script>
+  <script src="purify.min.js"></script>
+  <script src="safe-html.js"></script>
+  <script src="search-core.js"></script>
+  <script src="notes-core.js"></script>
+  <script src="app.js"></script>
+  <script src="today-next.js"></script>
+  <script src="today.js"></script>
+  <script src="kb-morning.js"></script>
+  <script src="sheet-core.js"></script>
+  <script src="sheet-grid.js"></script>
+  <script src="sheet-files.js"></script>
+  <script src="text-edit.js"></script>
+  <script src="workbench.js"></script>
+  <script src="search-panel.js"></script>
+  <script src="notes.js"></script>
+  <script src="capture.js"></script>
+</body>
+</html>

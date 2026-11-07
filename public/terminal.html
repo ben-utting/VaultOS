@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>VaultOS Terminals</title>
+  <meta name="theme-color" content="#0b0d12">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/vendor/xterm.css">
+  <link rel="preload" href="/fonts/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Same theme as the main window, before first paint.
+    try { const t = localStorage.getItem('vaultboard.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body class="term-popout">
+  <!-- The VaultOS Terminals window: the same terminal workspace as the dock
+       (spaces, splits, draggable dividers), full-window. Its
+       sessions aren't remembered here: closing or reloading the window ends
+       them; the "Move to the main window" button hands them to the dock. -->
+  <div id="term-area"></div>
+
+  <script src="/vendor/xterm.js"></script>
+  <script src="/vendor/addon-fit.js"></script>
+  <script src="/vendor/addon-web-links.js"></script>
+  <script src="/vendor/addon-webgl.js"></script>
+  <script src="/vendor/addon-unicode11.js"></script>
+  <script src="term.js"></script>
+  <script src="termtree.js"></script>
+  <script src="termside.js"></script>
+  <script src="termpick.js"></script>
+  <script src="termkeys.js"></script>
+  <script src="termtoast.js"></script>
+  <script src="termui.js"></script>
+  <script>
+    'use strict';
+    const chan = (() => { try { return new BroadcastChannel('vaultos-workbench'); } catch (e) { return null; } })();
+
+    let count = 0, alert = '';
+    // The chosen agent's name, for "<name> needs you" (neutral words until /api/me answers, or with no agent).
+    let agentName = null;
+    fetch('/api/me').then((r) => r.json()).then((me) => { agentName = me.agent ? me.agent.label : null; }).catch(() => {});
+    const retitle = () => { document.title = alert + (count ? `VaultOS Terminals (${count})` : 'VaultOS Terminals'); };
+    const TW = createTermWorkspace(document.getElementById('term-area'), {
+      store: 'vaultboard.termwin',
+      persist: false,
+      host: 'window',
+      sideDefault: 'side',
+      extraButtons: '<button id="term-dockback" class="ghost" type="button" title="Move these terminals back into the main VaultOS window" aria-label="Move to the main window"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9V3h6"/><path d="M3 3l7 7"/><path d="M21 15v6h-6"/><path d="m21 21-7-7"/></svg></button>',
+      // A clicked vault path opens as a tab in the main VaultOS window.
+      onOpenPath: (rel) => {
+        if (chan) chan.postMessage({ open: rel });
+        try { if (window.opener) window.opener.focus(); } catch (e) { /* best effort */ }
+      },
+      onChange: (n) => { count = n; retitle(); },
+      // The window title is what shows in the taskbar while it's behind others.
+      onAgents: (sum) => { alert = sum.blocked ? '⚠ needs you · ' : sum.done ? '✓ finished · ' : ''; retitle(); },
+      agentLabel: () => agentName,
+    });
+
+    // The theme follows the main window (the storage event fires in the other
+    // same-origin page); termui's MutationObserver rethemes the terminals.
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'vaultboard.theme' && e.newValue) document.documentElement.dataset.theme = e.newValue;
+    });
+
+    // Called by the main window's Pop out while this window is already open.
+    window.twAdopt = (metas) => {
+      TW.adopt(metas);
+    };
+
+    // First load: the session(s) handed over in the URL. The URL is cleaned
+    // straight away so a reload doesn't try to take them a second time.
+    const params = new URLSearchParams(location.search);
+    let initial = [];
+    try { initial = JSON.parse(params.get('adopt') || '[]'); } catch (e) { initial = []; }
+    history.replaceState(null, '', location.pathname);
+    if (initial.length) window.twAdopt(initial);
+    else TW.create();
+
+    // Closing the window ends its terminals (the browser asks first). The one
+    // way back to the main window is the "Move to the main window" button: it
+    // sets handBack, hands every session over (the broadcast reaches an open
+    // VaultOS window at once; the localStorage copy covers the case where none
+    // is open, and gets picked up on its next load), then closes this window.
+    // The shells keep running server-side in between.
+    let handBack = false;
+    window.addEventListener('beforeunload', (e) => {
+      if (handBack || !TW.sessions().length) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+    window.addEventListener('pagehide', () => {
+      if (!handBack) { for (const x of [...TW.sessions()]) TW.remove(x.id); return; }
+      const metas = TW.metas();
+      if (!metas.length) return;
+      try {
+        const prev = JSON.parse(localStorage.getItem('vaultboard.term.returning') || '[]');
+        localStorage.setItem('vaultboard.term.returning', JSON.stringify([...prev.filter((p) => !metas.some((m) => m.id === p.id)), ...metas]));
+      } catch (e) { /* private mode */ }
+      if (chan) chan.postMessage({ returned: metas });
+    });
+    document.getElementById('term-dockback').addEventListener('click', () => {
+      handBack = true;
+      window.close();
+    });
+  </script>
+</body>
+</html>
