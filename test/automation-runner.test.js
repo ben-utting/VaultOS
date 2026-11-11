@@ -113,6 +113,39 @@ test('a busy card is skipped with the reason', async (t) => {
   assert.ok(!s.read('01-a').includes('Latest check-in'));
 });
 
+test('a card the agent setup refuses is skipped with its reason, gets no agent, and the run goes on', async (t) => {
+  const seen = [];
+  const spawned = [];
+  const s = setup(t, {
+    cards: { '01-a': ['in-progress'], '02-b': ['in-progress'], '03-c': ['in-progress'] },
+    prepareAgent: async (agentId, level, dir) => {
+      seen.push([agentId, level, path.basename(dir)]);
+      return path.basename(dir) === '01-a' ? { skip: 'its folder has its own agent hooks (.cursor/hooks.json)' } : {};
+    },
+    spawnAgent: (opts) => { spawned.push(path.basename(opts.cwd)); return A.spawnAgent(opts); },
+  });
+  const run = await runAndWait(s, await s.make());
+  assert.equal(run.state, 'finished');
+  assert.deepEqual(run.cards.map((c) => [c.state, c.reason]), [
+    ['skipped', 'its folder has its own agent hooks (.cursor/hooks.json)'], ['noted', ''], ['noted', '']]);
+  assert.deepEqual(seen, [['claude', 'report', '01-a'], ['claude', 'report', '02-b'], ['claude', 'report', '03-c']]);
+  assert.deepEqual(spawned, ['02-b', '03-c']);
+  assert.ok(!s.read('01-a').includes('Latest check-in'));
+});
+
+test('a setup that throws fails that card only, without starting an agent', async (t) => {
+  const spawned = [];
+  const s = setup(t, {
+    cards: { '01-a': ['in-progress'], '02-b': ['in-progress'] },
+    prepareAgent: async (agentId, level, dir) => { if (path.basename(dir) === '01-a') throw new Error('disk full'); return {}; },
+    spawnAgent: (opts) => { spawned.push(path.basename(opts.cwd)); return A.spawnAgent(opts); },
+  });
+  const run = await runAndWait(s, await s.make());
+  assert.deepEqual(run.cards.map((c) => c.state), ['failed', 'noted']);
+  assert.match(run.cards[0].reason, /disk full/);
+  assert.deepEqual(spawned, ['02-b']);
+});
+
 test('over 20 cards: 20 processed, the rest not run', async (t) => {
   const cards = {};
   for (let i = 1; i <= 22; i++) cards[`${String(i).padStart(2, '0')}-x`] = ['in-progress'];
