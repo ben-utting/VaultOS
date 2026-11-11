@@ -102,5 +102,126 @@
     return `Every ${s.every === 1 ? 'hour' : `${s.every} hours`} from ${s.from}`;
   }
 
-  return { DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm };
+  // ---------- Definitions ----------
+  const LEVELS = ['report', 'update', 'work'];
+  const CARD_STATUSES = ['backlog', 'in-progress', 'blocked', 'needs-decision', 'review', 'scheduled'];
+  const STATUS_LABEL = {
+    'backlog': 'Backlog', 'in-progress': 'In Progress', 'blocked': 'Blocked', 'needs-decision': 'Needs Decision',
+    'review': 'Review', 'scheduled': 'Scheduled', 'done': 'Done',
+  };
+  // A card's own sections: an automation may never be pointed at one, so a typo can't wipe the Plan.
+  const RESERVED_SECTIONS = ['goal', 'context / key facts', 'context', 'plan', 'progress log', 'findings / decisions', 'findings', 'comments', 'subtasks'];
+  const MAX_CARDS = 20;
+  const NOTE_MAX = 1500;
+  const PROMPT_MAX = 8000;
+  const NAME_MAX = 60;
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+  const SECTION_RE = /^[A-Za-z0-9 -]{1,40}$/;
+
+  const TEMPLATES = {
+    'check-in': {
+      label: 'Check-in',
+      prompt: [
+        'Look at this card and tell Ben where it stands. Read task.md and any files in this folder that',
+        "help (notes, data, drafts). Don't do any of the work.",
+        '',
+        'Write your note as three short lines:',
+        '**Where it stands:** one or two sentences.',
+        '**Next step:** the one next action, and who does it.',
+        '**Waiting on you:** what Ben needs to decide or do, or "Nothing".',
+        '',
+        'If the card already has a Latest check-in, compare with it and say plainly if nothing has moved.',
+      ].join('\n'),
+    },
+    blank: { label: 'Blank', prompt: '' },
+  };
+  const LEVEL_LABEL = { report: 'Report', update: 'Update', work: 'Work' };
+  const LEVEL_TEXT = {
+    report: 'Reads the card and writes a note. Changes nothing else.',
+    update: 'Can also move the card (never to Done).',
+    work: "Can edit files in the card's folder.",
+  };
+  const REPORT_PARAGRAPH = "You can read and search files. Don't try to change anything: VaultOS writes your note into the card.";
+  const LEVEL_PARAGRAPHS = {
+    report: REPORT_PARAGRAPH,
+    update: `${REPORT_PARAGRAPH} You may propose a status change in a vaultos-update block.`,
+    work: "You may edit files in this card's folder. Don't run shell commands and don't set the card to done. VaultOS writes your note into the card.",
+  };
+
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  function validSchedule(s) {
+    if (!isObj(s)) return null;
+    if (s.repeat === 'daily' || s.repeat === 'weekdays') return TIME_RE.test(s.time) ? { repeat: s.repeat, time: s.time } : null;
+    if (s.repeat === 'weekly') {
+      if (!TIME_RE.test(s.time) || !Array.isArray(s.days)) return null;
+      const days = DAYS.filter((d) => s.days.includes(d));
+      if (!days.length || s.days.some((d) => !DAYS.includes(d))) return null;
+      return { repeat: 'weekly', days, time: s.time };
+    }
+    if (s.repeat === 'hours') {
+      return HOURS_EVERY.includes(s.every) && TIME_RE.test(s.from) ? { repeat: 'hours', every: s.every, from: s.from } : null;
+    }
+    return null;
+  }
+
+  // The builder and the server both run this; the server's answer is the one that counts.
+  // ctx: { boardKeys: board keys from settings, agentIds: 'default' plus the agents automations can use }.
+  function validateAutomation(input, ctx) {
+    const a = isObj(input) ? input : {};
+    const c = isObj(a.cards) ? a.cards : {};
+    const errors = {};
+    const name = typeof a.name === 'string' ? a.name.trim() : '';
+    if (!name || name.length > NAME_MAX) errors.name = `Give it a name of 1 to ${NAME_MAX} characters`;
+    const enabled = a.enabled === undefined ? true : a.enabled;
+    if (typeof enabled !== 'boolean') errors.enabled = 'Must be on or off';
+    if (!ctx.agentIds.includes(a.agent)) errors.agent = 'Pick an agent that can run automations';
+    if (!Object.prototype.hasOwnProperty.call(TEMPLATES, a.template)) errors.template = 'Unknown template';
+    const prompt = typeof a.prompt === 'string' ? a.prompt : '';
+    if (!prompt.trim()) errors.prompt = 'Write what the agent should do';
+    else if (prompt.length > PROMPT_MAX) errors.prompt = `Keep it under ${PROMPT_MAX.toLocaleString('en-GB')} characters`;
+    if (!LEVELS.includes(a.level)) errors.level = 'Pick Report, Update or Work';
+    if (c.board !== 'all' && !ctx.boardKeys.includes(c.board)) errors.board = 'Pick a board';
+    const statuses = Array.isArray(c.statuses) ? CARD_STATUSES.filter((s) => c.statuses.includes(s)) : [];
+    if (!statuses.length || c.statuses.some((s) => !CARD_STATUSES.includes(s))) errors.statuses = 'Pick at least one status (never Done)';
+    const subtasks = c.subtasks === undefined ? false : c.subtasks;
+    if (typeof subtasks !== 'boolean') errors.subtasks = 'Must be on or off';
+    const schedule = validSchedule(a.schedule);
+    if (!schedule) errors.schedule = 'Pick when it runs (times as HH:MM)';
+    const section = typeof a.section === 'string' ? a.section.trim() : '';
+    if (!SECTION_RE.test(section)) errors.section = 'Use 1 to 40 letters, digits, spaces or hyphens';
+    else if (RESERVED_SECTIONS.includes(section.toLowerCase())) errors.section = "That's one of the card's own sections";
+    if (!Number.isInteger(a.timeLimitMin) || a.timeLimitMin < 2 || a.timeLimitMin > 30) errors.timeLimitMin = 'Between 2 and 30 minutes';
+    if (Object.keys(errors).length) return { ok: false, errors };
+    return {
+      ok: true,
+      value: {
+        name, enabled, agent: a.agent, template: a.template, prompt, level: a.level,
+        cards: { board: c.board, statuses, subtasks }, schedule, section, timeLimitMin: a.timeLimitMin,
+      },
+    };
+  }
+
+  // ---------- Run summaries ----------
+  function runCounts(run) {
+    const n = { noted: 0, skipped: 0, failed: 0, timedOut: 0, notRun: 0, moved: 0 };
+    const key = { 'noted': 'noted', 'skipped': 'skipped', 'failed': 'failed', 'timed-out': 'timedOut', 'not-run': 'notRun', 'moved': 'moved' };
+    for (const c of run.cards || []) if (key[c.state]) n[key[c.state]]++;
+    return n;
+  }
+  const COUNT_LABEL = [['noted', 'noted'], ['skipped', 'skipped'], ['failed', 'failed'], ['timedOut', 'timed out'], ['notRun', 'not run'], ['moved', 'moved']];
+  // "6 cards · 7 min · 5 noted, 1 skipped"; a run still going is just "running".
+  function runSummary(run) {
+    if (run.state === 'running') return 'running';
+    const total = (run.cards || []).length;
+    const mins = Math.round((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 60000);
+    const counts = runCounts(run);
+    const parts = COUNT_LABEL.filter(([k]) => counts[k]).map(([k, label]) => `${counts[k]} ${label}`);
+    return [`${total} card${total === 1 ? '' : 's'}`, mins >= 1 ? `${mins} min` : '<1 min', parts.join(', ')].filter(Boolean).join(' · ');
+  }
+
+  return {
+    DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
+    LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary,
+  };
 });
