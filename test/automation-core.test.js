@@ -241,3 +241,10 @@ test('agentTagText: an agent draft the agent then edited still reads as a draft'
   assert.equal(AC.agentTagText({ enabled: false, origin, agentChange: { ...edit, switchedOff: true } }, 'Europe/London'),
     'Claude Code changed the prompt. Off until you switch it on.');
 });
+
+test('triggerText says how a run started, and that a Work trial ran as Report', () => {
+  assert.equal(AC.triggerText({ trigger: 'schedule', level: 'report' }), 'scheduled');
+  assert.equal(AC.triggerText({ trigger: 'manual', level: 'work' }), 'run now');
+  assert.equal(AC.triggerText({ trigger: 'trial', level: 'update' }), 'trial · not written to cards');
+  assert.equal(AC.triggerText({ trigger: 'trial', level: 'work' }), 'trial · tried as Report · not written to cards');
+});

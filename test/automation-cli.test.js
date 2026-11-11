@@ -128,7 +128,7 @@ test('try waits for the trial run and prints its notes', async () => {
   });
   assert.equal(r.code, 0, r.err);
   assert.deepEqual(r.sent.map((x) => x.command), ['show', 'try', 'runs', 'runs', 'runs', 'run']);
-  assert.match(r.out, /Trial · not written to cards/);
+  assert.match(r.out, /trial · not written to cards/);
   assert.match(r.out, /Shed — noted/);
   assert.match(r.out, /Fake note\./);
   assert.match(r.out, /Would move: In Progress → Blocked/);
@@ -165,4 +165,10 @@ test('an empty list says so', async () => {
   const r = await run(['list'], { answers: [['list', 200, { timezone: 'UTC', automations: [] }]] });
   assert.equal(r.code, 0);
   assert.equal(r.out, 'No automations yet.\n');
+});
+
+test('a Work trial says it ran as Report', async () => {
+  const r = await run(['run', 'r1'], { answers: [['run', 200, { id: 'r1', automationName: 'Tidy', trigger: 'trial', level: 'work', state: 'finished', cards: [] }]] });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^Tidy · trial · tried as Report · not written to cards · finished$/m);
 });

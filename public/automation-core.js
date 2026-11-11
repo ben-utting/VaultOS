@@ -216,6 +216,14 @@
     };
   }
 
+  // How a run started, for the runs list, the run detail and the command (spec §7). A trial writes nothing;
+  // a Work automation's trial ran with Report permissions, so it shows what it would say, not what it would do.
+  const TRIGGER_TEXT = { 'schedule': 'scheduled', 'catch-up': 'catch-up', 'manual': 'run now' };
+  function triggerText(run) {
+    if (run.trigger === 'trial') return run.level === 'work' ? 'trial · tried as Report · not written to cards' : 'trial · not written to cards';
+    return TRIGGER_TEXT[run.trigger] || run.trigger || '';
+  }
+
   // ---------- Agent tags (spec §7) ----------
   // The line under an automation an agent made or changed; '' when there's nothing to say.
   const listText = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
@@ -293,6 +301,6 @@
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
-    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText,
   };
 });

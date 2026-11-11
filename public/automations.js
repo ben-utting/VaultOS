@@ -24,7 +24,6 @@
   const FAST_MS = 3000;
   const SLOW_MS = 30000;
   const RUN_PAGE = 30;
-  const TRIGGER = { 'schedule': 'scheduled', 'catch-up': 'catch-up', 'manual': 'run now', 'trial': 'trial · not written to cards' };
   const CARD_STATE = {
     noted: ['Noted', 'ok'], skipped: ['Skipped', 'plain'], failed: ['Failed', 'bad'], 'timed-out': ['Timed out', 'bad'],
     'not-run': ['Not run', 'plain'], moved: ['Moved', 'plain'], running: ['Running', 'live'], waiting: ['Waiting', 'plain'],
@@ -194,7 +193,7 @@
       return;
     }
     $('au-runs').innerHTML = done.map((r) => `<button type="button" class="au-run-item" data-run="${esc(r.id)}">
-        <span class="au-run-when">${esc(when(r.startedAt))} · ${esc(r.automationName)}${r.trigger === 'trial' ? ` · ${TRIGGER.trial}` : ''}</span>
+        <span class="au-run-when">${esc(when(r.startedAt))} · ${esc(r.automationName)}${r.trigger === 'trial' ? ` · ${esc(AC.triggerText(r))}` : ''}</span>
         <span class="au-run-sum"><span class="au-dot" data-tone="${AC.lastRunTone(r)}"></span>${esc(r.state === 'failed' ? `Failed: ${AC.failureText(r)}` : AC.runSummary(r))}${r.state === 'stopped' ? ' · stopped' : r.state === 'interrupted' ? ' · interrupted' : ''}</span>
       </button>`).join('') + (AU.more ? '<button type="button" class="su-btn su-sm au-older">Show older</button>' : '');
   }
@@ -214,7 +213,7 @@
     $('au-current').classList.add('hidden');
     const el = $('au-run');
     el.classList.remove('hidden');
-    const meta = [when(run.startedAt), AC.runSummary(run), TRIGGER[run.trigger] || run.trigger].filter(Boolean).join(' · ');
+    const meta = [when(run.startedAt), AC.runSummary(run), AC.triggerText(run)].filter(Boolean).join(' · ');
     el.innerHTML = `<div class="au-run-head">
         <button type="button" class="ghost au-back" aria-label="Back to the runs"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
         <div><h2>${esc(run.automationName)}</h2><p class="au-run-meta">${esc(meta)}${run.state === 'stopped' ? ' · stopped' : run.state === 'interrupted' ? ' · interrupted by a restart' : ''}</p></div>
