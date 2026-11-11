@@ -3861,6 +3861,9 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .au-name { overflow: hidden; font-size: var(--t-md); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .au-row-main:hover .au-name { color: var(--accent); }
 .au-meta, .au-next, .au-last { font-size: var(--t-xs); color: var(--muted); }
+/* An automation an agent made or changed (spec §7): muted, never gold. */
+.au-tag { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
+#ab-origin { margin: 2px 0 0; }
 .au-last.bad { color: var(--danger-fg); }
 .au-inline-dot { display: inline-block; margin-right: 6px; vertical-align: 0; }
 .au-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; background: var(--muted-2); }

@@ -24,7 +24,7 @@
   const FAST_MS = 3000;
   const SLOW_MS = 30000;
   const RUN_PAGE = 30;
-  const TRIGGER = { 'schedule': 'scheduled', 'catch-up': 'catch-up', 'manual': 'run now' };
+  const TRIGGER = { 'schedule': 'scheduled', 'catch-up': 'catch-up', 'manual': 'run now', 'trial': 'trial · not written to cards' };
   const CARD_STATE = {
     noted: ['Noted', 'ok'], skipped: ['Skipped', 'plain'], failed: ['Failed', 'bad'], 'timed-out': ['Timed out', 'bad'],
     'not-run': ['Not run', 'plain'], moved: ['Moved', 'plain'], running: ['Running', 'live'], waiting: ['Waiting', 'plain'],
@@ -105,6 +105,7 @@
         <span class="au-row-top"><span class="au-mark">${markFor(a.agent)}</span><span class="au-name">${esc(a.name)}</span></span>
         <span class="au-meta">${esc(a.scheduleText)} · ${esc(AC.cardsText(a.cards, boardLabel(a.cards.board)))} · ${esc(AC.LEVEL_LABEL[a.level])}</span>
         <span class="au-next">${a.nextRun ? `Next: ${esc(when(a.nextRun))}` : 'Off'}</span>
+        ${AC.agentTagText(a, tz()) ? `<span class="au-tag">${esc(AC.agentTagText(a, tz()))}</span>` : ''}
         ${lastLine}
       </button>
       <button type="button" class="su-btn su-sm au-run-now"${a.running || a.queued || !AU.data.live ? ' disabled' : ''}>${runLabel}</button>
@@ -193,7 +194,7 @@
       return;
     }
     $('au-runs').innerHTML = done.map((r) => `<button type="button" class="au-run-item" data-run="${esc(r.id)}">
-        <span class="au-run-when">${esc(when(r.startedAt))} · ${esc(r.automationName)}</span>
+        <span class="au-run-when">${esc(when(r.startedAt))} · ${esc(r.automationName)}${r.trigger === 'trial' ? ` · ${TRIGGER.trial}` : ''}</span>
         <span class="au-run-sum"><span class="au-dot" data-tone="${AC.lastRunTone(r)}"></span>${esc(r.state === 'failed' ? `Failed: ${AC.failureText(r)}` : AC.runSummary(r))}${r.state === 'stopped' ? ' · stopped' : r.state === 'interrupted' ? ' · interrupted' : ''}</span>
       </button>`).join('') + (AU.more ? '<button type="button" class="su-btn su-sm au-older">Show older</button>' : '');
   }
@@ -233,11 +234,11 @@
     const [label, tone] = CARD_STATE[c.state] || [c.state, 'plain'];
     const warn = [];
     if (c.filesChanged && c.filesChanged.length) {
-      warn.push(run.level === 'work'
+      warn.push(run.level === 'work' && run.trigger !== 'trial'   // a trial runs read-only whatever the level
         ? ['plain', `Files it changed: ${c.filesChanged.join(', ')}`]
         : ['bad', `Files changed during a read-only run: ${c.filesChanged.join(', ')}`]);
     }
-    if (c.statusChange) warn.push(['warn', `Status changed: ${AC.STATUS_LABEL[c.statusChange.from] || c.statusChange.from} → ${AC.STATUS_LABEL[c.statusChange.to] || c.statusChange.to}`]);
+    if (c.statusChange) warn.push(['warn', `${run.trigger === 'trial' ? 'Would move' : 'Status changed'}: ${AC.STATUS_LABEL[c.statusChange.from] || c.statusChange.from} → ${AC.STATUS_LABEL[c.statusChange.to] || c.statusChange.to}`]);
     if (c.proposalIgnored) warn.push(['plain', 'Status proposal ignored: you changed it during the run']);
     if (c.doneReverted) warn.push(['warn', `Done was put back to ${AC.STATUS_LABEL[c.statusBefore] || c.statusBefore || 'its status'}`]);
     if (c.ignored && c.ignored.length) warn.push(['plain', `Ignored: ${c.ignored.join(', ')}`]);
@@ -407,6 +408,9 @@
     B.enabled = v.enabled;
     B.template = v.template;
     $('ab-title').textContent = B.editing ? 'Edit automation' : 'New automation';
+    const tag = B.editing ? AC.agentTagText(B.editing, tz()) : '';
+    $('ab-origin').textContent = tag;
+    $('ab-origin').classList.toggle('hidden', !tag);
     $('ab-name').value = v.name;
     renderLevels(v.level);
     renderAgents(v.agent);
