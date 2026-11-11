@@ -84,6 +84,8 @@ Before answering a question or starting a job, search what is already known:
 
 Open the top hits that bear on the request. Prefer an article's findings over older task notes, and newer over older when they disagree.
 
+Automations (scheduled agents that write a note into cards) have their own command, `vaultos-automations` (run it with `--help`), and a `vaultos-automations` skill. Use them, never `.vaultos/automations.json`. Anything you create is saved switched off; the person switches it on in the Automations tab.
+
 ## Create, split, finish
 
 Each has a step-by-step guide that works with any coding agent:

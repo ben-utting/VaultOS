@@ -47,6 +47,8 @@ COPY hooks ./hooks
 # vault-search: ranked search of the vault for any agent in a terminal.
 COPY bin ./bin
 RUN chmod +x bin/vault-search.js && ln -s /app/bin/vault-search.js /usr/local/bin/vault-search
+# vaultos-automations: agents in a terminal read, draft and try automations (they never switch one on).
+RUN chmod +x bin/vaultos-automations.js && ln -s /app/bin/vaultos-automations.js /usr/local/bin/vaultos-automations
 COPY starter-kit ./starter-kit
 COPY docker-entrypoint.sh /usr/local/bin/vaultos-entrypoint
 
