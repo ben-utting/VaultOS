@@ -414,6 +414,81 @@
     </nav>
   </div>
 
+  <!-- Automation builder (automations.js): a right-hand panel like the task drawer, full screen on a phone.
+       Top half: the agent (who and what). Bottom half: when it runs and on which cards. -->
+  <div id="au-scrim" class="scrim hidden"></div>
+  <aside id="au-builder" class="drawer view-side au-builder hidden" role="dialog" aria-modal="true" aria-labelledby="ab-title">
+    <div class="drawer-head">
+      <div><h2 id="ab-title">New automation</h2></div>
+      <button id="ab-close" class="ghost" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4 4 20"/><path d="m4 4 16 16"/></svg></button>
+    </div>
+    <form id="ab-form" class="ab-form" novalidate>
+      <h3 class="ab-sec">The agent</h3>
+      <div class="su-field"><label for="ab-name">Name</label>
+        <input id="ab-name" class="su-input" type="text" maxlength="60" autocomplete="off" placeholder="Morning check-in" aria-describedby="ab-name-err">
+        <p class="su-err" id="ab-name-err" aria-live="polite"></p></div>
+      <div class="su-field"><span class="su-label" id="ab-agent-l">Agent</span>
+        <div id="ab-agent" class="ab-agents" role="radiogroup" aria-labelledby="ab-agent-l"></div>
+        <p class="su-err" id="ab-agent-err" aria-live="polite"></p></div>
+      <div class="su-field"><span class="su-label" id="ab-level-l">What it may change</span>
+        <div id="ab-level" class="ab-levels" role="radiogroup" aria-labelledby="ab-level-l"></div>
+        <p class="su-err" id="ab-level-err" aria-live="polite"></p></div>
+      <div class="su-field"><label for="ab-template">Start from</label>
+        <select id="ab-template" class="su-input ab-narrow"></select>
+        <p class="su-err" id="ab-template-err" aria-live="polite"></p></div>
+      <div class="su-field"><label for="ab-prompt">What it should do on each card</label>
+        <textarea id="ab-prompt" class="su-input ab-prompt" rows="10" spellcheck="true" aria-describedby="ab-prompt-n ab-prompt-err"></textarea>
+        <p class="su-hint ab-count-n" id="ab-prompt-n"></p>
+        <p class="su-err" id="ab-prompt-err" aria-live="polite"></p>
+        <details class="ab-adds"><summary>What VaultOS adds</summary><pre id="ab-adds"></pre></details></div>
+
+      <h3 class="ab-sec">When it runs, and on which cards</h3>
+      <div class="ab-two">
+        <div class="su-field"><label for="ab-board">Board</label><select id="ab-board" class="su-input"></select>
+          <p class="su-err" id="ab-board-err" aria-live="polite"></p></div>
+        <div class="su-row ab-subtasks"><div class="su-row-t"><label class="su-label" for="ab-subtasks">Include subtasks</label></div>
+          <input type="checkbox" class="su-switch" id="ab-subtasks" role="switch"></div>
+      </div>
+      <div class="su-field"><span class="su-label" id="ab-statuses-l">Cards that are</span>
+        <div id="ab-statuses" class="ab-chips" role="group" aria-labelledby="ab-statuses-l"></div>
+        <p class="su-err" id="ab-statuses-err" aria-live="polite"></p></div>
+      <div id="ab-match" class="ab-match" aria-live="polite"></div>
+      <div class="ab-two">
+        <div class="su-field"><label for="ab-repeat">Repeat</label>
+          <select id="ab-repeat" class="su-input">
+            <option value="daily">Every day</option><option value="weekdays">Weekdays</option>
+            <option value="weekly">Weekly on…</option><option value="hours">Every few hours</option>
+          </select></div>
+        <div class="su-field" id="ab-time-f"><label for="ab-time">At</label><input id="ab-time" class="su-input" type="time" value="08:00"></div>
+        <div class="su-field hidden" id="ab-every-f"><label for="ab-every">Every</label><select id="ab-every" class="su-input"></select></div>
+        <div class="su-field hidden" id="ab-from-f"><label for="ab-from">Starting at</label><input id="ab-from" class="su-input" type="time" value="08:00"></div>
+      </div>
+      <div class="su-field hidden" id="ab-days-f"><span class="su-label" id="ab-days-l">On</span>
+        <div id="ab-days" class="ab-chips" role="group" aria-labelledby="ab-days-l"></div></div>
+      <p class="su-hint" id="ab-next"></p>
+      <p class="su-err" id="ab-schedule-err" aria-live="polite"></p>
+      <details class="ab-more"><summary>More</summary>
+        <div class="ab-two">
+          <div class="su-field"><label for="ab-section">Card section heading</label>
+            <input id="ab-section" class="su-input" type="text" maxlength="40" autocomplete="off" aria-describedby="ab-section-hint ab-section-err">
+            <p class="su-hint" id="ab-section-hint">Replaced on every run.</p>
+            <p class="su-err" id="ab-section-err" aria-live="polite"></p></div>
+          <div class="su-field"><label for="ab-limit">Time limit per card (minutes)</label>
+            <input id="ab-limit" class="su-input ab-narrow" type="number" min="2" max="30" step="1" aria-describedby="ab-limit-err">
+            <p class="su-err" id="ab-limit-err" aria-live="polite"></p></div>
+        </div>
+      </details>
+      <p class="su-err" id="ab-err" aria-live="polite"></p>
+    </form>
+    <div class="ab-foot">
+      <button type="button" id="ab-delete" class="su-btn ab-danger hidden">Delete</button>
+      <button type="button" id="ab-dup" class="su-btn hidden">Duplicate</button>
+      <span class="su-gap"></span>
+      <button type="button" id="ab-save" class="su-btn">Save</button>
+      <button type="button" id="ab-save-run" class="su-btn primary">Save and run now</button>
+    </div>
+  </aside>
+
   <!-- Task drawer (board view) -->
   <aside id="drawer" class="drawer hidden">
     <div class="drawer-head">

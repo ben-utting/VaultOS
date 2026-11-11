@@ -3913,3 +3913,63 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   .au-row { grid-template-columns: auto minmax(0, 1fr); }
   .au-row .au-run-now { grid-column: 2; justify-self: start; }
 }
+
+/* ---------- Automation builder (automations.js) ----------
+   The task drawer's panel, narrower, with a footer that stays in view. Tiles and chips use the selected rule
+   (accent border, faint accent wash); a tile that can't be picked says why underneath. */
+.au-builder { width: min(640px, 100vw); }
+.ab-form { padding-top: 4px; }
+.ab-sec { margin: 22px 0 12px; font-size: var(--t-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ab-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+.ab-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ab-tile, .ab-level {
+  display: grid; justify-items: start; align-content: start; gap: 4px; padding: 10px 12px; min-width: 0;
+  font: inherit; text-align: left; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+}
+.ab-tile:hover:not([aria-disabled="true"]), .ab-level:hover { border-color: var(--muted-2); }
+.ab-tile[aria-checked="true"], .ab-level[aria-checked="true"] {
+  border-color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, var(--panel-2));
+}
+.ab-tile[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.ab-tile:focus-visible, .ab-level:focus-visible, .ab-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ab-tile-mark svg { display: block; width: 20px; height: 20px; color: var(--muted); }
+.ab-tile[aria-checked="true"] .ab-tile-mark svg { color: var(--text); }
+.ab-tile-t, .ab-level-t { font-size: var(--t-sm); font-weight: 600; }
+.ab-tile-why, .ab-level-d { font-size: var(--t-xs); line-height: 1.4; color: var(--muted); }
+.ab-narrow { max-width: 180px; }
+.ab-prompt { min-height: 190px; resize: vertical; line-height: 1.5; }
+.ab-count-n { text-align: right; font-variant-numeric: tabular-nums; }
+.ab-adds, .ab-more { font-size: var(--t-sm); }
+.ab-adds summary, .ab-more summary { color: var(--muted); cursor: pointer; }
+.ab-adds pre {
+  margin: 8px 0 0; padding: 10px; white-space: pre-wrap; word-break: break-word; font-family: var(--mono-font); font-size: var(--t-xs);
+  color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md);
+}
+.ab-more { margin: 4px 0 16px; }
+.ab-more[open] summary { margin-bottom: 12px; }
+.ab-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 16px; align-items: end; }
+.ab-subtasks { min-height: 38px; }
+.ab-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ab-chip {
+  padding: 5px 12px; font: inherit; font-size: var(--t-sm); color: var(--muted); background: transparent;
+  border: 1px solid var(--line); border-radius: var(--radius-full); cursor: pointer;
+}
+.ab-chip:hover { color: var(--text); }
+.ab-chip[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ab-match { margin: -4px 0 16px; font-size: var(--t-sm); }
+.ab-match-n { margin: 0; font-weight: 600; }
+.ab-match-list { margin: 4px 0 0; padding-left: 18px; font-size: var(--t-xs); color: var(--muted); }
+.ab-match-warn { margin: 4px 0 0; font-size: var(--t-xs); color: var(--review); }
+#ab-next { margin: -8px 0 8px; }
+.ab-foot {
+  position: sticky; bottom: -60px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin: 8px -24px 0; padding: 12px 24px 16px; background: var(--panel); border-top: 1px solid var(--line);
+}
+.ab-danger { color: var(--danger-fg); }
+@media (max-width: 700px) {
+  .au-builder { width: 100vw; border-left: 0; padding: 0 16px 60px; }
+  .ab-foot { margin: 8px -16px 0; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .ab-levels { grid-template-columns: minmax(0, 1fr); }
+}
