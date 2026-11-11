@@ -195,9 +195,10 @@ test('kickoffPrompt for Claude Code only looks in its own skills folder', () => 
   assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), A.KICKOFF_PROMPT);
 });
 
-test('plainStartCommand drops the prompt', () => {
-  assert.equal(A.plainStartCommand(A.PROFILES.claude), 'claude');
-  assert.equal(A.plainStartCommand(A.PROFILES.cursor), 'agent');
-  assert.equal(A.plainStartCommand({ start: 'aider --message {prompt}' }), 'aider --message');
+test('plainStartCommand drops the prompt, and a flag that only carries it', () => {
+  const want = { claude: 'claude', cursor: 'agent', pi: 'pi', codex: 'codex', antigravity: 'agy', copilot: 'copilot', opencode: 'opencode', kilo: 'kilo' };
+  for (const [id, cmd] of Object.entries(want)) assert.equal(A.plainStartCommand(A.PROFILES[id]), cmd, id);
+  assert.equal(A.plainStartCommand({ start: 'aider --message {prompt}' }), 'aider');
+  assert.equal(A.plainStartCommand({ start: "mytool --model x --prompt '{prompt}'" }), 'mytool --model x');
   assert.equal(A.plainStartCommand({ start: 'mytool --fast' }), 'mytool --fast');
 });
