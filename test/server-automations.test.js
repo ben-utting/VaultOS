@@ -23,7 +23,7 @@ const call = async (base, method, url, { cookie, body } = {}) => {
 };
 
 // A server with boards Work and Home, set up through its routes. terminal: whether TERMINAL is allowed.
-async function ready(t, { terminal = true, files = {} } = {}) {
+async function ready(t, { terminal = true, files = {}, env = {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-auto-'));
   const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home') };
   fs.mkdirSync(d.vault);
@@ -31,7 +31,7 @@ async function ready(t, { terminal = true, files = {} } = {}) {
   seedVault(d.vault, files);
   const srv = await startServer({
     vault: d.vault, data: d.data, home: d.home,
-    env: { TERMINAL: terminal ? '1' : '0', AUTOMATION_TEST_AGENT: FAKE, TZ: 'Europe/London' },
+    env: { TERMINAL: terminal ? '1' : '0', AUTOMATION_TEST_AGENT: FAKE, TZ: 'Europe/London', ...env },
   });
   t.after(async () => {
     await srv.stop();
@@ -120,6 +120,15 @@ test('turn on, create, run now, see the note', async (t) => {
   assert.equal(detail.body.cards[0].noteHtml.trim(), '<p>Fake note.</p>');
   assert.equal((await s.api('GET', '/api/automations/runs/nope')).status, 404);
   assert.match(fs.readFileSync(path.join(s.vault, 'Work/_tasks/Board.md'), 'utf8'), /01-x/);
+});
+
+test('saving an agent at a level it can\'t run is a 400 on level', async (t) => {
+  const s = await ready(t, { env: { AUTOMATION_TEST_LEVELS: 'cursor:report,update' } });
+  await s.turnOn();
+  const r = await s.api('POST', '/api/automations', automation({ agent: 'cursor', level: 'work' }));
+  assert.equal(r.status, 400, r.text);
+  assert.match(r.body.errors.level, /^Cursor CLI can't run at Work$/);
+  assert.equal((await s.api('POST', '/api/automations', automation({ agent: 'cursor', level: 'update' }))).status, 200);
 });
 
 test('create with a reserved section is 400 with field errors', async (t) => {

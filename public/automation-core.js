@@ -190,6 +190,21 @@
     if (!SECTION_RE.test(section)) errors.section = 'Use 1 to 40 letters, digits, spaces or hyphens';
     else if (RESERVED_SECTIONS.includes(section.toLowerCase())) errors.section = "That's one of the card's own sections";
     if (!Number.isInteger(a.timeLimitMin) || a.timeLimitMin < 2 || a.timeLimitMin > 30) errors.timeLimitMin = 'Between 2 and 30 minutes';
+    // With ctx.agentLevels (the server and the builder pass it), the agent must be offered at the level.
+    // 'default' is resolved to the current default agent; ctx.agentLevels.default is its levels.
+    if (ctx.agentLevels && !errors.agent && !errors.level) {
+      const levels = ctx.agentLevels[a.agent] || [];
+      const labels = ctx.agentLabels || {};
+      if (!levels.length && a.agent === 'default') errors.agent = 'Pick an agent that can run automations';
+      else if (!levels.includes(a.level)) {
+        const lvl = LEVEL_LABEL[a.level];
+        if (a.agent === 'default') {
+          const others = Object.keys(ctx.agentLevels).filter((id) => id !== 'default' && ctx.agentLevels[id].includes(a.level)).map((id) => labels[id] || id);
+          const label = labels[ctx.defaultAgent] || ctx.defaultAgent;
+          errors.level = `Your default agent (${label}) can't run at ${lvl}; pick ${others.length ? `${others.join(' or ')} or ` : ''}another level`;
+        } else errors.level = `${labels[a.agent] || a.agent} can't run at ${lvl}`;
+      }
+    }
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
       ok: true,

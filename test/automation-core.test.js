@@ -178,3 +178,36 @@ test('lastRunTone and failureText', () => {
   assert.equal(AC.failureText(run), 'the agent exited with code 127');
   assert.equal(AC.failureText({ state: 'finished', cards: [] }), '');
 });
+
+// ---------- Agent and level, checked together ----------
+const levelCtx = (more = {}) => ({
+  boardKeys: ['work'], agentIds: ['default', 'claude', 'cursor'],
+  agentLevels: { default: ['report', 'update'], claude: ['report', 'update', 'work'], cursor: ['report', 'update'] },
+  agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' }, defaultAgent: 'cursor', ...more,
+});
+
+test('agent and level: an agent not offered at the level gets a level error', () => {
+  const r = AC.validateAutomation({ ...example(), agent: 'cursor', level: 'work' }, levelCtx());
+  assert.equal(r.ok, false);
+  assert.equal(r.errors.level, "Cursor CLI can't run at Work");
+  assert.equal(r.errors.agent, undefined);
+  assert.equal(AC.validateAutomation({ ...example(), agent: 'cursor', level: 'update' }, levelCtx()).ok, true);
+});
+
+test('agent and level: default names the default agent and the alternatives', () => {
+  const r = AC.validateAutomation({ ...example(), agent: 'default', level: 'work' }, levelCtx());
+  assert.equal(r.errors.level, "Your default agent (Cursor CLI) can't run at Work; pick Claude Code or another level");
+});
+
+test('agent and level: no default agent is an agent error', () => {
+  const ctx2 = levelCtx({ agentIds: ['default', 'claude'], agentLevels: { default: [], claude: ['report', 'update', 'work'] }, defaultAgent: null });
+  const r = AC.validateAutomation({ ...example(), agent: 'default', level: 'report' }, ctx2);
+  assert.equal(r.ok, false);
+  assert.equal(r.errors.agent, 'Pick an agent that can run automations');
+  assert.equal(r.errors.level, undefined);
+});
+
+test('agent and level: without agentLevels nothing extra is checked', () => {
+  const r = AC.validateAutomation({ ...example(), agent: 'cursor', level: 'work' }, { boardKeys: ['work'], agentIds: ['default', 'claude', 'cursor'] });
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+});
