@@ -57,7 +57,7 @@ test('legacySettings maps the vault', async () => {
       { key: 'alpha', dir: 'alpha', label: 'alpha', hidden: false },
       { key: 'beta', dir: 'Beta', label: 'Beta', hidden: false },
     ],
-    features: { today: true, terminal: true, morningRead: true, notes: false },
+    features: { today: true, terminal: true, morningRead: true, notes: false, automations: false },
     today: { dir: 'Beta/Today', timezone: 'Europe/London' },
     agent: { profile: 'claude' },
     notes: { dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' },
