@@ -157,6 +157,18 @@ test('agent hook is exempt from the Host check', async (t) => {
   assert.equal((await fetch(`${srv.base}/api/me`)).status, 421);
 });
 
+test('the agents\' automations route is exempt from the Host check, like search', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-sec-'));
+  fs.mkdirSync(path.join(root, 'vault'));
+  fs.mkdirSync(path.join(root, 'home'));
+  const srv = await startServer({ vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home'),
+    env: { TERMINAL: undefined, ALLOWED_HOSTS: 'example.test' } });
+  t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  const r = await fetch(`${srv.base}/api/term/automations/list`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  assert.notEqual(r.status, 421);
+  assert.equal(r.status, (await fetch(`${srv.base}/api/term/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status);
+});
+
 test('socket whose Origin and Host are both the attacker gets 421', async (t) => {
   const s = await ready(t, { TERMINAL: undefined });
   assert.match(await upgrade(s.base, 'evil.example', s.cookie, 'http://evil.example'), / 421 /);

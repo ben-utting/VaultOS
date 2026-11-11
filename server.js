@@ -831,8 +831,8 @@ function logRejectedHost(host) {
   console.log(`host rejected: ${host}`);
 }
 app.use((req, res, next) => {
-  // /api/term/agent is already limited to loopback callers holding a per-terminal token.
-  if (req.path === '/health' || req.path.startsWith('/mcp/') || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search')) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
+  // The /api/term/ POSTs (agent hook, search, automations) are already limited to loopback callers holding a per-terminal token.
+  if (req.path === '/health' || req.path.startsWith('/mcp/') || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search' || req.path.startsWith('/api/term/automations/'))) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
   const host = safeHost(req.headers.host);
   logRejectedHost(host);
   res.status(421).type('text/plain').send(
