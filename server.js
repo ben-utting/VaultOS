@@ -1154,6 +1154,16 @@ if (TERMINAL_ENV) app.post('/api/term/search', async (req, res) => {
   }
 });
 
+// `vaultos-automations`, run by agents in a VaultOS terminal: the automations they may read, draft and try
+// (lib/automation-agent-api.js). Same token as above; AUTOMATIONS is created further down, so it's looked up
+// per request.
+if (TERMINAL_ENV) app.use('/api/term/automations', (req, res, next) => {
+  const t = req.method === 'POST' ? termCaller(req) : null;
+  if (!t) return res.status(403).json({ error: 'Forbidden' });
+  req.term = t;
+  return AUTOMATIONS.termRouter(req, res, next);
+});
+
 // The connector callback is a browser navigation (Atlassian sends the person back to it): with no session it gets a page.
 const cxEsc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cxPage = (text, script = '') => `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VaultOS</title>` +
@@ -1475,7 +1485,7 @@ app.get('/api/agents', settingsGuard, async (req, res) => {
 const { createAutomationService } = require('./lib/automation-service');
 const AUTOMATIONS = createAutomationService({
   vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, regenerateBoard,
-  terms: () => TERMS, profileFor, profiles: PROFILES, isInstalled, todayISO,
+  terms: () => TERMS, profileFor, profiles: PROFILES, isInstalled, todayISO, termCmd,
   renderMarkdown: (md) => marked.parse(stripAgentNotes(md), { breaks: true }),   // a note's lines stay lines
 });
 app.use('/api', AUTOMATIONS.router);
