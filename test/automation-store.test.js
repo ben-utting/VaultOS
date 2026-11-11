@@ -195,3 +195,16 @@ test('update keeps the tags it is given', async (t) => {
   assert.deepEqual(r.value.origin, ORIGIN);
   assert.deepEqual(r.value.agentChange, CHANGE);
 });
+
+test('switching off still works after the default agent stops covering the level', async (t) => {
+  const { store } = setup(t);
+  const lv = (def) => ({ ...ctx, agentIds: ['default', 'claude', 'cursor'], agentLevels: { default: def, claude: ['report', 'update', 'work'], cursor: ['report', 'update'] }, agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' }, defaultAgent: 'cursor' });
+  const { value } = await store.create(input({ level: 'work' }), lv(['report', 'update', 'work']));
+  // The default is now Cursor, which can't run Work.
+  const off = await store.update(value.id, input({ level: 'work', enabled: false }), lv(['report', 'update']));
+  assert.equal(off.ok, true, JSON.stringify(off.errors));
+  assert.equal(off.value.enabled, false);
+  // Switching it back on, or changing the level, still meets the check.
+  assert.equal((await store.update(value.id, input({ level: 'work', enabled: true }), lv(['report', 'update']))).ok, false);
+  assert.equal((await store.update(value.id, input({ level: 'work', enabled: false, agent: 'cursor' }), lv(['report', 'update']))).ok, false);
+});
