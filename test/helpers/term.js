@@ -4,10 +4,12 @@
 const crypto = require('node:crypto');
 const WebSocket = require('ws');
 
-function openTerm({ base, cookie }, { timeoutMs = 10000 } = {}) {
+// id: reattach to that terminal; query: extra parameters (space, spaceName, cwd…).
+function openTerm({ base, cookie }, { timeoutMs = 10000, id: want, query = {} } = {}) {
   return new Promise((resolve, reject) => {
-    const id = `test${crypto.randomBytes(4).toString('hex')}`;
-    const ws = new WebSocket(`${base.replace('http', 'ws')}/api/term?id=${id}`, { headers: { cookie, origin: base } });
+    const id = want || `test${crypto.randomBytes(4).toString('hex')}`;
+    const q = new URLSearchParams({ id, ...query });
+    const ws = new WebSocket(`${base.replace('http', 'ws')}/api/term?${q}`, { headers: { cookie, origin: base } });
     let out = '';
     const timer = setTimeout(() => { ws.terminate(); reject(new Error(`no token from the terminal: ${out.slice(-300)}`)); }, timeoutMs);
     ws.on('error', (err) => { clearTimeout(timer); reject(err); });
@@ -21,7 +23,12 @@ function openTerm({ base, cookie }, { timeoutMs = 10000 } = {}) {
       const hit = /TK (\S+) (\S+)\r?\n/.exec(out);
       if (!hit) return;
       clearTimeout(timer);
-      resolve({ id: hit[1], token: hit[2], close: () => { try { ws.send(JSON.stringify({ t: 'kill' })); } catch { /* gone */ } ws.close(); } });
+      resolve({
+        id: hit[1], token: hit[2],
+        close: () => { try { ws.send(JSON.stringify({ t: 'kill' })); } catch { /* gone */ } ws.close(); },
+        // Leave the shell running server-side (a hand-over or a reload), resolved once the socket has closed.
+        detach: () => new Promise((done) => { ws.once('close', done); ws.close(); }),
+      });
     });
   });
 }

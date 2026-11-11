@@ -43,7 +43,7 @@ const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup')
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
-const { PROFILES, kickoffPrompt, profileFor, startCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
+const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -971,7 +971,7 @@ app.get('/api/me', (req, res) => {
     todayDir: s && s.features.today ? s.today.dir : '',
     features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead), automations: AUTOMATIONS.live() },
     notes: s ? { enabled: !!s.features.notes, dir: s.notes.dir, inbox: s.notes.inbox, main: s.notes.main, tags: s.notes.tags } : { enabled: false },
-    agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)) } : null,
+    agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)), plainCommand: plainStartCommand(profile) } : null,
   });
 });
 
@@ -3287,7 +3287,19 @@ function termEnv(id, token) {
 
 // task: vault-relative task.md this shell was opened for ("Start agent"), so
 // the Board card can show its agent. Only set when the shell is created.
-function attachTerm(ws, id, cwd, cols, rows, task, agentTerm) {
+// A terminal's space (spaces +): the page sends space / spaceName on every connect. A parameter that's there
+// (even empty) replaces what the server has; one that's missing (an older page) leaves it; a bad one is dropped.
+function termSpaceParams(sp) {
+  const out = {};
+  if (sp.has('space')) {
+    const v = sp.get('space');
+    if (v === '' || /^[A-Za-z0-9_-]{1,40}$/.test(v)) out.space = v;
+  }
+  if (sp.has('spaceName')) out.spaceName = sp.get('spaceName').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+  return out;
+}
+
+function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
   const pty = require('node-pty');
   let t = TERMS.get(id);
   if (!t) {
@@ -3310,7 +3322,7 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm) {
       cwd,
       env: termEnv(id, token),
     });
-    t = { pty: proc, buf: '', ws: null, shell, cwd, idleSince: Date.now(), token, task: task || '', agentTerm: !!agentTerm, agent: null, lastOut: Date.now(), inputAt: 0 };
+    t = { pty: proc, buf: '', ws: null, shell, cwd, idleSince: Date.now(), token, task: task || '', agentTerm: !!agentTerm, agent: null, lastOut: Date.now(), inputAt: 0, space: '', spaceName: '' };
     TERMS.set(id, t);
     proc.onData((d) => {
       t.lastOut = Date.now();
@@ -3329,6 +3341,8 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm) {
     if (t.buf) ws.send(JSON.stringify({ t: 'o', d: t.buf }));
     if (cols && rows) try { t.pty.resize(cols, rows); } catch { /* exited */ }
   }
+  if ('space' in spaceIn) t.space = spaceIn.space;
+  if ('spaceName' in spaceIn) t.spaceName = spaceIn.spaceName;
   t.ws = ws;
   if (t.agent) ws.send(JSON.stringify({ t: 'agent', a: agentInfo(t) }));
   ws.on('message', (raw) => {
@@ -3380,7 +3394,8 @@ function mountTerminal(server) {
       const { task, agentTerm } = terminalTask({ explicit, found });
       const cols = Number(url.searchParams.get('cols')) || 0;
       const rows = Number(url.searchParams.get('rows')) || 0;
-      wss.handleUpgrade(req, socket, head, (ws) => attachTerm(ws, id, cwd, cols, rows, task, agentTerm));
+      const spaceIn = termSpaceParams(url.searchParams);
+      wss.handleUpgrade(req, socket, head, (ws) => attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn));
     });
   });
   setInterval(sweepTerms, 60e3).unref();
@@ -3409,6 +3424,7 @@ function mountTerminal(server) {
         cmd: termBusy(t) ? termCmd(t) : '',
         idleSince: t.idleSince,
         task: t.task,
+        space: t.space || '', spaceName: t.spaceName || '',
         agent: agentInfo(t),
         taskTitle: info?.title || '',
         taskStatus: info?.status || '',
