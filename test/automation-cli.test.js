@@ -160,3 +160,9 @@ test('the installed command runs as a program and refuses outside a terminal', a
   assert.equal(h.status, 0);
   assert.match(h.stdout, /^usage: vaultos-automations/);
 });
+
+test('an empty list says so', async () => {
+  const r = await run(['list'], { answers: [['list', 200, { timezone: 'UTC', automations: [] }]] });
+  assert.equal(r.code, 0);
+  assert.equal(r.out, 'No automations yet.\n');
+});
