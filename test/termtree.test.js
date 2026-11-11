@@ -271,3 +271,41 @@ test('rows applies the task-folder join rule', () => {
   assert.equal(sp.length, 1);
   assert.deepEqual(sp[0].ids, ['1', '2']);
 });
+
+// ---------- New spaces (a space id, 2026-11-11) ----------
+test('spaceKey: a space id comes first, even with a task or in a job folder', () => {
+  assert.equal(TT.spaceKey({ space: 'ab12', task: 'P/1/x/task.md', cwd: 'P/1/x' }, new Set(['P/1/x/task.md'])), 's:ab12');
+  assert.equal(TT.spaceKey({ space: 'ab12', cwd: 'P/1/x' }, new Set(['P/1/x/task.md'])), 's:ab12');
+  assert.equal(TT.spaceKey({ space: '', cwd: '' }, new Set()), 'd:');
+});
+
+test('rows carry space and spaceName, from the list or the held meta', () => {
+  const list = [{ id: '1', attached: true, cwd: '', space: 'ab12', spaceName: 'Space 2' }];
+  const h = new Map([['9', { meta: { id: '9', n: 9, title: '', cwd: '', task: '', space: 'cd34', spaceName: 'Space 3' }, osc: '', agent: null }]]);
+  const rs = TT.rows(list, h, new Map());
+  const by = Object.fromEntries(rs.map((r) => [r.id, r]));
+  assert.equal(by['1'].space, 'ab12');
+  assert.equal(by['1'].spaceName, 'Space 2');
+  assert.equal(by['1'].key, 's:ab12');
+  assert.equal(by['9'].space, 'cd34');
+  assert.equal(by['9'].key, 's:cd34');
+});
+
+test('spaces: an s: space is named by a custom name, then spaceName, then Space', () => {
+  const a = mk({ id: '1', key: 's:ab12', space: 'ab12', spaceName: 'Space 2' });
+  const b = mk({ id: '2', key: 's:ab12', space: 'ab12', spaceName: 'Space 2', where: 'detached' });
+  let s = TT.spaces([a, b], {});
+  assert.equal(s[0].name, 'Space 2');
+  assert.equal(s[0].detail, '2 terminals · 1 detached');
+  assert.equal(TT.spaces([a], { 's:ab12': 'Writing' })[0].name, 'Writing');
+  s = TT.spaces([mk({ id: '3', key: 's:zz', space: 'zz' })], {});
+  assert.equal(s[0].name, 'Space');
+  assert.equal(s[0].detail, '1 terminal');
+});
+
+test('nextSpaceName: the lowest free Space N from 2', () => {
+  assert.equal(TT.nextSpaceName([]), 'Space 2');
+  assert.equal(TT.nextSpaceName(['Space 2']), 'Space 3');
+  assert.equal(TT.nextSpaceName(['Space 3']), 'Space 2');
+  assert.equal(TT.nextSpaceName(['vault', 'Space 2', 'Space 4']), 'Space 3');
+});

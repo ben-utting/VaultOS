@@ -205,7 +205,9 @@
 
   // ---- space / row model --------------------------------------------------
 
+  // A new space's id comes first (spaces +): its terminals stay together wherever they cd to.
   function spaceKey(s, knownTasks) {
+    if (s.space) return 's:' + s.space;
     if (s.task) return 't:' + s.task;
     const cwd = s.cwd || '';
     if (cwd && knownTasks && knownTasks.has(cwd + '/task.md')) return 't:' + cwd + '/task.md';
@@ -222,6 +224,7 @@
       const pick = (k) => (x && x[k] != null && x[k] !== '' ? x[k] : meta[k] != null ? meta[k] : (h && h[k] != null ? h[k] : ''));
       const task = pick('task');
       const cwd = pick('cwd');
+      const space = pick('space');
       const agent = (h && h.agent) || (x && x.agent) || null;
       const id = (x || meta).id;
       let where;
@@ -230,7 +233,7 @@
       else where = (presence && presence.get(id)) || 'elsewhere';
       return {
         id, n: meta.n != null ? meta.n : (x && x.n != null ? x.n : null),
-        key: spaceKey({ task, cwd }, known),
+        key: spaceKey({ space, task, cwd }, known), space, spaceName: pick('spaceName'),
         title: pick('title'), osc: (h && h.osc) || '', cmd: (x && x.cmd) || '', cwd, task, agent, where,
         idleSince: x && x.idleSince != null ? x.idleSince : null,
         taskTitle: pick('taskTitle'), taskStatus: pick('taskStatus'), taskMissing: !!pick('taskMissing'), branch: pick('branch'),
@@ -258,6 +261,14 @@
 
   // Spaces in list order. Only a space with a pane held here gets a number (num, what Alt+N goes to); one
   // without is dimmed, and a click on it goes to goId: its most urgent row, else its first (goWhere says where).
+  // A new space's name: the lowest "Space N" from 2 that no space is called yet.
+  function nextSpaceName(names) {
+    const taken = new Set(names || []);
+    let n = 2;
+    while (taken.has(`Space ${n}`)) n++;
+    return `Space ${n}`;
+  }
+
   function spaces(rowList, names) {
     const groups = new Map();
     for (const r of rowList) {
@@ -271,7 +282,10 @@
       const first = rs[0];
       let name;
       let detail;
-      if (isTask) {
+      if (key.startsWith('s:')) {
+        name = (rs.find((r) => r.spaceName) || {}).spaceName || 'Space';
+        detail = `${rs.length} terminal${rs.length === 1 ? '' : 's'}`;
+      } else if (isTask) {
         const folder = basename(key.slice(2).replace(/\/[^/]*$/, ''));
         name = first.taskTitle || folder;
         detail = rs.some((r) => r.taskMissing) ? 'task moved' : STATUS_WORD[first.taskStatus] || '';
@@ -354,5 +368,6 @@
   return {
     STATUS_WORD, leaves, insert, insertLargest, remove, layout, setRatio, neighbour, reconcile, tooSmall,
     parseStore, rekey, spaceKey, rows, spaces, rollup, agentOrder, paneTitle, observe, nextNeedingYou, canOpen,
+    nextSpaceName,
   };
 });
