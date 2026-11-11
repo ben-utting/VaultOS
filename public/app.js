@@ -672,9 +672,16 @@ function batchChip(t) {
 let TASK_AGENTS = {};
 function agentPill(p) {
   const a = TASK_AGENTS[p];
-  if (!a) return '';
+  if (!a) return automationPill(p);
   const text = { working: 'working', blocked: 'needs you', done: 'finished', idle: 'idle' }[a.state] || a.state;
   return `<button type="button" class="card-agent" data-agent="${esc(a.state)}" data-term="${esc(a.id)}" title="${esc(twAgentText(a.state, agentLabel()))} — click to go to its terminal"><span class="agent-dot" data-agent="${esc(a.state)}"></span>${esc(agentLabel() || 'Agent')} ${esc(text)}</button>`;
+}
+// An automation's agent on this card (automations.js polls the current run): the same pill, naming the
+// automation; clicking it opens that run. A terminal agent's pill wins if both are on one card.
+function automationPill(p) {
+  const cur = window.Automations && Automations.current();
+  if (!cur || !cur.runId || !cur.card || cur.card.path !== p) return '';
+  return `<button type="button" class="card-agent" data-agent="working" data-autorun="${esc(cur.runId)}" title="${esc(cur.automationName)} is checking this card — click to see the run"><span class="agent-dot" data-agent="working"></span>${esc(cur.automationName)} working</button>`;
 }
 // Repaint just the pills, so a state change doesn't rebuild the whole board.
 function paintCardAgents() {
@@ -691,6 +698,7 @@ $('board').addEventListener('click', (e) => {
   const b = e.target.closest('.card-agent');
   if (!b) return;
   e.stopPropagation();
+  if (b.dataset.autorun) { setMode('automations'); Automations.openRun(b.dataset.autorun); return; }
   goToAgent(b.dataset.term);
 }, true);
 
