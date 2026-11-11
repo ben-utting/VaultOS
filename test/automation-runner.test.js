@@ -146,6 +146,63 @@ test('a setup that throws fails that card only, without starting an agent', asyn
   assert.deepEqual(spawned, ['02-b']);
 });
 
+// ---------- Trials ----------
+const tryAndWait = async (s, a) => {
+  assert.deepEqual(await s.runner.tryNow(a.id), { queued: true });
+  await s.runner.idle();
+  return s.lastRun();
+};
+const AC = require('../public/automation-core');
+
+test('a trial takes at most 3 cards and writes nothing', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'], '02-b': ['in-progress'], '03-c': ['in-progress'], '04-d': ['in-progress'], '05-e': ['blocked'] } });
+  const names = ['01-a', '02-b', '03-c', '04-d', '05-e'];
+  const before = names.map((n) => s.read(n));
+  const run = await tryAndWait(s, await s.make());
+  assert.equal(run.trigger, 'trial');
+  assert.equal(run.state, 'finished');
+  assert.deepEqual(run.cards.map((c) => [c.title, c.state]), [['01-a', 'noted'], ['02-b', 'noted'], ['03-c', 'noted']]);
+  assert.equal(run.cards[0].note, 'Fake note.');
+  assert.deepEqual(names.map((n) => s.read(n)), before);
+});
+
+test('a trial runs the agent at report level with the report prompt for a work automation', async (t) => {
+  const levels = [];
+  const preps = [];
+  const prompts = [];
+  const s = setup(t, {
+    cards: { '01-a': ['in-progress'] },
+    agentCommand: (id, level, prompt, opts) => { levels.push(level); if (prompt) prompts.push(prompt); return A.agentCommand(id, level, prompt, opts); },
+    prepareAgent: async (id, level) => { preps.push(level); return {}; },
+  });
+  const run = await tryAndWait(s, await s.make({ level: 'work' }));
+  assert.equal(run.cards[0].state, 'noted');
+  assert.ok(levels.length && levels.every((l) => l === 'report'), levels.join());
+  assert.deepEqual(preps, ['report']);
+  assert.ok(prompts[0].includes(AC.LEVEL_PARAGRAPHS.report));
+  assert.ok(!prompts[0].includes(AC.LEVEL_PARAGRAPHS.work));
+});
+
+test('an update trial records the move it would make without making it', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const before = s.read('01-a');
+  const run = await tryAndWait(s, await s.make({ level: 'update', prompt: 'FAKE:update:blocked' }));
+  assert.deepEqual(run.cards[0].statusChange, { from: 'in-progress', to: 'blocked' });
+  assert.equal(s.read('01-a'), before);
+  assert.match(s.read('01-a'), /^status: in-progress$/m);
+});
+
+test('a trial is refused while that automation is running or queued', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make({ prompt: 'FAKE:slow' });
+  assert.deepEqual(await s.runner.runNow(a.id), { queued: true });
+  const r = await s.runner.tryNow(a.id);
+  assert.ok(r.error === 'It is running now' || r.error === 'It is already queued', JSON.stringify(r));
+  await s.runner.idle();
+  const runs = await s.store.listRuns({ limit: 5 });
+  assert.deepEqual(runs.map((x) => x.trigger), ['manual']);
+});
+
 test('over 20 cards: 20 processed, the rest not run', async (t) => {
   const cards = {};
   for (let i = 1; i <= 22; i++) cards[`${String(i).padStart(2, '0')}-x`] = ['in-progress'];

@@ -112,6 +112,7 @@
   // A card's own sections: an automation may never be pointed at one, so a typo can't wipe the Plan.
   const RESERVED_SECTIONS = ['goal', 'context / key facts', 'context', 'plan', 'progress log', 'findings / decisions', 'findings', 'comments', 'subtasks'];
   const MAX_CARDS = 20;
+  const TRIAL_CARDS = 3;   // a trial (spec §5.3) looks at this many cards at most
   const NOTE_MAX = 1500;
   const PROMPT_MAX = 8000;
   const NAME_MAX = 60;
@@ -289,7 +290,7 @@
   return {
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
-    LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
+    LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
     TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText,
   };
 });
