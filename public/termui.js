@@ -58,6 +58,7 @@ const twNewId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.ran
 //   opts.onOpenPath(rel)   a vault path was clicked in a terminal
 //   opts.onChange(count)   sessions were added or removed
 //   opts.beforeNew()       called before a new session is created (the dock uses it to show itself)
+//   opts.agentCommand()    the default agent's plain start command for agents + (null: none set)
 //   opts.isActive()        whether Alt+1…9 / Ctrl+Shift+` should act on this workspace right now
 //                          (also: whether the focused terminal counts as looked at)
 //   opts.onAgents(sum)     an agent's state changed; sum = { working, blocked, done, idle } counts
@@ -199,7 +200,8 @@ function createTermWorkspace(root, opts = {}) {
   const side = createTermSide(q('.tw-side'), {
     onSpace: (key) => openSpace(key),
     onAgent: (id) => goTo(id),
-    onNew: () => create(),
+    onNewSpace: () => newSpace(),
+    onNewAgent: () => newAgent(),
     onMenu: (anchor) => openFootMenu(anchor),
     onRenameSpace: (key) => renameSpacePrompt(key),
     onToggle: () => toggleSide(),
@@ -209,7 +211,7 @@ function createTermWorkspace(root, opts = {}) {
   // splits are hidden by CSS and a summary + switch pair opens the sheet.
   const picker = createTermPicker({
     spaces: () => spaces(), rows: () => rows(),
-    goTo: (id) => goTo(id), onNew: () => create(),
+    goTo: (id) => goTo(id), onNewSpace: () => newSpace(), onNewAgent: () => newAgent(),
     refocus: () => { const f = focused(); if (f) f.handle.focus(); },
   });
   const phoneMQ = window.matchMedia('(max-width: 700px)');
@@ -249,13 +251,16 @@ function createTermWorkspace(root, opts = {}) {
     side.render({
       mode: sideMode, brand: HOST === 'window', spaces: spaces(rs), agents: TermTree.agentOrder(rs),
       activeKey: W.sessions.some((s) => s.key === W.store.active) ? W.store.active : null, focusedId: f ? f.id : null,
+      agentReady: !!agentCommand(),
     });
   }
 
   const session = (id) => W.sessions.find((s) => s.id === id);
   const focused = () => session(W.focused) || W.sessions[0] || null;
   const label = (s) => s.title || `${s.n} · ${s.cwd ? s.cwd.split('/').pop() : 'vault'}`;
-  const meta = (s) => ({ id: s.id, n: s.n, title: s.title, cwd: s.cwd, task: s.task });
+  const meta = (s) => ({ id: s.id, n: s.n, title: s.title, cwd: s.cwd, task: s.task, space: s.space, spaceName: s.spaceName });
+  // The default agent's plain start command (agents +), or null: the host's opts.agentCommand.
+  function agentCommand() { try { return (opts.agentCommand && opts.agentCommand()) || null; } catch { return null; } }
   // The pane's own name: a rename, else the shell's OSC title, else "shell".
   const paneName = (s) => TermTree.paneTitle({ title: s.title, osc: s.osc, cmd: '' });
 
@@ -538,7 +543,8 @@ function createTermWorkspace(root, opts = {}) {
   // Create (or, with a known id, reattach to) a session. The server keeps a
   // detached shell (for as long as something runs in it, a day if idle), so a
   // reload, a sleep or a hand-over between windows reattaches with its scrollback.
-  function add({ id, n, title, cwd, task, run, focus = false, split, target } = {}) {
+  // space / spaceName: the new space it belongs to (spaces +). into: file it under that space key (agents +).
+  function add({ id, n, title, cwd, task, run, focus = false, split, target, space, spaceName, into: intoKey } = {}) {
     if (id && session(id)) return session(id);
     const seq = n || (twGet(TW_SEQ_KEY, 0) + 1);
     if (!n) twSet(TW_SEQ_KEY, seq);
@@ -547,11 +553,13 @@ function createTermWorkspace(root, opts = {}) {
     const s = {
       id: id || twNewId(), n: seq, title: title || '', cwd: cwd || '', task: (listed && listed.task) || task || '',
       key: '', osc: '', handle: null, pane: null, state: 'connecting', agent: null, topts: null,
+      space: space || '', spaceName: spaceName || '',
     };
     // A split goes into its target's space, whatever its own folder would
     // key to now (a plain shell that joined a task space stays there).
     const into = split ? session(target) : null;
-    s.key = into ? into.key : keyFor(s);
+    if (into) { s.space = into.space || ''; s.spaceName = into.spaceName || ''; }   // a split joins its target's new space too
+    s.key = into ? into.key : intoKey && W.store.spaces[intoKey] ? intoKey : keyFor(s);
     s.joined = s.key !== TermTree.spaceKey(s, knownTasks());   // combined by hand: the server's task link doesn't pull it back out
     W.expected.delete(s.id);
     s.pane = buildPane(s);
@@ -577,6 +585,9 @@ function createTermWorkspace(root, opts = {}) {
       id: s.id,
       cwd: s.cwd,
       task: s.task,
+      // Read on every connect, so a combine that moves the pane changes what the server is told next.
+      get space() { return s.space; },
+      get spaceName() { return s.spaceName; },
       run,
       onOpenPath: (rel) => opts.onOpenPath && opts.onOpenPath(rel),
       onState: (state) => onState(s, state),
@@ -684,16 +695,37 @@ function createTermWorkspace(root, opts = {}) {
     const ids = heldIn(fromKey);
     if (fromKey === toKey || !ids.length || !W.store.spaces[toKey]) return;
     const box = paneBox();
+    // A new space's id goes with the panes (or none, into a card's or folder's space); the next connect tells the server.
+    const there = W.sessions.find((x) => x.key === toKey);
+    const toSpace = toKey.startsWith('s:') ? toKey.slice(2) : '';
+    const toName = toSpace && there ? there.spaceName : '';
     for (const id of ids) {
       const s = session(id);
       W.store = TermTree.rekey(W.store, id, s.key, toKey, { w: box.w, h: box.h }).store;
       s.key = toKey;
       s.joined = true;
+      s.space = toSpace;
+      s.spaceName = toName;
     }
     W.store.spaces[toKey].zoom = null;   // show them all, not just the zoomed pane
     picked();
     focusSession(ids[0]);
     heldChanged();
+  }
+
+  // spaces +: a new space of its own, one plain terminal at the vault root, called "Space N".
+  function newSpace({ run } = {}) {
+    const space = twNewId().replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+    const spaceName = TermTree.nextSpaceName(spaces().map((x) => x.name));
+    return create({ cwd: '', space, spaceName, run });
+  }
+  // agents +: the default agent in the active space (a plain terminal with no agent set). With no space here, a new one.
+  function newAgent() {
+    const run = agentCommand() || undefined;
+    const key = W.store.active;
+    const f = key && W.sessions.some((x) => x.key === key) ? session(focusOf(key)) : null;
+    if (!f) return newSpace({ run });
+    return create({ cwd: f.cwd, task: f.task, space: f.space, spaceName: f.spaceName, into: f.key, run });
   }
 
   function split(dir) {
@@ -1373,7 +1405,7 @@ function createTermWorkspace(root, opts = {}) {
     if (!m || typeof m.id !== 'string' || !m.id) return null;
     picked();
     if (!session(m.id) && opts.beforeNew) opts.beforeNew();
-    const s = add({ id: m.id, n: m.n, title: m.title, cwd: m.cwd, task: m.task, focus: true });
+    const s = add({ id: m.id, n: m.n, title: m.title, cwd: m.cwd, task: m.task, space: m.space, spaceName: m.spaceName, focus: true });
     focusSession(s.id);
     return s;
   }
@@ -1430,6 +1462,8 @@ function createTermWorkspace(root, opts = {}) {
     spaceKeys,
     showSpace,
     split,
+    newSpace,
+    newAgent,
     combineSpace,
     toggleZoom,
     focusDir,

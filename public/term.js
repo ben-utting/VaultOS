@@ -248,6 +248,7 @@ function legacyCopy(text) {
 //   opts.id        stable id: reconnecting with the same id reattaches to the same shell
 //   opts.cwd       vault-relative folder to start in (only used when the shell is new)
 //   opts.task      vault-relative task.md this shell works on (only used when new)
+//   opts.space     the new space it belongs to (spaces +), and opts.spaceName; sent on every connect
 //   opts.run       command typed once the socket first opens (a pty buffers it
 //                  until the shell reads it, so no prompt wait is needed)
 //   opts.onAgent({state, since} | null)  Claude's state in this shell (hooks → server)
@@ -566,6 +567,9 @@ function createTerminal(container, opts = {}) {
     sizeOwed = !shown;
     if (opts.cwd) q.set('cwd', opts.cwd);
     if (opts.task) q.set('task', opts.task);
+    // Always sent, empty or not: the server keeps the latest, and an empty one is how a pane leaves a space.
+    q.set('space', opts.space || '');
+    q.set('spaceName', opts.spaceName || '');
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     opts.onState && opts.onState('connecting');
     ws = new WebSocket(`${proto}//${location.host}/api/term?${q}`);

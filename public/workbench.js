@@ -1278,6 +1278,8 @@ const TW = createTermWorkspace($('term-area'), {
   onOpenPath: (rel) => fxOpen(rel, { pin: true, reveal: true }),
   onChange: (n) => { $('termbtn').dataset.n = n || ''; },
   beforeNew: () => showTerminals(),
+  // agents +: the default agent, started plainly (no check-in prompt; that's the card's Start agent).
+  agentCommand: () => (ME.agent && ME.agent.plainCommand) || null,
   isActive: dockVisible,
   agentLabel,
 });

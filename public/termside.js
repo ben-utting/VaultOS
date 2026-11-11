@@ -8,8 +8,11 @@
 // rendering: createTermSide(el, ctx) draws a model and calls ctx back; the
 // workspace (termui.js) owns every action.
 //
-//   model = { mode: 'side'|'rail', brand, spaces: Space[], agents: Row[], activeKey, focusedId }
-//   ctx   = { onSpace(key), onAgent(id), onNew(), onMenu(anchorEl), onRenameSpace(key), onToggle() }
+//   model = { mode: 'side'|'rail', brand, spaces: Space[], agents: Row[], activeKey, focusedId, agentReady }
+//   ctx   = { onSpace(key), onAgent(id), onNewSpace(), onNewAgent(), onMenu(anchorEl), onRenameSpace(key), onToggle() }
+//
+// Two +s: beside "spaces" a new space; beside "agents" the default agent in the active space. The rail lists
+// spaces only, so its one + is a new space. The first class names the button (put() refocuses by it).
 //
 // Every piece of text (a task title can be anything) goes through twEsc,
 // from termui.js, which loads after this file and is only called at render
@@ -82,13 +85,15 @@ const createTermSide = (() => {
       put(headEl, 'head', !rail && last.brand ? 'Vault<span class="brand-os">OS</span>' : '');
       headEl.classList.toggle('brand', !rail && !!last.brand);
       let body = '';
+      const newSpace = '<button type="button" class="tw-new-space tw-side-new" title="New space" aria-label="New space">+</button>';
+      const agentTip = last.agentReady ? 'New agent in this space' : 'New terminal in this space (no default agent set)';
+      const newAgent = `<button type="button" class="tw-new-agent tw-side-new" title="${agentTip}" aria-label="${agentTip}">+</button>`;
       if (rail) {
-        body = spaces.map((s) => spaceRow(s, last.activeKey, true)).join('')
-          + '<button type="button" class="tw-side-new" title="New terminal" aria-label="New terminal">+</button>';
+        body = spaces.map((s) => spaceRow(s, last.activeKey, true)).join('') + newSpace;
       } else {
-        body = '<div class="tw-side-h"><span>spaces</span><button type="button" class="tw-side-new" title="New terminal" aria-label="New terminal">+</button></div>'
+        body = `<div class="tw-side-h"><span>spaces</span>${newSpace}</div>`
           + (spaces.length ? spaces.map((s) => spaceRow(s, last.activeKey, false)).join('') : '<div class="tw-side-empty">no terminals</div>')
-          + '<div class="tw-side-h"><span>agents</span></div>'
+          + `<div class="tw-side-h"><span>agents</span>${newAgent}</div>`
           + (agents.length ? agents.map((r) => agentRow(r, names, last.focusedId)).join('') : '<div class="tw-side-empty">none running</div>');
       }
       put(scrollEl, 'list', body);
@@ -104,7 +109,8 @@ const createTermSide = (() => {
       if (!t || !el.contains(t)) return;
       if (t.classList.contains('tw-sp-row')) ctx.onSpace(t.dataset.key);
       else if (t.classList.contains('tw-ag-row')) ctx.onAgent(t.dataset.id);
-      else if (t.classList.contains('tw-side-new')) ctx.onNew();
+      else if (t.classList.contains('tw-new-space')) ctx.onNewSpace();
+      else if (t.classList.contains('tw-new-agent')) ctx.onNewAgent();
       else if (t.classList.contains('tw-side-menu')) ctx.onMenu(t);
       else if (t.classList.contains('tw-side-toggle')) ctx.onToggle();
     });

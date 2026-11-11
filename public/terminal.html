@@ -41,7 +41,11 @@
     let count = 0, alert = '';
     // The chosen agent's name, for "<name> needs you" (neutral words until /api/me answers, or with no agent).
     let agentName = null;
-    fetch('/api/me').then((r) => r.json()).then((me) => { agentName = me.agent ? me.agent.label : null; }).catch(() => {});
+    let agentCmd = null;   // agents +: the default agent's plain start command
+    fetch('/api/me').then((r) => r.json()).then((me) => {
+      agentName = me.agent ? me.agent.label : null;
+      agentCmd = me.agent ? me.agent.plainCommand || null : null;
+    }).catch(() => {});
     const retitle = () => { document.title = alert + (count ? `VaultOS Terminals (${count})` : 'VaultOS Terminals'); };
     const TW = createTermWorkspace(document.getElementById('term-area'), {
       store: 'vaultboard.termwin',
@@ -58,6 +62,7 @@
       // The window title is what shows in the taskbar while it's behind others.
       onAgents: (sum) => { alert = sum.blocked ? '⚠ needs you · ' : sum.done ? '✓ finished · ' : ''; retitle(); },
       agentLabel: () => agentName,
+      agentCommand: () => agentCmd,
     });
 
     // The theme follows the main window (the storage event fires in the other

@@ -3,11 +3,11 @@
 // ========================================================================
 // The terminal workspace's "Go to" picker: every terminal, grouped under its
 // space, filtered as you type. On a desktop it is a centred modal; on a phone
-// the same list is a full-screen sheet with 44px rows and a New terminal
+// the same list is a full-screen sheet with 44px rows and New space / New agent here
 // button. Rendering and input only: createTermPicker(ctx) draws ctx's data
 // and calls ctx back; the workspace (termui.js) owns every action.
 //
-//   ctx = { spaces(), rows(), goTo(id), onNew(), refocus() }
+//   ctx = { spaces(), rows(), goTo(id), onNewSpace(), onNewAgent(), refocus() }
 //
 // Every piece of text (a task title can be anything) goes through twEsc, from
 // termui.js, which loads after this file and is only called at render time.
@@ -94,7 +94,8 @@ const createTermPicker = (() => {
         + '<div class="tw-pick-bar"><input type="text" class="tw-pick-q" placeholder="Go to a terminal…" aria-label="Filter terminals" autocomplete="off" spellcheck="false">'
         + (sheet ? '<button type="button" class="tw-pick-close" aria-label="Close">Close</button>' : '') + '</div>'
         + '<div class="tw-pick-list" role="listbox"></div>'
-        + (sheet ? '<div class="tw-pick-foot"><button type="button" class="tw-pick-new">New terminal</button></div>' : '')
+        + (sheet ? '<div class="tw-pick-foot"><button type="button" class="tw-pick-new tw-pick-new-space">New space</button>'
+          + '<button type="button" class="tw-pick-new tw-pick-new-agent">New agent here</button></div>' : '')
         + '</div>';
       const input = el.querySelector('.tw-pick-q');
       const node = el;
@@ -114,7 +115,8 @@ const createTermPicker = (() => {
         const row = e.target.closest('.tw-pick-row');
         if (row) { pick(row.dataset.id); return; }
         if (e.target === node || e.target.closest('.tw-pick-close')) { close(true); return; }
-        if (e.target.closest('.tw-pick-new')) { close(false); ctx.onNew(); }
+        if (e.target.closest('.tw-pick-new-space')) { close(false); ctx.onNewSpace(); return; }
+        if (e.target.closest('.tw-pick-new-agent')) { close(false); ctx.onNewAgent(); }
       });
       document.body.appendChild(node);
       renderList();

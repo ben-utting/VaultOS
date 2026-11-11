@@ -2954,6 +2954,8 @@ body.tw-drag-col, body.tw-drag-col * { cursor: row-resize !important; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer;
 }
 .tw-pick-new { width: 100%; }
+.tw-pick-foot:has(.tw-pick-new-agent) { display: flex; gap: 8px; }
+.tw-pick-foot .tw-pick-new-space, .tw-pick-foot .tw-pick-new-agent { flex: 1; width: auto; }
 .tw-pick[data-present="sheet"] { align-items: stretch; background: var(--bg); }
 .tw-pick[data-present="sheet"] .tw-pick-box {
   width: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; background: var(--bg);
