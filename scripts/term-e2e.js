@@ -1264,7 +1264,7 @@ SCEN['S7'] = async () => {
   check('S7 .tw-switch opens the sheet, full viewport', sheet && !!box && !box.error && box.w >= box.iw - 1 && box.h >= box.ih - 1, box);
   const rowsH = await ev(p, () => [...document.querySelectorAll('.tw-pick .tw-pick-row')].map((r) => r.getBoundingClientRect().height));
   check('S7 sheet rows are at least 44px', Array.isArray(rowsH) && rowsH.length >= 2 && rowsH.every((h) => h >= 44), rowsH);
-  check('S7 the sheet has a New terminal button', await ev(p, () => [...document.querySelectorAll('.tw-pick button')].some((b) => b.textContent.trim() === 'New terminal')) === true);
+  check('S7 the sheet has New space and New agent here', JSON.stringify(await ev(p, () => [...document.querySelectorAll('.tw-pick .tw-pick-foot button')].map((b) => b.textContent.trim()))) === JSON.stringify(['New space', 'New agent here']));
   await shot(p, 's7-phone-dark-sheet');
   await ev(p, (id) => document.querySelector(`.tw-pick .tw-pick-row[data-id="${id}"]`).click(), webId);
   check('S7 tapping a row closes the sheet', await waitFor(p, () => !document.querySelector('.tw-pick'), 3000));
