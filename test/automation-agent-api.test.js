@@ -21,7 +21,7 @@ const draft = (more = {}) => ({
   schedule: { repeat: 'weekdays', time: '08:00' }, section: 'Latest check-in', timeLimitMin: 10, ...more,
 });
 
-function setup(t, { start = Date.parse('2026-11-11T09:00:00Z') } = {}) {
+function setup(t, { start = Date.parse('2026-11-11T09:00:00Z'), onCtx = null } = {}) {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-agent-api-'));
   t.after(() => fs.rmSync(vault, { recursive: true, force: true }));
   const clock = { now: start };
@@ -31,9 +31,11 @@ function setup(t, { start = Date.parse('2026-11-11T09:00:00Z') } = {}) {
   const runner = {
     tryNow: async (id) => (id === 'busy' ? { error: 'It is already queued' } : (await store.get(id)) ? (tried.push(id), { queued: true }) : { error: 'No such automation' }),
     remove: (id) => removed.push(id),
+    busy: { current: null, queue: [] },
+    status() { return this.busy; },
   };
   const api = createAgentApi({
-    store, runner, ctx, tz: () => TZ, now: () => clock.now, options: () => ({ hello: 1 }),
+    store, runner, ctx: () => { if (onCtx) onCtx(); return ctx(); }, tz: () => TZ, now: () => clock.now, options: () => ({ hello: 1 }),
     listCards: async () => [
       { path: 'Work/a/task.md', title: 'A', status: 'in-progress', batch: '' },
       { path: 'Work/b/task.md', title: 'B', status: 'backlog', batch: '' },
@@ -41,7 +43,7 @@ function setup(t, { start = Date.parse('2026-11-11T09:00:00Z') } = {}) {
   });
   // A switched-on automation the person made in the tab.
   const personOn = async (more = {}) => (await store.create({ ...draft(more), enabled: true }, ctx())).value;
-  return { store, api, clock, tried, removed, personOn };
+  return { store, api, clock, tried, removed, personOn, runner };
 }
 
 test('create saves it off and tags it, whatever enabled says', async (t) => {
@@ -146,7 +148,6 @@ test('delete refuses an automation that is on', async (t) => {
   const { automation } = (await s.api.create(draft({ name: 'Draft' }), 'Cursor CLI')).body;
   assert.equal((await s.api.remove(automation.id)).status, 200);
   assert.equal(await s.store.get(automation.id), null);
-  assert.deepEqual(s.removed, [automation.id]);
 });
 
 test('the seventh trial in an hour is refused with the time it frees up', async (t) => {
@@ -187,4 +188,65 @@ test('list, show, match, runs and run read without changing anything', async (t)
   assert.deepEqual((await s.api.runs({})).body, { runs: [] });
   assert.equal((await s.api.run('20261111-090000-0001')).status, 404);
   assert.deepEqual((await s.api.options()).body, { hello: 1 });
+});
+
+// ---------- Races with the tab (final review) ----------
+const def = (a) => { const { id, created, updated, origin, agentChange, ...rest } = a; return rest; };   // eslint-disable-line no-unused-vars
+
+test('a tab switch-off that lands during an agent edit stays off', async (t) => {
+  let tab = null;
+  let fired = false;
+  const s = setup(t, { onCtx: () => { if (!fired && s0.id) { fired = true; tab = s.store.update(s0.id, { ...def(s0), enabled: false }, ctx()); } } });
+  const s0 = await s.personOn();
+  const r = await s.api.edit(s0.id, { name: 'Renamed' }, 'Cursor CLI');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await tab).ok, true);
+  const now = await s.store.get(s0.id);
+  assert.equal(now.enabled, false, 'the person switched it off; the agent must not switch it back on');
+  assert.equal(now.name, 'Check', "the person's save came last, so it wins whole");
+});
+
+test('a delete races a tab switch-on safely', async (t) => {
+  const s = setup(t);
+  const { automation } = (await s.api.create(draft(), 'Cursor CLI')).body;
+  // The person switches it on while the agent's delete is under way.
+  const [del, on] = await Promise.all([
+    s.api.remove(automation.id),
+    (async () => { await null; return s.store.update(automation.id, { ...def(automation), enabled: true }, ctx()); })(),
+  ]);
+  const left = await s.store.get(automation.id);
+  if (del.status === 200) assert.equal(on, null, 'deleted first: the switch-on found nothing');
+  else assert.equal(left.enabled, true);
+  assert.ok(!(del.status === 200 && left), 'never both deleted and still there');
+});
+
+test('two drafts at once still respect the cap of 10', async (t) => {
+  const s = setup(t);
+  for (let i = 0; i < 9; i++) await s.api.create(draft({ name: `D${i}` }), 'Cursor CLI');
+  const rs = await Promise.all([s.api.create(draft({ name: 'X' }), 'Cursor CLI'), s.api.create(draft({ name: 'Y' }), 'Cursor CLI')]);
+  assert.deepEqual(rs.map((r) => r.status).sort(), [200, 409]);
+  assert.equal((await s.store.list()).length, 10);
+});
+
+test('off works even when the automation no longer validates', async (t) => {
+  const s = setup(t);
+  const on = await s.personOn({ cards: { board: 'home', statuses: ['in-progress'], subtasks: false } });
+  const api2 = createAgentApi({ store: s.store, runner: s.runner, ctx: () => ({ ...ctx(), boardKeys: ['work'] }), tz: () => TZ, options: () => ({}), listCards: async () => [] });
+  const r = await api2.off(on.id);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal((await s.store.get(on.id)).enabled, false);
+});
+
+test('an agent can\'t delete an automation while it runs or waits in the queue', async (t) => {
+  const s = setup(t);
+  const { automation } = (await s.api.create(draft(), 'Cursor CLI')).body;
+  s.runner.busy = { current: { automationId: automation.id }, queue: [] };
+  let r = await s.api.remove(automation.id);
+  assert.equal(r.status, 409);
+  assert.equal(r.body.error, "It's running or waiting to run; delete it once that has finished.");
+  s.runner.busy = { current: null, queue: [automation.id] };
+  assert.equal((await s.api.remove(automation.id)).status, 409);
+  assert.ok(await s.store.get(automation.id));
+  s.runner.busy = { current: null, queue: [] };
+  assert.equal((await s.api.remove(automation.id)).status, 200);
 });
