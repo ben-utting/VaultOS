@@ -1769,6 +1769,125 @@ SCEN.S10 = async () => {
   await p.close();
 };
 
+// S9: a + for spaces and a + for agents (2026-11-11). spaces + gives Space 2, Space 3, each its own space; agents +
+// adds a pane to the active space running the default agent (a plain terminal, and a tooltip saying so, with none
+// set). A new space holds together through a cd into a job folder, a reload, a rename and a pop-out round trip;
+// Start agent on a card still opens in the card's space; the phone sheet has both buttons.
+SCEN.S9 = async () => {
+  const JOB = 'Personal/1. apps/01-api-refactor';
+  const setAgent = (p, profile) => ev(p, (x) => fetch('/api/settings/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: x }) }).then((r) => r.status), profile);
+  const keys = (p) => ev(p, () => TW.sessions().map((s) => [s.id, s.key]));
+  const spaceNamesShown = (p) => ev(p, () => [...document.querySelectorAll('.tw-side .tw-sp-row .tw-sp-name')].map((e) => e.textContent));
+  const nSessions = (p) => ev(p, () => TW.sessions().length);
+  const click = (p, sel) => ev(p, (q) => { const b = document.querySelector(q); if (!b) return false; b.click(); return true; }, sel);
+
+  const p = await page('/');
+  await bare(p);
+  check('S9 no default agent to start with', (await setAgent(p, 'none')) === 200);
+  await p.reload({ waitUntil: 'networkidle2' });
+  await ev(p, () => { showTerminals(); if (document.querySelector('.tw-side').dataset.mode !== 'side') document.querySelector('.tw-side-toggle').click(); });
+  await sleep(500);
+  check('S9 the sidebar has a + for spaces and a + for agents', (await ev(p, () => !!document.querySelector('.tw-side .tw-new-space') && !!document.querySelector('.tw-side .tw-new-agent'))) === true);
+
+  check('S9 spaces + opens a terminal', (await click(p, '.tw-side .tw-new-space')) === true && await waitFor(p, () => TW.sessions().length === 1, 10000));
+  await sleep(800);
+  await click(p, '.tw-side .tw-new-space');
+  await waitFor(p, () => TW.sessions().length === 2, 10000);
+  await sleep(800);
+  const k1 = await keys(p);
+  check('S9 two new spaces, each its own s: space', Array.isArray(k1) && k1.length === 2 && k1.every(([, k]) => k.startsWith('s:')) && k1[0][1] !== k1[1][1], k1);
+  check('S9 they are called Space 2 and Space 3', JSON.stringify(await spaceNamesShown(p)) === JSON.stringify(['Space 2', 'Space 3']), await spaceNamesShown(p));
+  const [[idA, k2], [idB, k3]] = k1;
+  check('S9 the second one is active', (await ev(p, () => TW.activeSpace())) === k3);
+
+  // agents + with no default agent: a plain terminal in the active space, and the tooltip says so.
+  check('S9 with no agent set the agents + says so', (await ev(p, () => document.querySelector('.tw-side .tw-new-agent').title)) === 'New terminal in this space (no default agent set)');
+  await click(p, '.tw-side .tw-new-agent');
+  await waitFor(p, () => TW.sessions().length === 3, 10000);
+  const k3b = (await keys(p)).filter(([, k]) => k === k3);
+  check('S9 agents + (no agent) added a pane to Space 3', k3b.length === 2, await keys(p));
+
+  // With a default agent: agents + in Space 2 types its plain start command.
+  check('S9 default agent set to claude', (await setAgent(p, 'claude')) === 200);
+  await p.reload({ waitUntil: 'networkidle2' });
+  await ev(p, () => showTerminals());
+  check('S9 a reload brings the three terminals back', await waitFor(p, () => TW.sessions().length === 3, 15000), await nSessions(p));
+  const k4 = await keys(p);
+  check('S9 a reload keeps both new spaces', k4.filter(([, k]) => k === k2).length === 1 && k4.filter(([, k]) => k === k3).length === 2, k4);
+  await ev(p, (k) => TW.showSpace(k), k2);
+  await sleep(500);
+  check('S9 with an agent set the agents + says New agent in this space', (await ev(p, () => document.querySelector('.tw-side .tw-new-agent').title)) === 'New agent in this space');
+  const before = (await keys(p)).map(([i]) => i);
+  await click(p, '.tw-side .tw-new-agent');
+  await waitFor(p, (b) => TW.sessions().some((s) => !b.includes(s.id)), 10000, before);
+  const idC = await ev(p, (b) => TW.sessions().find((s) => !b.includes(s.id)).id, before);
+  check('S9 agents + went into Space 2', (await ev(p, (i) => TW.session(i).key, idC)) === k2);
+  await sleep(2500);
+  check('S9 agents + typed the plain agent command', /(^|\n)[^\n]*\$ ?claude\s*(\n|$)/.test(await screen(p, idC)) || (await screen(p, idC)).includes('claude'), (await screen(p, idC)).slice(-300));
+  check('S9 the server lists Space 2 on the new pane', !!(await listWait(idC, (x) => 's:' + x.space === k2 && x.spaceName === 'Space 2', 6000)));
+
+  // A shell in Space 2 that cds into a card's job folder stays in Space 2 through two list polls.
+  await typeIn(p, idA, `cd "${JOB}"\r`);
+  await sleep(7500);
+  check('S9 a cd into a job folder keeps the pane in Space 2', (await ev(p, (i) => TW.session(i).key, idA)) === k2);
+
+  // A rename of Space 3 survives a reload and the server naming it Space 3.
+  await ev(p, (k) => { const n = JSON.parse(localStorage.getItem('vaultboard.term.spaceNames') || '{}'); n[k] = 'Writing'; localStorage.setItem('vaultboard.term.spaceNames', JSON.stringify(n)); }, k3);
+  await p.reload({ waitUntil: 'networkidle2' });
+  await ev(p, () => showTerminals());
+  await waitFor(p, () => TW.sessions().length === 4, 15000);
+  await sleep(1500);
+  const names = await spaceNamesShown(p);
+  check('S9 the renamed space keeps its name after a reload', Array.isArray(names) && names.includes('Writing') && names.includes('Space 2'), names);
+  await ev(p, () => { if (document.querySelector('.tw-side').dataset.mode !== 'side') document.querySelector('.tw-side-toggle').click(); });
+  await ev(p, (k) => TW.showSpace(k), k2);
+  await sleep(800);
+  await shot(p, 's9-sidebar');
+
+  // Pop Space 2 out: the window holds it as one space with the same key; closing it brings it back whole.
+  const inK2 = (await keys(p)).filter(([, k]) => k === k2).map(([i]) => i);
+  const pop = nextPopup(p);
+  await p.evaluate(() => document.getElementById('term-pop').click());
+  const w = await Promise.race([pop, sleep(8000).then(() => null)]);
+  check('S9 Pop out opens the window', !!w);
+  if (w) {
+    check('S9 the window holds Space 2', await waitFor(w, (ids) => typeof TW !== 'undefined' && ids.every((i) => !!TW.session(i)), 10000, inK2), await ev(w, () => TW.sessions().map((s) => s.id)));
+    const wk = await ev(w, (ids) => ids.map((i) => TW.session(i).key), inK2);
+    check('S9 in the window it is still one space, Space 2', Array.isArray(wk) && wk.every((k) => k === k2), wk);
+    check('S9 the window names it Space 2', (await ev(w, () => [...document.querySelectorAll('.tw-side .tw-sp-row .tw-sp-name')].map((e) => e.textContent))).includes('Space 2'));
+    // Closing the window ends its terminals; "Move to the main window" (#term-dockback) is the way back.
+    await ev(w, () => document.getElementById('term-dockback').click());
+    check('S9 Move to the main window brings Space 2 back whole', await waitFor(p, (ids, k) => ids.every((i) => TW.session(i) && TW.session(i).key === k), 4000, inK2, k2), await keys(p));
+  }
+
+  // Start agent on a card still opens in the card's own space.
+  const before2 = (await keys(p)).map(([i]) => i);
+  await ev(p, (j) => termOpen({ cwd: j, task: j + '/task.md', run: 'echo card' }), JOB);
+  await waitFor(p, (b) => TW.sessions().some((s) => !b.includes(s.id)), 10000, before2);
+  const cardKey = await ev(p, (b) => TW.sessions().find((s) => !b.includes(s.id)).key, before2);
+  check("S9 Start agent on a card opens in the card's space", cardKey === `t:${JOB}/task.md`, cardKey);
+
+  // The rail: one +, a new space.
+  await ev(p, () => { if (document.querySelector('.tw-side').dataset.mode === 'side') document.querySelector('.tw-side-toggle').click(); });
+  await sleep(300);
+  check('S9 the rail has one + and it is New space', (await ev(p, () => [...document.querySelectorAll('.tw-side .tw-side-new')].map((b) => b.title))).join() === 'New space');
+  await shot(p, 's9-rail');
+  await p.close();
+
+  // Phone: the sheet has New space and New agent here.
+  const ph = await page('/', { phone: true, noGL: true });
+  await bare(ph);
+  await ev(ph, () => { showTerminals(); TW.newSpace(); });
+  await waitFor(ph, () => TW.sessions().length >= 1, 10000);
+  await sleep(800);
+  await ev(ph, () => TW.openPicker());
+  await sleep(500);
+  const btns = await ev(ph, () => [...document.querySelectorAll('.tw-pick-foot button')].map((b) => b.textContent));
+  check('S9 the phone sheet has New space and New agent here', JSON.stringify(btns) === JSON.stringify(['New space', 'New agent here']), btns);
+  await shot(ph, 's9-phone-sheet');
+  await ph.close();
+};
+
 (async () => {
   if (!NAMES.length) { console.error('usage: node scripts/term-e2e.js [base-url] [--phone] [--theme=dark|sepia] S0 [S1 …]'); process.exit(2); }
   for (const n of NAMES) if (!SCEN[n]) { console.error('unknown scenario: ' + n); process.exit(2); }
