@@ -553,12 +553,15 @@ function createTermWorkspace(root, opts = {}) {
     const s = {
       id: id || twNewId(), n: seq, title: title || '', cwd: cwd || '', task: (listed && listed.task) || task || '',
       key: '', osc: '', handle: null, pane: null, state: 'connecting', agent: null, topts: null,
-      space: space || '', spaceName: spaceName || '',
+      // Unknown (undefined) when the caller doesn't say and the list doesn't know yet: nothing is sent, so the
+      // server's space stands, and rekeyFromList fills it in once the list arrives.
+      space: space !== undefined ? space || '' : listed ? listed.space || '' : undefined,
+      spaceName: spaceName !== undefined ? spaceName || '' : listed ? listed.spaceName || '' : undefined,
     };
     // A split goes into its target's space, whatever its own folder would
     // key to now (a plain shell that joined a task space stays there).
     const into = split ? session(target) : null;
-    if (into) { s.space = into.space || ''; s.spaceName = into.spaceName || ''; }   // a split joins its target's new space too
+    if (into) { s.space = into.space; s.spaceName = into.spaceName; }   // a split joins its target's new space too
     s.key = into ? into.key : intoKey && W.store.spaces[intoKey] ? intoKey : keyFor(s);
     s.joined = s.key !== TermTree.spaceKey(s, knownTasks());   // combined by hand: the server's task link doesn't pull it back out
     W.expected.delete(s.id);
@@ -706,6 +709,7 @@ function createTermWorkspace(root, opts = {}) {
       s.joined = true;
       s.space = toSpace;
       s.spaceName = toName;
+      if (s.handle && s.handle.sendSpace) s.handle.sendSpace();
     }
     W.store.spaces[toKey].zoom = null;   // show them all, not just the zoomed pane
     picked();
@@ -1175,6 +1179,7 @@ function createTermWorkspace(root, opts = {}) {
     for (const s of W.sessions) {
       const x = listed.get(s.id);
       if (x && x.task && x.task !== s.task) { s.task = x.task; s.topts.task = x.task; changed = true; }
+      if (x && s.space === undefined) { s.space = x.space || ''; s.spaceName = x.spaceName || ''; changed = true; }
     }
     const want = new Map();   // id → new key
     for (const r of rawRows()) {
@@ -1416,7 +1421,8 @@ function createTermWorkspace(root, opts = {}) {
     if (session(id)) { picked(); focusSession(id); return; }
     if (opts.goElsewhere && opts.goElsewhere(id)) return;
     const r = rows().find((x) => x.id === id) || {};
-    bring({ id, cwd: r.cwd || '', task: r.task || '', title: r.title || '' });
+    // The row's space (from the server list) goes with it, so picking a terminal from elsewhere keeps its space.
+    bring({ id, cwd: r.cwd || '', task: r.task || '', title: r.title || '', space: r.id ? r.space : undefined, spaceName: r.id ? r.spaceName : undefined });
   }
 
   // Toasts: a background agent that needs you / finished, a terminal that

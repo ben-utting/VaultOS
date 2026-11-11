@@ -224,7 +224,9 @@
       const pick = (k) => (x && x[k] != null && x[k] !== '' ? x[k] : meta[k] != null ? meta[k] : (h && h[k] != null ? h[k] : ''));
       const task = pick('task');
       const cwd = pick('cwd');
-      const space = pick('space');
+      // The page holding a terminal knows its space best (a combine changes it there first); unknown → the list.
+      const space = h && meta.space !== undefined ? meta.space : pick('space');
+      const spaceName = h && meta.spaceName !== undefined ? meta.spaceName : pick('spaceName');
       const agent = (h && h.agent) || (x && x.agent) || null;
       const id = (x || meta).id;
       let where;
@@ -233,7 +235,7 @@
       else where = (presence && presence.get(id)) || 'elsewhere';
       return {
         id, n: meta.n != null ? meta.n : (x && x.n != null ? x.n : null),
-        key: spaceKey({ space, task, cwd }, known), space, spaceName: pick('spaceName'),
+        key: spaceKey({ space, task, cwd }, known), space: space || '', spaceName: spaceName || '',
         title: pick('title'), osc: (h && h.osc) || '', cmd: (x && x.cmd) || '', cwd, task, agent, where,
         idleSince: x && x.idleSince != null ? x.idleSince : null,
         taskTitle: pick('taskTitle'), taskStatus: pick('taskStatus'), taskMissing: !!pick('taskMissing'), branch: pick('branch'),

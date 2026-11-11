@@ -567,9 +567,10 @@ function createTerminal(container, opts = {}) {
     sizeOwed = !shown;
     if (opts.cwd) q.set('cwd', opts.cwd);
     if (opts.task) q.set('task', opts.task);
-    // Always sent, empty or not: the server keeps the latest, and an empty one is how a pane leaves a space.
-    q.set('space', opts.space || '');
-    q.set('spaceName', opts.spaceName || '');
+    // Sent whenever known, empty or not: the server keeps the latest, and an empty one is how a pane leaves a
+    // space. Unknown (undefined: a terminal brought here before the list said) sends nothing, so nothing is cleared.
+    if (opts.space !== undefined) q.set('space', opts.space || '');
+    if (opts.spaceName !== undefined) q.set('spaceName', opts.spaceName || '');
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     opts.onState && opts.onState('connecting');
     ws = new WebSocket(`${proto}//${location.host}/api/term?${q}`);
@@ -661,6 +662,8 @@ function createTerminal(container, opts = {}) {
     onNextInput: (fn) => { inputHook = fn; },
     type: (text) => send({ t: 'in', d: text }),
     seen: () => send({ t: 'seen' }),
+    // Tells the server this pane's space now (a combine), instead of waiting for the next connect.
+    sendSpace: () => send({ t: 'space', space: opts.space || '', spaceName: opts.spaceName || '' }),
     retheme: () => { term.options.theme = termTheme(); },
     kill: () => { closedByUs = true; send({ t: 'kill' }); setTimeout(() => ws && ws.close(), 200); },
     detach: () => { closedByUs = true; if (ws) ws.close(); },

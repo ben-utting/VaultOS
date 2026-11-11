@@ -1860,6 +1860,28 @@ SCEN.S9 = async () => {
     check('S9 Move to the main window brings Space 2 back whole', await waitFor(p, (ids, k) => ids.every((i) => TW.session(i) && TW.session(i).key === k), 4000, inK2, k2), await keys(p));
   }
 
+  // Picking a terminal this page doesn't hold keeps its space (here: the window takes a dock-held Space 2 pane).
+  const pop2 = nextPopup(p);
+  await ev(p, (k) => TW.showSpace(k), k3);
+  await p.evaluate(() => document.getElementById('term-pop').click());
+  const w2 = await Promise.race([pop2, sleep(8000).then(() => null)]);
+  if (w2) {
+    await waitFor(w2, () => typeof TW !== 'undefined' && TW.sessions().length > 0, 10000);
+    await sleep(3500);   // the window's first list poll, so it knows the dock's rows
+    await ev(w2, (i) => TW.goTo(i), idA);
+    const taken = await waitFor(w2, (i) => !!TW.session(i), 8000, idA);
+    check('S9 the window takes a Space 2 pane it did not hold', taken);
+    check('S9 ...and it stays in Space 2 there', (await ev(w2, (i) => TW.session(i) && TW.session(i).key, idA)) === k2, await ev(w2, (i) => TW.session(i) && TW.session(i).key, idA));
+    await sleep(1500);
+    check('S9 ...and the server still lists it in Space 2', !!(await listWait(idA, (x) => 's:' + x.space === k2, 4000)), (await list()).find((x) => x.id === idA));
+    await ev(w2, () => document.getElementById('term-dockback').click());
+    await waitFor(p, (i) => !!TW.session(i), 6000, idA);
+  } else check('S9 reopened the window', false);
+
+  // Combine tells the server at once: a Space 2 pane combined into Space 3 is listed there straight away.
+  await ev(p, (i, to) => TW.combineSpace(TW.session(i).key, to), idA, k3);
+  check('S9 combining a pane into Space 3 tells the server at once', !!(await listWait(idA, (x) => 's:' + x.space === k3, 3000)), (await list()).find((x) => x.id === idA));
+
   // Start agent on a card still opens in the card's own space.
   const before2 = (await keys(p)).map(([i]) => i);
   await ev(p, (j) => termOpen({ cwd: j, task: j + '/task.md', run: 'echo card' }), JOB);

@@ -309,3 +309,19 @@ test('nextSpaceName: the lowest free Space N from 2', () => {
   assert.equal(TT.nextSpaceName(['Space 3']), 'Space 2');
   assert.equal(TT.nextSpaceName(['vault', 'Space 2', 'Space 4']), 'Space 3');
 });
+
+test('rows: for a held row the page\'s space wins over the list\'s; an unknown one falls back to the list', () => {
+  const list = [{ id: '1', attached: true, cwd: '', space: 'ab12', spaceName: 'Space 2' }, { id: '2', attached: true, cwd: '', space: 'ab12', spaceName: 'Space 2' }];
+  const h = new Map([
+    ['1', { meta: { id: '1', n: 1, title: '', cwd: '', task: '', space: 'cd34', spaceName: 'Space 3' }, osc: '', agent: null }],   // combined into Space 3
+    ['2', { meta: { id: '2', n: 2, title: '', cwd: '', task: '' }, osc: '', agent: null }],                                          // brought here, space not known yet
+  ]);
+  const by = Object.fromEntries(TT.rows(list, h, new Map()).map((r) => [r.id, r]));
+  assert.equal(by['1'].space, 'cd34');
+  assert.equal(by['1'].spaceName, 'Space 3');
+  assert.equal(by['1'].key, 's:cd34');
+  assert.equal(by['2'].space, 'ab12');
+  assert.equal(by['2'].key, 's:ab12');
+  const cleared = new Map([['1', { meta: { id: '1', n: 1, title: '', cwd: '', task: '', space: '', spaceName: '' }, osc: '', agent: null }]]);
+  assert.equal(TT.rows(list.slice(0, 1), cleared, new Map())[0].key, 'd:', 'an empty space on the page means none');
+});

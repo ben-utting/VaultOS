@@ -28,6 +28,7 @@ function openTerm({ base, cookie }, { timeoutMs = 10000, id: want, query = {} } 
         close: () => { try { ws.send(JSON.stringify({ t: 'kill' })); } catch { /* gone */ } ws.close(); },
         // Leave the shell running server-side (a hand-over or a reload), resolved once the socket has closed.
         detach: () => new Promise((done) => { ws.once('close', done); ws.close(); }),
+        send: (msg) => ws.send(JSON.stringify(msg)),
       });
     });
   });

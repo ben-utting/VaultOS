@@ -3350,6 +3350,11 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
     try { m = JSON.parse(raw); } catch { return; }
     if (m.t === 'in' && typeof m.d === 'string') { t.pty.write(m.d); t.inputAt = Date.now(); }
     else if (m.t === 'seen') { if (t.agent && t.agent.state === 'done') setAgent(t, 'idle'); }
+    else if (m.t === 'space') {   // a combine moved this pane: same rules as the connect parameters
+      const v = termSpaceParams(new URLSearchParams({ space: typeof m.space === 'string' ? m.space : '', spaceName: typeof m.spaceName === 'string' ? m.spaceName : '' }));
+      if ('space' in v) t.space = v.space;
+      if ('spaceName' in v) t.spaceName = v.spaceName;
+    }
     else if (m.t === 'resize' && m.cols > 0 && m.rows > 0) try { t.pty.resize(Math.min(m.cols, 500), Math.min(m.rows, 200)); } catch { /* exited */ }
     else if (m.t === 'kill') t.pty.kill();
   });

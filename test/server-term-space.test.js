@@ -85,3 +85,17 @@ test('/api/me has the plain agent command', { timeout: 30000 }, async (t) => {
   assert.equal(me.agent.plainCommand, 'claude');
   assert.ok(me.agent.startCommand.startsWith("claude 'Catch me up"));
 });
+
+test('a space message moves a live terminal to another space at once', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  const tm = await s.term({ query: { space: 'ab12', spaceName: 'Space 2' } });
+  tm.send({ t: 'space', space: 'cd34', spaceName: 'Space 3' });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.deepEqual([(await s.listed(tm.id)).space, (await s.listed(tm.id)).spaceName], ['cd34', 'Space 3']);
+  tm.send({ t: 'space', space: 'a b', spaceName: 'x' });   // a bad id is dropped, the name still applies
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal((await s.listed(tm.id)).space, 'cd34');
+  tm.send({ t: 'space', space: '', spaceName: '' });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal((await s.listed(tm.id)).space, '');
+});
