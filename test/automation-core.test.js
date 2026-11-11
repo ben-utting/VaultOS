@@ -148,3 +148,30 @@ test('templates, level text and paragraphs carry the spec copy', () => {
   assert.equal(AC.MAX_CARDS, 20);
   assert.equal(AC.STATUS_LABEL['in-progress'], 'In Progress');
 });
+
+// ---------- Display helpers (Task 10) ----------
+test('whenText reads relative to now in the zone', () => {
+  const now = T('2026-11-11T12:00:00Z');   // Wed
+  assert.equal(AC.whenText(T('2026-11-11T08:00:00Z'), now, LON), 'Today 08:00');
+  assert.equal(AC.whenText(T('2026-11-12T08:00:00Z'), now, LON), 'Tomorrow 08:00');
+  assert.equal(AC.whenText(T('2026-11-10T08:00:00Z'), now, LON), 'Yesterday 08:00');
+  assert.equal(AC.whenText(T('2026-11-14T08:00:00Z'), now, LON), 'Sat 08:00');
+  assert.equal(AC.whenText(T('2026-11-07T08:00:00Z'), now, LON), 'Sat 7 Nov 08:00');
+  assert.equal(AC.whenText(T('2026-12-25T08:00:00Z'), now, LON), '25 Dec 08:00');
+});
+
+test('cardsText names statuses and the board', () => {
+  assert.equal(AC.cardsText({ board: 'work', statuses: ['in-progress', 'blocked'], subtasks: false }, 'Work'), 'In Progress + Blocked · Work');
+  assert.equal(AC.cardsText({ board: 'all', statuses: ['review'], subtasks: true }, null), 'Review · All boards · with subtasks');
+});
+
+test('lastRunTone and failureText', () => {
+  assert.equal(AC.lastRunTone({ state: 'finished', cards: [{ state: 'noted' }] }), 'ok');
+  assert.equal(AC.lastRunTone({ state: 'finished', cards: [{ state: 'noted' }, { state: 'skipped' }] }), 'warn');
+  assert.equal(AC.lastRunTone({ state: 'stopped', cards: [] }), 'warn');
+  assert.equal(AC.lastRunTone({ state: 'failed', cards: [] }), 'bad');
+  assert.equal(AC.lastRunTone({ state: 'interrupted', cards: [] }), 'bad');
+  const run = { state: 'failed', cards: [{ state: 'failed', reason: 'the agent exited with code 127\nmore' }, { state: 'not-run', reason: '' }] };
+  assert.equal(AC.failureText(run), 'the agent exited with code 127');
+  assert.equal(AC.failureText({ state: 'finished', cards: [] }), '');
+});

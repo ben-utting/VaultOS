@@ -119,6 +119,7 @@ let ME = { authed: false, features: { today: false, terminal: false, morningRead
 const todayOn = () => !!ME.features.today;
 const termOn = () => !!ME.features.terminal;
 const notesOn = () => !!(ME.notes && ME.notes.enabled);   // Notes mode and capture (ME.notes: { enabled, dir, inbox, main, tags })
+const automationsOn = () => !!ME.features.automations;   // the Automations tab (live: setting on and TERMINAL allowed)
 const homeMode = () => (todayOn() ? 'today' : 'board');   // the mode VaultOS opens on
 const agentLabel = () => (ME.agent ? ME.agent.label : null);   // null: no agent, or the terminal is off
 async function fetchMe() {
@@ -136,6 +137,8 @@ function applyMe() {
   for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#mobile-nav [data-for="mode-notes"]')]) {
     el.classList.toggle('hidden', !notesOn());
   }
+  for (const el of [$('mode-automations'), document.querySelector('#mobile-nav [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
+  if (window.Automations) Automations.featureChanged();
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
   renderDrawerAgent();
@@ -1204,6 +1207,7 @@ $('d-refresh').addEventListener('click', () => {
 function setMode(mode) {
   if (mode === 'today' && !todayOn()) mode = 'board';   // Today is off: nothing to show (a Refresh's 'today' too)
   if (mode === 'notes' && !notesOn()) mode = homeMode();
+  if (mode === 'automations' && !automationsOn()) mode = homeMode();
   // Leaving Notes with an unsaved edit: ask first (Notes.confirmLeave), and stay if the answer is no.
   if (STATE.mode === 'notes' && mode !== 'notes' && window.Notes && !Notes.confirmLeave()) return;
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
@@ -1220,6 +1224,8 @@ function setMode(mode) {
   $('mode-kb').classList.toggle('active', mode === 'kb');
   $('mode-files').classList.toggle('active', mode === 'files');
   $('mode-notes').classList.toggle('active', mode === 'notes');
+  $('mode-automations').classList.toggle('active', mode === 'automations');
+  $('automations-view').classList.toggle('hidden', mode !== 'automations');
   $('notes-view').classList.toggle('hidden', mode !== 'notes');
   $('today-view').classList.toggle('hidden', mode !== 'today');
   $('board-view').classList.toggle('hidden', mode !== 'board');
@@ -1240,6 +1246,7 @@ function setMode(mode) {
   updateFilterBadge();
   if (mode === 'today') Today.show(); else Today.hide();   // Today.show() fills #count from its payload
   if (mode === 'notes') Notes.show(); else Notes.hide();   // Notes.show() fills #count
+  if (window.Automations) { if (mode === 'automations') Automations.show(); else Automations.hide(); }   // show() fills #count
   if (mode === 'kb') {
     $('count').textContent = `${STATE.kb.articles.length} article${STATE.kb.articles.length === 1 ? '' : 's'}`;
     if (!STATE.kb.loaded) loadKB();
@@ -1255,6 +1262,7 @@ $('mode-board').addEventListener('click', () => setMode('board'));
 $('mode-kb').addEventListener('click', () => setMode('kb'));
 $('mode-files').addEventListener('click', () => setMode('files'));
 $('mode-notes').addEventListener('click', () => setMode('notes'));
+$('mode-automations').addEventListener('click', () => setMode('automations'));
 
 // ---------- Mobile nav ----------
 // The phone's bottom tab bar. Each button clicks its header twin (so every
@@ -1278,7 +1286,7 @@ for (const b of MNAV) b.addEventListener('click', () => {
   $(b.dataset.for).click();
 });
 new MutationObserver(syncMobileNav).observe($('termbtn'), { attributes: true, attributeFilter: ['aria-pressed', 'data-n', 'data-alert'] });
-for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
+for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
 
 // ---------- KB sidebar (collections/article list) ----------
 // Closed by default; opens as a hover panel over the reader rather than
@@ -2490,6 +2498,11 @@ async function loadFeatures() {
     $('ft-today').checked = d.settings.features.today;
     $('ft-morning').checked = d.settings.features.morningRead;
     $('ft-notes').checked = !!d.settings.features.notes;
+    $('ft-auto').checked = d.terminalAllowed && !!d.settings.features.automations;
+    $('ft-auto').disabled = !d.terminalAllowed;
+    $('ft-auto-d').textContent = d.terminalAllowed
+      ? 'Scheduled agents that check in on your cards. Off by default.'
+      : 'Turned off for this machine (TERMINAL=0)';
     $('ft-tz').value = d.settings.today.timezone;
     $('ft-term').checked = d.terminalAllowed && d.settings.features.terminal;
     $('ft-term').disabled = !d.terminalAllowed;
@@ -2503,7 +2516,7 @@ $('ft-save').addEventListener('click', async () => {
   const timezone = $('ft-tz').value.trim();
   if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return $('ft-tz').focus(); }
   $('ft-err').textContent = '';
-  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked } : {}) };
+  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked, automations: $('ft-auto').checked } : {}) };
   $('ft-save').disabled = true;
   try {
     await api('/api/settings/features', { method: 'POST', body: JSON.stringify(body) });

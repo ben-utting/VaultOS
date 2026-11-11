@@ -219,8 +219,48 @@
     return [`${total} card${total === 1 ? '' : 's'}`, mins >= 1 ? `${mins} min` : '<1 min', parts.join(', ')].filter(Boolean).join(' · ');
   }
 
+  // ---------- Display ----------
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const WEEKDAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  // "Today 08:00", "Tomorrow 08:00", "Yesterday 08:00", "Sat 08:00" (within the coming week),
+  // "Sat 7 Nov 08:00" (within the past week), else "25 Dec 08:00". Wall clock in tz.
+  function whenText(ms, nowMs, tz) {
+    const w = wallParts(ms, tz);
+    const n = wallParts(nowMs, tz);
+    const days = Math.round((Date.UTC(w.y, w.mo - 1, w.d) - Date.UTC(n.y, n.mo - 1, n.d)) / DAY_MS);
+    const time = `${pad(w.h)}:${pad(w.mi)}`;
+    const wd = WEEKDAY[new Date(Date.UTC(w.y, w.mo - 1, w.d)).getUTCDay()];
+    if (days === 0) return `Today ${time}`;
+    if (days === 1) return `Tomorrow ${time}`;
+    if (days === -1) return `Yesterday ${time}`;
+    if (days > 1 && days < 7) return `${wd} ${time}`;
+    if (days < -1 && days > -7) return `${wd} ${w.d} ${MONTHS[w.mo - 1]} ${time}`;
+    return `${w.d} ${MONTHS[w.mo - 1]} ${time}`;
+  }
+  // "In Progress + Blocked · Work", "Review · All boards · with subtasks".
+  function cardsText(cards, boardLabel) {
+    return [
+      cards.statuses.map((s) => STATUS_LABEL[s] || s).join(' + '),
+      cards.board === 'all' ? 'All boards' : (boardLabel || cards.board),
+      cards.subtasks ? 'with subtasks' : '',
+    ].filter(Boolean).join(' · ');
+  }
+  // The last run's dot: ok (finished clean), warn (finished with skips or failures, or stopped), bad.
+  function lastRunTone(run) {
+    if (run.state === 'failed' || run.state === 'interrupted') return 'bad';
+    if (run.state === 'stopped') return 'warn';
+    return (run.cards || []).some((c) => c.state !== 'noted') ? 'warn' : 'ok';
+  }
+  // The first line of why a failed run failed, for "Last run failed: …".
+  function failureText(run) {
+    if (run.state !== 'failed') return '';
+    const c = (run.cards || []).find((x) => x.reason && ['failed', 'timed-out', 'not-run'].includes(x.state));
+    return c ? c.reason.split('\n')[0] : 'see the run';
+  }
+
   return {
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
+    whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
     TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary,
   };

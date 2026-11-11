@@ -3830,3 +3830,86 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   .nt-conflict span { flex-basis: 100%; }
   .nt-row { padding: 10px; }
 }
+
+/* ---------- Automations (automations.js) ----------
+   Two columns from 900px: the automations, then the runs (or one run's detail). Rows, runs and cards are
+   panel-2 tiles on the column's panel, like the board's cards on a column. Dots and chips borrow the
+   status colours: done = ran clean, review = finished with skips or failures, blocked = failed. */
+#automations-view { padding: 20px 24px 48px; }
+.au-layout { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 20px; max-width: 1400px; margin: 0 auto; align-items: start; }
+@media (max-width: 899px) { .au-layout { grid-template-columns: minmax(0, 1fr); } }
+.au-col { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-xl); padding: 16px; min-width: 0; box-shadow: var(--edge-highlight); }
+.au-col-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; }
+.au-col-head h2 { margin: 0; font-size: var(--t-lg); flex: 1; }
+.au-filter { width: auto; max-width: 220px; min-height: 30px; padding: 4px 8px; font-size: var(--t-sm); }
+.au-off, .au-none { margin: 0 0 12px; font-size: var(--t-sm); color: var(--muted); }
+.au-empty { padding: 28px 12px; text-align: center; color: var(--muted); }
+.au-empty p { max-width: 36ch; margin: 0 auto 16px; }
+.au-list, .au-runs { display: grid; gap: 8px; }
+.au-row {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 12px;
+  padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel-2);
+}
+.au-row.is-off .au-row-main { opacity: .62; }
+.au-toggle { margin-top: 1px; }
+.au-row-main { all: unset; display: grid; gap: 3px; min-width: 0; cursor: pointer; }
+.au-row-main:focus-visible, .au-run-item:focus-visible, .au-card-t:focus-visible, .au-current-t:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: var(--radius-sm);
+}
+.au-row-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.au-mark svg { display: block; width: 16px; height: 16px; color: var(--muted); }
+.au-name { overflow: hidden; font-size: var(--t-md); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.au-row-main:hover .au-name { color: var(--accent); }
+.au-meta, .au-next, .au-last { font-size: var(--t-xs); color: var(--muted); }
+.au-last.bad { color: var(--danger-fg); }
+.au-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; background: var(--muted-2); }
+.au-dot[data-tone="ok"] { background: var(--done); }
+.au-dot[data-tone="warn"] { background: var(--review); }
+.au-dot[data-tone="bad"] { background: var(--blocked); }
+.au-current {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; font-size: var(--t-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.au-current-t { all: unset; font-weight: 600; cursor: pointer; }
+.au-current-t:hover:not(:disabled) { color: var(--accent); }
+.au-current-card { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.au-run-item { all: unset; display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel-2); cursor: pointer; }
+.au-run-item:hover { border-color: var(--muted-2); }
+.au-run-when { font-size: var(--t-sm); font-weight: 600; }
+.au-run-sum { font-size: var(--t-xs); color: var(--muted); }
+.au-older { justify-self: start; margin-top: 4px; }
+.au-run-head { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; }
+.au-run-head h2 { margin: 0; font-size: var(--t-lg); }
+.au-run-meta { margin: 2px 0 0; font-size: var(--t-xs); color: var(--muted); }
+.au-card { margin: 0 0 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--panel-2); }
+.au-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.au-card-t { all: unset; flex: 1; min-width: 0; font-weight: 600; cursor: pointer; }
+.au-card-t:hover { color: var(--accent); text-decoration: underline; }
+.au-chip { padding: 1px 8px; font-size: var(--t-xs); color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-full); }
+.au-chip[data-tone="ok"] { color: var(--done); border-color: color-mix(in srgb, var(--done) 45%, transparent); }
+.au-chip[data-tone="bad"] { color: var(--danger-fg); border-color: color-mix(in srgb, var(--blocked) 45%, transparent); }
+.au-chip[data-tone="live"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.au-dur { font-size: var(--t-xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.au-note { margin-top: 8px; font-size: var(--t-md); }
+.au-note > :first-child { margin-top: 0; }
+.au-note > :last-child { margin-bottom: 0; }
+.au-reason { margin: 8px 0 0; font-size: var(--t-sm); color: var(--muted); }
+.au-warn { margin: 8px 0 0; font-size: var(--t-xs); color: var(--muted); }
+.au-warn[data-tone="bad"] { color: var(--danger-fg); }
+.au-warn[data-tone="warn"] { color: var(--review); }
+.au-output { margin-top: 8px; font-size: var(--t-xs); }
+.au-output summary { color: var(--muted); cursor: pointer; }
+.au-output pre {
+  max-height: 240px; margin: 6px 0 0; padding: 8px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  font-family: var(--mono-font); background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-md);
+}
+/* A run is going: the working-agent dot (blue, pulsing), not gold, which is kept for selection and actions. */
+.mode-dot { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; vertical-align: 2px; background: var(--in-progress); animation: agent-pulse 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .mode-dot { animation: none; } }
+@media (max-width: 700px) {
+  #automations-view { padding: 12px 12px calc(var(--mnav-h) + 24px); }
+  .au-col { padding: 12px; }
+  .au-row { grid-template-columns: auto minmax(0, 1fr); }
+  .au-row .au-run-now { grid-column: 2; justify-self: start; }
+}

@@ -169,6 +169,7 @@ test('a work run that sets done is put back', async (t) => {
   const run = await runAndWait(s, await s.make({ prompt: 'FAKE:done', level: 'work' }));
   assert.equal(run.cards[0].doneReverted, true);
   assert.match(s.read('01-a'), /^status: in-progress$/m);
+  assert.equal(run.cards[0].statusBefore, 'in-progress');
 });
 
 test('a card finished before its turn is recorded as moved', async (t) => {
