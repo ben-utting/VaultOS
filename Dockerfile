@@ -50,6 +50,8 @@ RUN chmod +x bin/vault-search.js && ln -s /app/bin/vault-search.js /usr/local/bi
 # vaultos-automations: agents in a terminal read, draft and try automations (they never switch one on).
 RUN chmod +x bin/vaultos-automations.js && ln -s /app/bin/vaultos-automations.js /usr/local/bin/vaultos-automations
 COPY starter-kit ./starter-kit
+# Skills VaultOS installs for the agents in HOME (lib/skill-install.js), e.g. vaultos-automations.
+COPY skills ./skills
 COPY docker-entrypoint.sh /usr/local/bin/vaultos-entrypoint
 
 EXPOSE 8080

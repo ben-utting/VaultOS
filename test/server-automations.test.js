@@ -131,6 +131,15 @@ test('saving an agent at a level it can\'t run is a 400 on level', async (t) => 
   assert.equal((await s.api('POST', '/api/automations', automation({ agent: 'cursor', level: 'update' }))).status, 200);
 });
 
+test('switching automations on installs the skill for the agents, and not before', async (t) => {
+  const s = await ready(t);
+  const skill = path.join(s.home, '.claude', 'skills', 'vaultos-automations', 'SKILL.md');
+  assert.equal(fs.existsSync(skill), false);
+  await s.turnOn();
+  assert.match(fs.readFileSync(skill, 'utf8'), /^---\nname: vaultos-automations/);
+  assert.ok(fs.existsSync(path.join(s.home, '.agents', 'skills', 'vaultos-automations', 'reference.md')));
+});
+
 test('create with a reserved section is 400 with field errors', async (t) => {
   const s = await ready(t);
   await s.turnOn();
