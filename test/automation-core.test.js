@@ -232,3 +232,12 @@ test('agentTagText: the date is in the board time zone', () => {
   const origin = { by: 'agent', agent: 'Claude Code', at: '2026-11-11T23:30:00.000Z' };
   assert.equal(AC.agentTagText({ enabled: false, origin }, 'Asia/Tokyo'), 'Draft from Claude Code · 12 Nov');
 });
+
+test('agentTagText: an agent draft the agent then edited still reads as a draft', () => {
+  const origin = { by: 'agent', agent: 'Claude Code', at: '2026-11-11T09:00:00.000Z' };
+  const edit = { agent: 'Claude Code', fields: ['prompt'], switchedOff: false, at: '2026-11-11T09:30:00.000Z' };
+  assert.equal(AC.agentTagText({ enabled: false, origin, agentChange: edit }, 'Europe/London'), 'Draft from Claude Code · 11 Nov');
+  // Once an agent edit switched it off, that explanation wins.
+  assert.equal(AC.agentTagText({ enabled: false, origin, agentChange: { ...edit, switchedOff: true } }, 'Europe/London'),
+    'Claude Code changed the prompt. Off until you switch it on.');
+});

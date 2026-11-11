@@ -221,7 +221,9 @@
   const listText = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
   function agentTagText(a, tz) {
     const ch = a && a.agentChange;
-    if (ch && Array.isArray(ch.fields) && ch.fields.length) {
+    const draft = a && a.origin && !a.enabled;
+    // An agent's own draft stays "Draft from …" through its edits; a change that switched one off says so.
+    if (ch && Array.isArray(ch.fields) && ch.fields.length && (ch.switchedOff || !draft)) {
       return `${ch.agent} changed the ${listText(ch.fields)}.${ch.switchedOff ? ' Off until you switch it on.' : ''}`;
     }
     const o = a && a.origin;
