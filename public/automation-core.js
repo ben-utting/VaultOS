@@ -122,13 +122,12 @@
     'check-in': {
       label: 'Check-in',
       prompt: [
-        'Look at this card and tell Ben where it stands. Read task.md and any files in this folder that',
-        "help (notes, data, drafts). Don't do any of the work.",
+        "Look at this card and tell me where it stands. Read task.md and any files in this folder that help (notes, data, drafts). Don't do any of the work.",
         '',
-        'Write your note as three short lines:',
-        '**Where it stands:** one or two sentences.',
-        '**Next step:** the one next action, and who does it.',
-        '**Waiting on you:** what Ben needs to decide or do, or "Nothing".',
+        'Write your note as a short list of three items:',
+        '- **Where it stands:** one or two sentences.',
+        '- **Next step:** the one next action, and who does it.',
+        '- **Waiting on you:** what I need to decide or do, or "Nothing".',
         '',
         'If the card already has a Latest check-in, compare with it and say plainly if nothing has moved.',
       ].join('\n'),

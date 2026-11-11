@@ -22,6 +22,7 @@ test('buildPrompt uses the update and work paragraphs', () => {
   assert.ok(up.includes('You may propose a status change in a vaultos-update block.'));
   assert.ok(up.endsWith(N.noteInstructions('update')));
   assert.ok(N.noteInstructions('update').includes('Never propose done.'));
+  assert.ok(N.noteInstructions('update').includes('decision_note: what I must decide'));
   const work = N.buildPrompt({ automation: { ...automation, level: 'work' }, card, taskRaw: 'x', today: '2026-11-11', tz: 'UTC' });
   assert.ok(work.includes("You may edit files in this card's folder."));
 });
@@ -86,4 +87,9 @@ test('sectionLines layout', () => {
     N.sectionLines({ stamp: '11 Nov 2026, 08:03', automationName: 'Morning check-in', agentLabel: 'Claude Code', note: 'a\nb' }),
     ['_11 Nov 2026, 08:03 · Morning check-in · Claude Code_', '', 'a', 'b'],
   );
+});
+
+test('parseOutput drops one pair of quotes an agent put round a value', () => {
+  const out = '```vaultos-update\nstatus: needs-decision\ndecision_note: "Wait for the quote, or buy now?"\nblocked_by: \'vendor\'\n```\n```vaultos-note\nn\n```';
+  assert.deepEqual(N.parseOutput(out, 'update').update, { status: 'needs-decision', decision_note: 'Wait for the quote, or buy now?', blocked_by: 'vendor' });
 });

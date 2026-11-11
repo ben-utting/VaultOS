@@ -91,7 +91,9 @@
   function rowHtml(a) {
     const last = a.lastRun;
     let lastLine = '<span class="au-last muted">Not run yet</span>';
-    if (last && last.state === 'failed') {
+    if (last && last.state === 'running') {
+      lastLine = '<span class="au-last"><span class="agent-dot au-inline-dot" data-agent="working"></span>Running now</span>';
+    } else if (last && last.state === 'failed') {
       lastLine = `<span class="au-last bad"><span class="au-dot" data-tone="bad"></span>Last run failed: ${esc(AC.failureText(last))}</span>`;
     } else if (last) {
       lastLine = `<span class="au-last"><span class="au-dot" data-tone="${AC.lastRunTone(last)}"></span>Last run ${esc(when(last.startedAt))} · ${esc(AC.runSummary(last))}</span>`;
@@ -144,6 +146,7 @@
   // ---------- Runs ----------
   function renderFilter() {
     const sel = $('au-filter');
+    sel.classList.toggle('hidden', !AU.data.automations.length);
     const want = ['', ...AU.data.automations.map((a) => a.id)].join('|');
     if (sel.dataset.ids !== want) {
       sel.innerHTML = '<option value="">All</option>' + AU.data.automations.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join('');
@@ -395,6 +398,11 @@
     const v = a ? definition(a) : defaults();
     if (!a && name) v.name = name;
     if (copy) { v.name = `${v.name} (copy)`.slice(0, AC.NAME_MAX); v.enabled = false; }
+    // A new automation starts on an agent that can run it: the default when one is set and offered, else the first that is.
+    if (!a) {
+      const usable = agentChoices().find((c) => !agentBlock(c, v.level));
+      if (usable && agentBlock(agentChoices()[0], v.level)) v.agent = usable.v;
+    }
     B.editing = a && !copy ? a : null;
     B.enabled = v.enabled;
     B.template = v.template;

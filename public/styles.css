@@ -3862,6 +3862,7 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .au-row-main:hover .au-name { color: var(--accent); }
 .au-meta, .au-next, .au-last { font-size: var(--t-xs); color: var(--muted); }
 .au-last.bad { color: var(--danger-fg); }
+.au-inline-dot { display: inline-block; margin-right: 6px; vertical-align: 0; }
 .au-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; vertical-align: 1px; background: var(--muted-2); }
 .au-dot[data-tone="ok"] { background: var(--done); }
 .au-dot[data-tone="warn"] { background: var(--review); }
@@ -3917,7 +3918,7 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 /* ---------- Automation builder (automations.js) ----------
    The task drawer's panel, narrower, with a footer that stays in view. Tiles and chips use the selected rule
    (accent border, faint accent wash); a tile that can't be picked says why underneath. */
-.au-builder { width: min(640px, 100vw); }
+.drawer.au-builder { width: min(640px, 100vw); padding-bottom: 0; }   /* the footer is the last thing in the panel */
 .ab-form { padding-top: 4px; }
 .ab-sec { margin: 22px 0 12px; font-size: var(--t-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .ab-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
@@ -3964,12 +3965,12 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .ab-match-warn { margin: 4px 0 0; font-size: var(--t-xs); color: var(--review); }
 #ab-next { margin: -8px 0 8px; }
 .ab-foot {
-  position: sticky; bottom: -60px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
   margin: 8px -24px 0; padding: 12px 24px 16px; background: var(--panel); border-top: 1px solid var(--line);
 }
 .ab-danger { color: var(--danger-fg); }
 @media (max-width: 700px) {
-  .au-builder { width: 100vw; border-left: 0; padding: 0 16px 60px; }
+  .drawer.au-builder { width: 100vw; border-left: 0; padding: 0 16px; }
   .ab-foot { margin: 8px -16px 0; padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); }
   .ab-levels { grid-template-columns: minmax(0, 1fr); }
 }

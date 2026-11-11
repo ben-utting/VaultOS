@@ -139,8 +139,11 @@ test('runSummary', () => {
 });
 
 test('templates, level text and paragraphs carry the spec copy', () => {
-  assert.match(AC.TEMPLATES['check-in'].prompt, /^Look at this card and tell Ben where it stands\./);
-  assert.match(AC.TEMPLATES['check-in'].prompt, /\*\*Waiting on you:\*\* what Ben needs to decide or do, or "Nothing"\./);
+  assert.match(AC.TEMPLATES['check-in'].prompt, /^Look at this card and tell me where it stands\./);
+  assert.match(AC.TEMPLATES['check-in'].prompt, /\*\*Waiting on you:\*\* what I need to decide or do, or "Nothing"\./);
+  // A list, so the three parts stay apart wherever the note is rendered (markdown joins plain lines).
+  assert.match(AC.TEMPLATES['check-in'].prompt, /^- \*\*Where it stands:\*\*/m);
+  assert.match(AC.TEMPLATES['check-in'].prompt, /^- \*\*Next step:\*\*/m);
   assert.equal(AC.TEMPLATES.blank.prompt, '');
   assert.equal(AC.LEVEL_TEXT.update, 'Can also move the card (never to Done).');
   assert.equal(AC.LEVEL_PARAGRAPHS.report, "You can read and search files. Don't try to change anything: VaultOS writes your note into the card.");

@@ -50,7 +50,7 @@ test('update: status change is applied with a Progress log line', () => {
   assert.ok(r.raw.includes('## Latest check-in\n_11 Nov 2026, 08:03'));
 });
 
-test('update: Ben moved it mid-run, so the proposal is dropped', () => {
+test('update: the person moved it mid-run, so the proposal is dropped', () => {
   const r = applyResult(card('review'), opts('update', { update: { status: 'blocked' } }));
   assert.match(r.raw, /^status: review$/m);
   assert.match(r.raw, /^updated: 2026-11-01$/m);

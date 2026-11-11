@@ -182,3 +182,15 @@ test('toggling twice leaves one runner', async (t) => {
   assert.equal(fs.readdirSync(dir).length, 1);
   assert.equal((await s.api('POST', '/api/automations/stop')).body.stopped, false);
 });
+
+test('a note keeps its line breaks in the run detail', async (t) => {
+  const s = await ready(t);
+  s.card('Work/1. a/01-x/task.md');
+  await s.turnOn();
+  const { id } = (await s.api('POST', '/api/automations', automation({ prompt: 'FAKE:lines' }))).body.automation;
+  await s.api('POST', `/api/automations/${id}/run`);
+  await waitIdle(s);
+  const [run] = (await s.api('GET', '/api/automations/runs')).body.runs;
+  const detail = await s.api('GET', `/api/automations/runs/${run.id}`);
+  assert.match(detail.body.cards[0].noteHtml, /line one<br>\s*line two/);
+});
