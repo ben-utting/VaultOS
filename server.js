@@ -969,7 +969,7 @@ app.get('/api/me', (req, res) => {
     authed: true,
     ...(localRead ? { localRead: true } : {}),
     todayDir: s && s.features.today ? s.today.dir : '',
-    features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead) },
+    features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead), automations: AUTOMATIONS.live() },
     notes: s ? { enabled: !!s.features.notes, dir: s.notes.dir, inbox: s.notes.inbox, main: s.notes.main, tags: s.notes.tags } : { enabled: false },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)) } : null,
   });
@@ -1389,9 +1389,9 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
 app.post('/api/settings/features', settingsGuard, (req, res) => withSettingsLock(() => setFeatures(req, res)));
 async function setFeatures(req, res) {
   try {
-    const { today: wantToday, terminal, morningRead, notes, timezone } = req.body || {};
-    if ([wantToday, terminal, morningRead, notes].some((v) => v !== undefined && typeof v !== 'boolean')) {
-      return res.status(400).json({ error: 'today, terminal, morningRead and notes must be true or false' });
+    const { today: wantToday, terminal, morningRead, notes, automations, timezone } = req.body || {};
+    if ([wantToday, terminal, morningRead, notes, automations].some((v) => v !== undefined && typeof v !== 'boolean')) {
+      return res.status(400).json({ error: 'today, terminal, morningRead, notes and automations must be true or false' });
     }
     if (timezone !== undefined && !validTimeZone(timezone)) return res.status(400).json({ error: 'Unknown time zone' });
     // Read inside the queue slot, after any earlier change has saved.
@@ -1404,6 +1404,7 @@ async function setFeatures(req, res) {
         ...(terminal !== undefined ? { terminal } : {}),
         ...(morningRead !== undefined ? { morningRead } : {}),
         ...(notes !== undefined ? { notes } : {}),
+        ...(automations !== undefined ? { automations } : {}),
       },
       today: { ...s.today, ...(timezone !== undefined ? { timezone } : {}) },
     };
@@ -1417,6 +1418,7 @@ async function setFeatures(req, res) {
       const svc = todayService();
       if (svc) await svc.boot();
     }
+    await AUTOMATIONS.sync();
     res.json({ settings: saved });
   } catch (err) {
     settingsFail(res, err, 'save the settings');
@@ -1467,6 +1469,17 @@ app.get('/api/agents', settingsGuard, async (req, res) => {
     settingsFail(res, err, 'read the agents');
   }
 });
+// ---------- Automations ----------
+// Scheduled agents over the boards' cards (lib/automation-service.js holds the rules). TERMS is read
+// through a getter: it is declared further down, with the terminal.
+const { createAutomationService } = require('./lib/automation-service');
+const AUTOMATIONS = createAutomationService({
+  vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, regenerateBoard,
+  terms: () => TERMS, profileFor, profiles: PROFILES, isInstalled, todayISO,
+  renderMarkdown: (md) => marked.parse(stripAgentNotes(md)),
+});
+app.use('/api', AUTOMATIONS.router);
+
 // ---------- Connectors ----------
 // Thin routes over lib/connector-service.js, which holds every rule. Only a ConnectorError carries text
 // written for the person (400); anything else is logged and answered generically. Nothing here puts a token,
@@ -3445,6 +3458,7 @@ async function boot() {
   }
   const svc = todayService();
   if (svc) svc.boot().catch((err) => console.error('Today boot failed:', err.message));
+  await AUTOMATIONS.boot();
   // Rough notes removed before a restart lost their undo; keep them a day, then let them go.
   const notes = notesSvc();
   if (notes) notes.sweep().catch((err) => console.error('Notes sweep failed:', err.message));

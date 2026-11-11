@@ -287,3 +287,13 @@ test('start() twice leaves one interval', async (t) => {
   s.runner.start();
   assert.equal(made, 2);
 });
+
+test('a run is visible as current or queued from the moment it is queued', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make();
+  await s.runner.runNow(a.id);
+  const st = s.runner.status();
+  assert.ok((st.current && st.current.automationId === a.id) || st.queue.includes(a.id), JSON.stringify(st));
+  await s.runner.idle();
+  assert.deepEqual(s.runner.status(), { current: null, queue: [] });
+});

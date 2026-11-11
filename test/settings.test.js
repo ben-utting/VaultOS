@@ -12,7 +12,7 @@ const withBoards = (...boards) => ({ ...S.defaults(), boards });
 test('defaults validate', () => {
   assert.deepEqual(S.defaults(), {
     version: 1, setupDone: false, boards: [],
-    features: { today: false, terminal: true, morningRead: true, notes: false },
+    features: { today: false, terminal: true, morningRead: true, notes: false, automations: false },
     today: { dir: 'Today', timezone: 'UTC' }, agent: { profile: 'none' },
     notes: { dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' },
   });
@@ -201,4 +201,11 @@ test('a saved custom agent is kept when another agent is the default', () => {
   const custom = { label: 'Mine', detect: 'mine', start: 'mine {prompt}' };
   assert.deepEqual(S.validate({ version: 1, agent: { profile: 'claude', custom } }).agent, { profile: 'claude', custom });
   assert.throws(() => S.validate({ version: 1, agent: { profile: 'claude', custom: { label: 'Bad', detect: 'x', start: 'no prompt' } } }), /\{prompt\}/);
+});
+
+test('features.automations defaults to false and must be boolean', () => {
+  assert.equal(S.defaults().features.automations, false);
+  assert.equal(S.validate({ version: 1 }).features.automations, false);
+  assert.equal(S.validate({ version: 1, features: { automations: true } }).features.automations, true);
+  assert.throws(() => S.validate({ version: 1, features: { automations: 'yes' } }), /features\.automations must be true or false/);
 });
