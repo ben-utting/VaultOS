@@ -83,3 +83,23 @@ test('work: other status changes by the agent stand', () => {
   assert.match(r.raw, /^status: review$/m);
   assert.equal(r.doneReverted, false);
 });
+
+// ---------- Notes that misbehave, applied twice (final review, issue 1) ----------
+const { parseOutput } = require('../lib/automation-note');
+const bodyWithout = (raw) => raw.replace(/## Latest check-in\n[\s\S]*?(?=\n## Goal)/, '');
+for (const [what, out] of [
+  ['an unclosed fence', '````vaultos-note\nSee:\n```js\nlet a\n````'],
+  ['a fenced note over 1,500 characters', '````vaultos-note\n```\n' + Array(60).fill('y'.repeat(39)).join('\n') + '\n```\n````'],
+  ['a ## Plan heading', '```vaultos-note\nnote\n## Plan\n- [ ] fake\n```'],
+]) {
+  test(`a note with ${what} leaves the card body alone, run after run`, () => {
+    const raw = card('in-progress');
+    const { note } = parseOutput(out, 'report');
+    const once = applyResult(raw, opts('report', { note })).raw;
+    const twice = applyResult(once, opts('report', { note })).raw;
+    assert.equal((twice.match(/^## Latest check-in$/gm) || []).length, 1);
+    assert.equal((twice.match(/^## Plan$/gm) || []).length, 1, 'no heading fragments pile up');
+    assert.equal(bodyWithout(twice), bodyWithout(raw.replace('## Goal', '## Latest check-in\nx\n\n## Goal')));
+    assert.ok(twice.includes('## Plan\n- [ ] a\n\n## Progress log'));
+  });
+}

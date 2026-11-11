@@ -93,3 +93,25 @@ test('parseOutput drops one pair of quotes an agent put round a value', () => {
   const out = '```vaultos-update\nstatus: needs-decision\ndecision_note: "Wait for the quote, or buy now?"\nblocked_by: \'vendor\'\n```\n```vaultos-note\nn\n```';
   assert.deepEqual(N.parseOutput(out, 'update').update, { status: 'needs-decision', decision_note: 'Wait for the quote, or buy now?', blocked_by: 'vendor' });
 });
+
+// ---------- What a note may contain (final review, issue 1) ----------
+const fenceLines = (s) => s.split('\n').filter((l) => /^\s*```/.test(l)).length;
+test('parseOutput balances an unclosed fence in a note', () => {
+  const r = N.parseOutput('````vaultos-note\nLook:\n```js\nconst a = 1;\n````', 'report');
+  assert.equal(fenceLines(r.note) % 2, 0, r.note);
+  assert.ok(r.note.startsWith('Look:\n```js\nconst a = 1;'));
+});
+test('parseOutput balances a fence the 1,500-character cut lands in, before marking the cut', () => {
+  const body = 'Intro\n```\n' + Array(60).fill('x'.repeat(39)).join('\n') + '\n```\nAfter';
+  const r = N.parseOutput('````vaultos-note\n' + body + '\n````', 'report');
+  assert.equal(r.cut, true);
+  assert.ok(r.note.endsWith('```\n(cut short)'), r.note.slice(-60));
+  assert.equal(fenceLines(r.note) % 2, 0);
+});
+test('parseOutput demotes # and ## headings so a note never ends its own section', () => {
+  const r = N.parseOutput('```vaultos-note\n# Title\n## Plan\n### Fine\nok\n```', 'report');
+  assert.equal(r.note, '### Title\n### Plan\n### Fine\nok');
+});
+test('parseOutput balances tilde fences too', () => {
+  assert.equal(N.parseOutput('```vaultos-note\n~~~\n## inside\n```', 'report').note, '~~~\n### inside\n~~~');
+});

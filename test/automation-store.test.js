@@ -156,3 +156,11 @@ test('run ids sort by time within the same second', (t) => {
   assert.ok(first < second, `${first} < ${second}`);
   assert.match(first, /^20261111-094000-[0-9a-f]{4}$/);
 });
+
+test('switching an automation on moves lastSlot forward, so it does not catch up at once', async (t) => {
+  const { store, clock } = setup(t, '2026-11-10T09:00:00Z');
+  const { value } = await store.create(input({ enabled: false }), ctx);
+  clock.now = T('2026-11-11T15:00:00Z');
+  await store.update(value.id, input({ enabled: true }), ctx);
+  assert.equal((await store.getState(value.id)).lastSlot, T('2026-11-11T08:00:00Z'));
+});

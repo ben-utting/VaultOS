@@ -26,12 +26,9 @@ test('claude adapter puts the prompt on stdin, limits tools per level, turns hoo
   assert.ok(w.cmd.includes('--permission-mode acceptEdits'));
 });
 
-test('pi is read-only and only offered for report and update', () => {
-  assert.deepEqual(A.offeredLevels('pi'), ['report', 'update']);
-  const r = A.agentCommand('pi', 'update', 'P');
-  assert.equal(r.input, 'P');
-  assert.ok(r.cmd.includes('pi -p --tools read,grep,find,ls --no-session --no-extensions'));
-  assert.match(A.agentCommand('pi', 'work', 'P').error, /not available/);
+test('pi is not offered yet: its reads are not confined to the card folder', () => {
+  assert.deepEqual(A.offeredLevels('pi'), []);
+  assert.match(A.agentCommand('pi', 'report', 'P').error, /not available/);
 });
 
 test('agents without an adapter are refused, cursor among them for now', () => {
@@ -92,4 +89,12 @@ test('snapshot and diff see a touched file and ignore .git', async (t) => {
   fs.writeFileSync(path.join(d, '.git', 'HEAD'), 'x');
   fs.writeFileSync(path.join(d, 'data', 'a.txt'), 'changed');
   assert.deepEqual(A.diffSnapshots(before, await A.snapshotDir(d)), ['data/a.txt', 'touched.txt']);
+});
+
+test('spawnAgent ends even when a child that left the process group holds the output open', { timeout: 20000 }, async (t) => {
+  const t0 = Date.now();
+  const r = await A.spawnAgent({ cmd: fakeCmd(), input: 'FAKE:orphan', cwd: tmp(t), env: process.env, timeoutMs: 20000 }).done;
+  assert.ok(Date.now() - t0 < 8000, `took ${Date.now() - t0} ms`);
+  assert.equal(r.code, 0);
+  assert.match(r.output, /Left one behind\./);
 });

@@ -66,3 +66,8 @@ test('frontmatter helpers still round-trip', () => {
   assert.equal(parseFrontmatter(raw).meta.status, 'blocked');
   assert.equal(setFrontmatterField(raw, 'status', 'review'), '---\nid: x\nstatus: review\n---\nbody\n');
 });
+
+test('replaceSection backstop: an old section with an unclosed fence does not swallow the rest of the file', () => {
+  const raw = '---\nid: x\n---\n\n## Latest check-in\nold\n```js\nlet a\n\n## Goal\ng\n\n## Plan\n- [ ] a\n';
+  assert.equal(replaceSection(raw, 'Latest check-in', ['new']), '---\nid: x\n---\n\n## Latest check-in\nnew\n\n## Goal\ng\n\n## Plan\n- [ ] a\n');
+});

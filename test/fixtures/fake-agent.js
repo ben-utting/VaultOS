@@ -14,6 +14,12 @@ process.stdin.on('end', () => {
   if (has('hang')) { process.stdout.write('thinking...\n'); setInterval(() => {}, 1e9); return; }
   if (has('slow')) { setTimeout(() => process.stdout.write(note('Slow note.')), 1200); return; }
   if (has('lines')) { process.stdout.write(note('line one\nline two')); return; }
+  if (has('orphan')) {
+    // A grandchild in its own process group, holding our stdout open for 12 s after we exit.
+    require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 12000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }).unref();
+    process.stdout.write(note('Left one behind.'));
+    return;
+  }
   if (has('crash')) { process.stderr.write('boom\n'); process.exit(3); }
   if (has('none')) { process.stdout.write('I looked but wrote no note.\n'); return; }
   if (has('touch')) { fs.writeFileSync('touched.txt', 'x'); process.stdout.write(note('Touched a file.')); return; }

@@ -48,7 +48,7 @@ function setup(t, { cards = {}, busy = [], clock = null, ...more } = {}) {
       const full = path.join(base, name, 'task.md');
       if (!fs.existsSync(full)) continue;
       const { meta } = parseFrontmatter(fs.readFileSync(full, 'utf8'));
-      out.push({ path: rel(full), board: 'work', title: meta.title, status: meta.status, updated: meta.updated, batch: meta.batch || '', full, dir: path.dirname(full) });
+      out.push({ path: rel(full), board: 'work', title: meta.title || name, status: meta.status || 'backlog', updated: meta.updated, batch: meta.batch || '', full, dir: path.dirname(full) });
     }
     return out;
   };
@@ -297,4 +297,115 @@ test('a run is visible as current or queued from the moment it is queued', async
   assert.ok((st.current && st.current.automationId === a.id) || st.queue.includes(a.id), JSON.stringify(st));
   await s.runner.idle();
   assert.deepEqual(s.runner.status(), { current: null, queue: [] });
+});
+
+// ---------- Final review fixes ----------
+const gate = () => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; };
+
+test('stop before the agent starts: no agent is spawned', { timeout: 20000 }, async (t) => {
+  const g = gate();
+  let spawned = 0;
+  let reads = 0;
+  const s = setup(t, {
+    cards: { '01-a': ['in-progress'] },
+    spawnAgent: (o) => { spawned++; return A.spawnAgent(o); },
+    readCard: async (full) => { if (++reads === 1) await g.p; try { return fs.readFileSync(full, 'utf8'); } catch { return null; } },
+  });
+  const a = await s.make({ prompt: 'FAKE:hang' });
+  await s.runner.runNow(a.id);
+  await waitFor(() => reads === 1);
+  s.runner.stop();
+  g.open();
+  await s.runner.idle();
+  assert.equal(spawned, 0);
+  const run = await s.lastRun();
+  assert.equal(run.state, 'stopped');
+  assert.deepEqual(run.cards.map((c) => [c.state, c.reason]), [['failed', 'stopped']]);
+});
+
+test('a tick still in flight when automations are switched off starts nothing', { timeout: 20000 }, async (t) => {
+  const clock = { now: Date.parse('2026-11-10T09:00:00Z') };
+  const g = gate();
+  let gated = false;
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, clock });
+  await s.make();
+  const realList = s.store.list;
+  s.store.list = async () => { if (gated) await g.p; return realList(); };
+  clock.now = Date.parse('2026-11-11T08:00:20Z');
+  gated = true;
+  const ticking = s.runner.tick();
+  s.runner.shutdown();
+  g.open();
+  await ticking;
+  await s.runner.idle();
+  assert.deepEqual(await s.store.listRuns({}), []);
+  assert.deepEqual((await s.runner.runNow((await realList())[0].id)), { error: 'Automations are off' });
+  s.runner.start();
+  assert.deepEqual((await s.runner.runNow((await realList())[0].id)), { queued: true });
+  await s.runner.idle();
+});
+
+test('a write error fails the card, not the server', { timeout: 20000 }, async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, writeCard: async () => { throw new Error('ENOSPC: no space left on device'); } });
+  const run = await runAndWait(s, await s.make());
+  assert.equal(run.state, 'failed');
+  assert.equal(run.cards[0].state, 'failed');
+  assert.match(run.cards[0].reason, /no space left/);
+  assert.deepEqual(s.runner.status(), { current: null, queue: [] });
+});
+
+test('an update run over a card without frontmatter fails that card cleanly', { timeout: 20000 }, async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make({ prompt: 'FAKE:update:blocked', level: 'update', cards: { board: 'work', statuses: ['backlog', 'in-progress'], subtasks: false } });
+  fs.mkdirSync(path.join(s.vault, 'Work/1. a/00-bare'), { recursive: true });
+  fs.writeFileSync(path.join(s.vault, 'Work/1. a/00-bare/task.md'), 'no frontmatter here\n');
+  const run = await runAndWait(s, a);
+  const bare = run.cards.find((c) => c.path.includes('00-bare'));
+  assert.equal(bare.state, 'failed');
+  assert.match(bare.reason, /frontmatter/);
+  assert.equal(fs.readFileSync(path.join(s.vault, 'Work/1. a/00-bare/task.md'), 'utf8'), 'no frontmatter here\n');
+});
+
+test('a run whose definition cannot be read clears itself and the queue goes on', { timeout: 20000 }, async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make();
+  const b = await s.make({ name: 'B' });
+  const realGet = s.store.get;
+  let calls = 0;
+  s.store.get = async (id) => { if (id === a.id && ++calls === 2) throw new Error('automations.json: Unexpected end of JSON input'); return realGet(id); };
+  await s.runner.runNow(a.id);
+  await s.runner.runNow(b.id);
+  await s.runner.idle();
+  assert.deepEqual(s.runner.status(), { current: null, queue: [] });
+  assert.deepEqual((await s.store.listRuns({})).map((r) => [r.automationName, r.state]), [['B', 'finished']]);
+});
+
+test('a card the person finished mid-run gets no note (report)', { timeout: 20000 }, async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make({ prompt: 'FAKE:slow' });
+  await s.runner.runNow(a.id);
+  await waitFor(() => s.runner.status().current && s.runner.status().current.index === 0);
+  await sleep(200);
+  const f = path.join(s.vault, 'Work/1. a/01-a/task.md');
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('status: in-progress', 'status: done'));
+  const done = fs.readFileSync(f, 'utf8');
+  await s.runner.idle();
+  const run = await s.lastRun();
+  assert.equal(run.cards[0].state, 'moved');
+  assert.equal(run.cards[0].reason, 'the card was finished while the agent ran');
+  assert.equal(fs.readFileSync(f, 'utf8'), done);
+});
+
+test('a card moved to Done on the board during a work run stays done', { timeout: 20000 }, async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] } });
+  const a = await s.make({ prompt: 'FAKE:slow', level: 'work' });
+  await s.runner.runNow(a.id);
+  await waitFor(() => s.runner.status().current && s.runner.status().current.index === 0);
+  await sleep(200);
+  const f = path.join(s.vault, 'Work/1. a/01-a/task.md');
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('status: in-progress', 'status: done')
+    .replace('## Progress log\n\n', '## Progress log\n\n- 2026-11-11 — status in-progress → done (moved on the board).\n'));
+  await s.runner.idle();
+  assert.equal((await s.lastRun()).cards[0].state, 'moved');
+  assert.match(fs.readFileSync(f, 'utf8'), /^status: done$/m);
 });
