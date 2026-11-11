@@ -143,3 +143,16 @@ test('a corrupt automations.json is reported and left alone', async (t) => {
   await assert.rejects(store.create(input(), ctx), /automations\.json/);
   assert.equal(fs.readFileSync(file('automations.json'), 'utf8'), '{ not json');
 });
+
+test('run ids sort by time within the same second', (t) => {
+  const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-store-'));
+  t.after(() => fs.rmSync(vault, { recursive: true, force: true }));
+  const clock = { now: T('2026-11-11T09:40:00.100Z') };
+  const hex = ['ffff', '0000'];
+  const store = createAutomationStore(vault, { now: () => clock.now, randomHex: (len) => hex.shift().slice(0, len) });
+  const first = store.newRunId();
+  clock.now = T('2026-11-11T09:40:00.900Z');
+  const second = store.newRunId();
+  assert.ok(first < second, `${first} < ${second}`);
+  assert.match(first, /^20261111-094000-[0-9a-f]{4}$/);
+});

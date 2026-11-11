@@ -12,6 +12,7 @@ process.stdin.on('end', () => {
   const note = (text = 'Fake note.') => `\`\`\`vaultos-note\n${text}${marks ? ` ${marks}` : ''}\n\`\`\`\n`;
   const has = (d) => input.includes(`FAKE:${d}`);
   if (has('hang')) { process.stdout.write('thinking...\n'); setInterval(() => {}, 1e9); return; }
+  if (has('slow')) { setTimeout(() => process.stdout.write(note('Slow note.')), 1200); return; }
   if (has('crash')) { process.stderr.write('boom\n'); process.exit(3); }
   if (has('none')) { process.stdout.write('I looked but wrote no note.\n'); return; }
   if (has('touch')) { fs.writeFileSync('touched.txt', 'x'); process.stdout.write(note('Touched a file.')); return; }
