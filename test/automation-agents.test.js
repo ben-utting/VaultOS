@@ -142,7 +142,7 @@ test('cursor guard: hooks or MCP servers in the card folder skip it, other setti
 });
 
 test('prepareAgent for cursor writes the card rules into its own Cursor home and clears old chats', async (t) => {
-  const { card } = cursorTree(t);
+  const { v, card } = cursorTree(t);
   const home = tmp(t);
   const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
   for (const d of ['chats/old', 'projects/old', 'ai-tracking', 'skills-cursor/keep']) fs.mkdirSync(path.join(cur, d), { recursive: true });
@@ -150,7 +150,11 @@ test('prepareAgent for cursor writes the card rules into its own Cursor home and
   const cfg = JSON.parse(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8'));
   assert.equal(cfg.version, 1);
   assert.deepEqual(cfg.permissions.allow, []);
-  assert.deepEqual(cfg.permissions.deny, await A.cursorRules(card));
+  // What the rules mean, not a second snapshot: other tests add and remove folders in /tmp meanwhile.
+  for (const r of ['Shell(*)', 'WebFetch(*)', 'Mcp(*:*)', 'Write(*)']) assert.ok(cfg.permissions.deny.includes(r), r);
+  assert.ok(denies(cfg.permissions.deny, 'Read', `${v}/secret.txt`));
+  assert.ok(denies(cfg.permissions.deny, 'Read', `${v}/Work/card-b/notes.txt`));
+  assert.ok(!denies(cfg.permissions.deny, 'Read', `${card}/task.md`));
   for (const d of ['chats', 'projects', 'ai-tracking']) assert.ok(!fs.existsSync(path.join(cur, d)), `${d} cleared`);
   assert.ok(fs.existsSync(path.join(cur, 'skills-cursor', 'keep')), 'the rest of the Cursor home is kept');
 });
