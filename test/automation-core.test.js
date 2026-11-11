@@ -211,3 +211,24 @@ test('agent and level: without agentLevels nothing extra is checked', () => {
   const r = AC.validateAutomation({ ...example(), agent: 'cursor', level: 'work' }, { boardKeys: ['work'], agentIds: ['default', 'claude', 'cursor'] });
   assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
+
+// ---------- Agent tags ----------
+test('agentTagText: a draft from an agent, only while it is off', () => {
+  const origin = { by: 'agent', agent: 'Cursor CLI', at: '2026-11-11T09:00:00.000Z' };
+  assert.equal(AC.agentTagText({ enabled: false, origin }, 'Europe/London'), 'Draft from Cursor CLI · 11 Nov');
+  assert.equal(AC.agentTagText({ enabled: true, origin }, 'Europe/London'), '');
+  assert.equal(AC.agentTagText({ enabled: false }, 'Europe/London'), '');
+});
+
+test('agentTagText: what the agent changed wins over the draft tag', () => {
+  const origin = { by: 'agent', agent: 'Cursor CLI', at: '2026-11-11T09:00:00.000Z' };
+  const off = { agent: 'Cursor CLI', fields: ['prompt', 'cards'], switchedOff: true, at: '2026-11-11T10:00:00.000Z' };
+  assert.equal(AC.agentTagText({ enabled: false, origin, agentChange: off }, 'Europe/London'), 'Cursor CLI changed the prompt and cards. Off until you switch it on.');
+  const three = { agent: 'Cursor CLI', fields: ['agent', 'level', 'prompt'], switchedOff: false, at: '2026-11-11T10:00:00.000Z' };
+  assert.equal(AC.agentTagText({ enabled: false, agentChange: three }, 'Europe/London'), 'Cursor CLI changed the agent, level and prompt.');
+});
+
+test('agentTagText: the date is in the board time zone', () => {
+  const origin = { by: 'agent', agent: 'Claude Code', at: '2026-11-11T23:30:00.000Z' };
+  assert.equal(AC.agentTagText({ enabled: false, origin }, 'Asia/Tokyo'), 'Draft from Claude Code · 12 Nov');
+});

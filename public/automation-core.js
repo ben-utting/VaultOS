@@ -215,6 +215,20 @@
     };
   }
 
+  // ---------- Agent tags (spec §7) ----------
+  // The line under an automation an agent made or changed; '' when there's nothing to say.
+  const listText = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  function agentTagText(a, tz) {
+    const ch = a && a.agentChange;
+    if (ch && Array.isArray(ch.fields) && ch.fields.length) {
+      return `${ch.agent} changed the ${listText(ch.fields)}.${ch.switchedOff ? ' Off until you switch it on.' : ''}`;
+    }
+    const o = a && a.origin;
+    if (!o || a.enabled) return '';
+    const day = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: tz }).format(new Date(o.at));
+    return `Draft from ${o.agent} · ${day}`;
+  }
+
   // ---------- Run summaries ----------
   function runCounts(run) {
     const n = { noted: 0, skipped: 0, failed: 0, timedOut: 0, notRun: 0, moved: 0 };
@@ -276,6 +290,6 @@
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
-    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText,
   };
 });

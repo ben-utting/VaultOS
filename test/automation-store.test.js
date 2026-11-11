@@ -164,3 +164,34 @@ test('switching an automation on moves lastSlot forward, so it does not catch up
   await store.update(value.id, input({ enabled: true }), ctx);
   assert.equal((await store.getState(value.id)).lastSlot, T('2026-11-11T08:00:00Z'));
 });
+
+// ---------- Agent tags ----------
+const ORIGIN = { by: 'agent', agent: 'Cursor CLI', at: '2026-11-11T09:00:00.000Z' };
+const CHANGE = { agent: 'Cursor CLI', fields: ['prompt'], switchedOff: true, at: '2026-11-11T09:30:00.000Z' };
+
+test('create keeps an origin tag', async (t) => {
+  const { store } = setup(t);
+  const r = await store.create(input({ enabled: false }), ctx, { origin: ORIGIN });
+  assert.deepEqual(r.value.origin, ORIGIN);
+  assert.deepEqual((await store.get(r.value.id)).origin, ORIGIN);
+  const plain = await store.create(input(), ctx);
+  assert.equal('origin' in plain.value, false);
+});
+
+test('update with no tags clears origin and agentChange', async (t) => {
+  const { store } = setup(t);
+  const { value } = await store.create(input({ enabled: false }), ctx, { origin: ORIGIN });
+  await store.update(value.id, input({ enabled: false }), ctx, { origin: ORIGIN, agentChange: CHANGE });
+  const r = await store.update(value.id, input({ enabled: true }), ctx);
+  assert.equal('origin' in r.value, false);
+  assert.equal('agentChange' in r.value, false);
+  assert.equal('origin' in (await store.get(value.id)), false);
+});
+
+test('update keeps the tags it is given', async (t) => {
+  const { store } = setup(t);
+  const { value } = await store.create(input({ enabled: false }), ctx, { origin: ORIGIN });
+  const r = await store.update(value.id, input({ enabled: false, prompt: 'New.' }), ctx, { origin: ORIGIN, agentChange: CHANGE });
+  assert.deepEqual(r.value.origin, ORIGIN);
+  assert.deepEqual(r.value.agentChange, CHANGE);
+});
