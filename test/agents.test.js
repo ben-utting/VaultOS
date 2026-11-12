@@ -72,9 +72,7 @@ test('installClaudeHook keeps other settings and hooks', async () => {
   assert.equal(s.hooks.Stop[1].hooks[0].command, A.HOOK_CMD);
 });
 
-test('processMatches and processState', () => {
-  assert.equal(A.processMatches(A.PROFILES.cursor, '/home/u/.local/bin/agent'), true);
-  assert.equal(A.processMatches(A.PROFILES.cursor, 'node'), false);
+test('processState', () => {
   assert.equal(A.processState({ running: true, quietMs: 5000 }), 'working');
   assert.equal(A.processState({ running: true, quietMs: 25000 }), 'idle');
   assert.equal(A.processState({ running: false, quietMs: 0 }), null);
@@ -96,26 +94,59 @@ test('eight built-in profiles with the spec labels, makers and tiers', () => {
   for (const p of Object.values(A.PROFILES)) {
     assert.ok(p.detect.length && p.proc.length && p.start.includes('{prompt}'), p.id);
     assert.ok(p.install === null || /--prefix ~\/\.local|curl/.test(p.install), p.id);
-    assert.equal(typeof p.nodeTitle, 'boolean', p.id);
   }
 });
 
-test('node agents match only in the terminal Start agent opened', () => {
-  assert.equal(A.PROFILES.codex.nodeTitle, true);
-  assert.equal(A.processMatches(A.PROFILES.codex, 'node', { agentTerm: true }), true);
-  assert.equal(A.processMatches(A.PROFILES.codex, 'node', { agentTerm: false }), false);
-  assert.equal(A.processMatches(A.PROFILES.codex, 'node'), false);
-  assert.equal(A.processMatches(A.PROFILES.claude, 'node', { agentTerm: true }), false);
-  assert.equal(A.processMatches(A.PROFILES.pi, 'pi'), true);
+// Agents in a terminal are known by the foreground process's whole command line (spec 2026-11-12 §3.2).
+test('detectAgent knows an agent by its program name', () => {
+  const P = A.agentProfiles({ agent: { profile: 'cursor' } });
+  assert.equal(A.detectAgent(['claude'], P), 'claude');
+  assert.equal(A.detectAgent(['/home/u/.local/bin/agent', '--use-system-ca', '/x/index.js'], P), 'cursor');
+  assert.equal(A.detectAgent(['cursor-agent'], P), 'cursor');
+  assert.equal(A.detectAgent(['pi'], P), 'pi');
+  assert.equal(A.detectAgent(['agy', '-i'], P), 'antigravity');
+});
+
+test('detectAgent knows node-wrapped agents and renamed wrappers by their install path', () => {
+  const P = A.agentProfiles({});
+  assert.equal(A.detectAgent(['node', '/usr/lib/node_modules/@openai/codex/bin/codex.js'], P), 'codex');
+  assert.equal(A.detectAgent(['node', '/h/.local/lib/node_modules/@github/copilot/index.js'], P), 'copilot');
+  assert.equal(A.detectAgent(['node', '/h/.local/lib/node_modules/@kilocode/cli/dist/index.js'], P), 'kilo');
+  assert.equal(A.detectAgent(['node', '/h/.npm/_npx/1/node_modules/@anthropic-ai/claude-code/cli.js'], P), 'claude');
+  assert.equal(A.detectAgent(['/h/.local/bin/agent.real', '--use-system-ca', '/h/.local/share/cursor-agent/versions/1/index.js'], P), 'cursor');
+  assert.equal(A.detectAgent(['bash', '/h/.local/bin/agent'], P), 'cursor');
+});
+
+test('detectAgent never names an ordinary program', () => {
+  const P = A.agentProfiles({});
+  for (const argv of [['node', 'server.js'], ['vim', 'agent.md'], ['bash', './deploy.sh'], ['python3', 'app.py'], ['node'], []]) {
+    assert.equal(A.detectAgent(argv, P), null, JSON.stringify(argv));
+  }
+  // The accepted edge: any argument holding an agent's install path counts (a pager open on a file inside it).
+  assert.equal(A.detectAgent(['less', '/h/.local/share/cursor-agent/versions/1/notes.txt'], P), 'cursor');
+});
+
+test('a saved custom agent is detected after the built-ins, with its label as short name', () => {
+  const P = A.agentProfiles({ agent: { profile: 'custom', custom: { label: 'Aider', detect: 'aider', install: '', login: '', start: 'aider {prompt}' } } });
+  assert.equal(A.detectAgent(['aider'], P), 'custom');
+  assert.equal(P.at(-1).short, 'Aider');
+  assert.equal(A.agentProfiles({ agent: { profile: 'claude' } }).some((p) => p.id === 'custom'), false);
+});
+
+test('every built-in profile has a short name and a marks list', () => {
+  const want = { claude: 'Claude', cursor: 'Cursor', codex: 'Codex', copilot: 'Copilot', pi: 'Pi', opencode: 'OpenCode', kilo: 'Kilo', antigravity: 'Antigravity' };
+  for (const [id, short] of Object.entries(want)) {
+    assert.equal(A.PROFILES[id].short, short);
+    assert.ok(Array.isArray(A.PROFILES[id].marks), id);
+  }
+  assert.equal('processMatches' in A, false);
+  assert.equal(Object.values(A.PROFILES).some((p) => 'nodeTitle' in p), false);
 });
 
 test('only a terminal Start agent opened counts as the agent\'s; a job-folder terminal just links to its card', () => {
   assert.deepEqual(A.terminalTask({ explicit: 'Work/p/j/task.md', found: '' }), { task: 'Work/p/j/task.md', agentTerm: true });
   assert.deepEqual(A.terminalTask({ explicit: '', found: 'Work/p/j/task.md' }), { task: 'Work/p/j/task.md', agentTerm: false });
   assert.deepEqual(A.terminalTask({ explicit: '', found: '' }), { task: '', agentTerm: false });
-  // So a dev server (`node`) in a job-folder terminal never wears a node agent's badge:
-  const { agentTerm } = A.terminalTask({ explicit: '', found: 'Work/p/j/task.md' });
-  assert.equal(A.processMatches(A.PROFILES.codex, 'node', { agentTerm }), false);
 });
 
 const RECALL = path.join(__dirname, '..', 'hooks', 'vault-recall.js');
