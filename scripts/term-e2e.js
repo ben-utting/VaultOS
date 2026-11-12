@@ -1293,8 +1293,8 @@ SCEN['S7'] = async () => {
   const act = await ev(p, () => TW.spaces().find((x) => x.key === TW.activeSpace()).name);
   const sum = await ev(p, () => { const b = document.querySelector('.tw-summary'); return b ? b.textContent : null; });
   check('S7 .tw-summary shows the active space name', typeof sum === 'string' && typeof act === 'string' && sum.includes(act) && sum.includes(' · '), { sum, act });
-  const sw = await ev(p, () => { const b = document.querySelector('.tw-switch'); return b ? b.textContent.replace(/\s+/g, ' ').trim() + ' ' + getComputedStyle(b.querySelector('.tw-mark'), '::before').content.replace(/"/g, '') : null; });
-  check('S7 .tw-switch reads "≡ 2" and the rollup mark', typeof sw === 'string' && /^≡ 2 ×$/.test(sw), sw);
+  const sw = await ev(p, () => { const b = document.querySelector('.tw-switch'); const m = b && b.querySelector('.tw-mark .tm'); return b ? b.textContent.replace(/\s+/g, ' ').trim() + ' ' + (m ? m.dataset.agent : '-') : null; });
+  check('S7 .tw-switch reads "≡ 2" and wears the rollup mark (needs you)', typeof sw === 'string' && /^≡ 2 blocked$/.test(sw), sw);
   // Key row: Esc types ^[ ; compose sends. Both before the sheet, on the first space's pane.
   await ev(p, () => TW.showSpace(TW.spaces()[0].key));
   await sleep(300);
