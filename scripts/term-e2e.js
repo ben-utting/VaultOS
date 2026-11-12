@@ -1939,6 +1939,30 @@ SCEN.S13 = async () => {
   await ph.close();
 };
 
+// S16: a space's custom name lasts as long as the space. While a terminal still runs in it (here, detached, or in
+// another window) the name stays; once its last terminal has ended, the next terminal there starts with the
+// default name (Ben, 2026-11-12).
+SCEN.S16 = async () => {
+  const p = await page('/');
+  await bare(p);
+  const A = await openTerm(p, {});
+  const key = await ev(p, (a) => TW.session(a).key, A);
+  await ev(p, (k) => TW.renameSpace(k, 'Renamed space'), key);
+  check('S16 the renamed space shows its name', await ev(p, (k) => TW.spaces().find((x) => x.key === k).name, key) === 'Renamed space');
+  await ev(p, (a) => TW.remove(a, { kill: false }), A);   // detached: still running in the background
+  await sleep(4000);   // a list poll
+  check('S16 a detached terminal keeps its space\'s name', await ev((p), () => JSON.parse(localStorage.getItem('vaultboard.term.spaceNames') || '{}')['d:']) === 'Renamed space');
+  await ev(p, (a) => TW.bring({ id: a }), A);
+  await waitFor(p, (a) => !!TW.session(a) && TW.session(a).state === 'open', 6000, A);
+  await ev(p, (a) => TW.remove(a), A);   // ends it: the space has nothing left
+  await listWait(A, () => false, 1500);
+  await sleep(4000);
+  const B = await openTerm(p, {});
+  const name = await ev(p, (b) => TW.spaces().find((x) => x.key === TW.session(b).key).name, B);
+  check('S16 after its last terminal ended, a new terminal there has the default name', name === 'vault', name);
+  await p.close();
+};
+
 // S15: the header's terminal button starts the default agent when it opens a new terminal, and only then.
 SCEN.S15 = async () => {
   check('S15 the default agent is Cursor', (await setDefaultAgent('cursor')) === 200);

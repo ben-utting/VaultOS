@@ -1304,7 +1304,19 @@ function createTermWorkspace(root, opts = {}) {
     for (const r of rs) if (r.agent) observeAgent(r.id, r.agent);
     const ids = new Set(rs.map((r) => r.id));
     for (const id of W.memo.keys()) if (!ids.has(id)) W.memo.delete(id);   // gone: forget its last state
+    forgetEndedNames(rs);
     notify();
+  }
+  // A space's custom name lasts as long as the space (Ben, 2026-11-12): once no terminal is left in it (none held
+  // here, none in the server's list, which covers detached ones and other pages), the name goes, so the next
+  // terminal in that folder or card starts with the default name. Never while a restore may still bring some back.
+  function forgetEndedNames(rs) {
+    if (W.listState !== 'ok' || W.restoring || W.expected.size) return;
+    const names = spaceNames();
+    const live = new Set(rs.map((r) => r.key));
+    let changed = false;
+    for (const k of Object.keys(names)) if (!live.has(k)) { delete names[k]; changed = true; }
+    if (changed) twSet(NAMES_KEY, names);
   }
   let soonTimer = null;
   function pollSoon() {
