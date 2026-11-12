@@ -325,3 +325,27 @@ test('rows: for a held row the page\'s space wins over the list\'s; an unknown o
   const cleared = new Map([['1', { meta: { id: '1', n: 1, title: '', cwd: '', task: '', space: '', spaceName: '' }, osc: '', agent: null }]]);
   assert.equal(TT.rows(list.slice(0, 1), cleared, new Map())[0].key, 'd:', 'an empty space on the page means none');
 });
+
+// Agent rows (spec 2026-11-12 §4): how long an agent has been in its state, and a space's most urgent agent kind.
+test('agentAge', () => {
+  const m = 60e3;
+  const h = 60 * m;
+  assert.equal(TT.agentAge(-5000), 'just now');
+  assert.equal(TT.agentAge(59e3), 'just now');
+  assert.equal(TT.agentAge(4 * m + 30e3), '4m');
+  assert.equal(TT.agentAge(h + 20 * m), '1h 20m');
+  assert.equal(TT.agentAge(26 * h), '1d 2h');
+  assert.equal(TT.agentAge(NaN), 'just now');
+});
+
+test('a space rolls up its most urgent agent kind', () => {
+  const rs = [
+    mk({ id: 'a', key: 'd:x', cwd: 'x', agent: { state: 'working', since: 2, kind: 'cursor' } }),
+    mk({ id: 'b', key: 'd:x', cwd: 'x', agent: { state: 'blocked', since: 1, kind: 'claude' } }),
+  ];
+  const [sp] = spaces(rs, {});
+  assert.equal(sp.rollup, 'blocked');
+  assert.equal(sp.rollupKind, 'claude');
+  assert.equal(spaces([mk({ id: 'c', key: 'd:y', cwd: 'y', agent: null })], {})[0].rollupKind, '');
+  assert.equal(spaces([mk({ id: 'd', key: 'd:z', cwd: 'z', agent: { state: 'idle', since: 1 } })], {})[0].rollupKind, '');
+});
