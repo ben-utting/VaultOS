@@ -1862,6 +1862,7 @@ SCEN.S13 = async () => {
       check('S13 a drawn mark takes its phase from the clock (a negative delay)', Array.isArray(rows) && rows.every((r) => /^-\d+ms$/.test(r.delay)), rows);
       const strip = await ev(p, (i) => { const m = document.querySelector(`.tw-pane[data-id="${i}"] .tw-pane-strip .tm`); return m ? { motion: m.dataset.motion, anim: getComputedStyle(m.querySelector(':scope > svg')).animationName } : null; }, second);
       check('S13 the pane strip mark is quiet: working does not move there', !!strip && strip.motion === 'quiet' && strip.anim === 'none', strip);
+      await p.bringToFront();
       await typeIn(p, first, 'b');
       const blocked = await waitFor(p, () => [...document.querySelectorAll('.tw-side .tw-ag-row')].some((r) => r.querySelector('.tw-ag-state').textContent === 'needs you'), 6000);
       const breath = await ev(p, (i) => ({
@@ -1869,6 +1870,11 @@ SCEN.S13 = async () => {
         strip: getComputedStyle(document.querySelector(`.tw-pane[data-id="${i}"] .tw-pane-strip .tm`)).animationName,
       }), first);
       check('S13 needs you breathes, in the sidebar and on the strip', blocked && breath.side === 'tm-breathe' && breath.strip === 'tm-breathe', breath);
+      // The words name the agent in that terminal, not the default (Cursor here).
+      const stripTip = await ev(p, (i) => document.querySelector(`.tw-pane[data-id="${i}"] .tw-pane-strip .tw-mark`).title, first);
+      check('S13 the pane strip tooltip names the agent in that terminal', stripTip === 'Claude needs you', stripTip);
+      const toast = await waitFor(p, () => [...document.querySelectorAll('.tw-toasts .tw-toast')].some((t) => /^Claude needs you/.test(t.textContent.trim())), 5000);
+      check('S13 the toast names the agent in that terminal', toast, await toastTexts(p));
       await sleep(400);
       await shot(p, 's13-dark');
       await ev(p, () => { document.documentElement.dataset.theme = 'light'; });
@@ -1884,6 +1890,18 @@ SCEN.S13 = async () => {
     await sleep(500);
     await p.close();
   }
+  // The card drawer's Go to agent names the agent in that terminal too.
+  check('S13 the default agent is Cursor again', (await setDefaultAgent('cursor')) === 200);
+  const bp = await page('/');
+  await ev(bp, (c) => openTask(`${c}/task.md`), WEB);
+  await waitFor(bp, () => typeof DRAWER_TASK !== 'undefined' && !!DRAWER_TASK, 5000);
+  const tip = await ev(bp, (c) => {
+    TASK_AGENTS = { [`${c}/task.md`]: { id: 'x1', state: 'blocked', kind: 'claude', label: 'Claude' } };
+    renderDrawerAgent();
+    return document.getElementById('d-agent').dataset.tip;
+  }, WEB);
+  check('S13 the drawer\'s Go to agent names the agent in that terminal', typeof tip === 'string' && tip.includes('Claude needs you'), tip);
+  await bp.close();
   const ph = await page('/terminal.html', { phone: true, noGL: true });
   await waitFor(ph, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
   const pid = await ev(ph, () => TW.sessions()[0].id);

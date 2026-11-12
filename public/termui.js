@@ -64,7 +64,8 @@ const twNewId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.ran
 //   opts.onAgents(sum)     an agent's state changed; sum = { working, blocked, done, idle } counts
 //   opts.agentLabel()      the chosen agent's name, for "<name> needs you"; null (or absent) for neutral words
 function createTermWorkspace(root, opts = {}) {
-  const agentText = (state) => twAgentText(state, opts.agentLabel ? opts.agentLabel() : null);
+  // "<agent> needs you": the agent in that terminal (its label from the server), else the default agent's name.
+  const agentText = (state, agent) => twAgentText(state, (agent && agent.label) || (opts.agentLabel ? opts.agentLabel() : null));
   const K = {
     sessions: `${opts.store}.sessions`, focused: `${opts.store}.focused`, tree: `${opts.store}.tree`,
     side: `${opts.store}.side`, layout: `${opts.store}.layout`, ratios: `${opts.store}.ratios`,   // the old Tabs/Tile keys (migrated below)
@@ -501,7 +502,7 @@ function createTermWorkspace(root, opts = {}) {
     const name = paneName(s);
     const nameEl = s.pane.querySelector('.tw-pane-name');
     if (nameEl.textContent !== name) nameEl.textContent = name;
-    const status = s.agent ? agentText(s.agent.state) : TW_STATE_TEXT[s.state] || '';
+    const status = s.agent ? agentText(s.agent.state, s.agent) : TW_STATE_TEXT[s.state] || '';
     nameEl.title = status ? `${name} — ${status}` : name;
     const mark = s.pane.querySelector('.tw-mark');
     setMark(mark, s.agent, s.id);
@@ -1468,7 +1469,8 @@ function createTermWorkspace(root, opts = {}) {
       if (s && shown && key === W.store.active && (isPhone() ? focusOf(key) === e.id : (!zoomOf(key) || zoomOf(key) === e.id))) return;
       const sp = key ? spaces().find((x) => x.key === key) : null;
       const n = s ? heldIn(key).indexOf(e.id) + 1 : 0;
-      toasts.push({ id: e.id, kind: e.state, title: agentText(e.state), sub: sp ? (n ? `${sp.name} · pane ${n}` : sp.name) : '' });
+      const agent = (s && s.agent) || (rows().find((r) => r.id === e.id) || {}).agent;
+      toasts.push({ id: e.id, kind: e.state, title: agentText(e.state, agent), sub: sp ? (n ? `${sp.name} · pane ${n}` : sp.name) : '' });
       if (twGet(SOUND_KEY, false) === true) TermToast.tone(e.state);
     } else if (e.kind === 'moved') toasts.push({ id: e.id, kind: 'info', title: `${e.name} opened elsewhere`, sub: '' });
     else if (e.kind === 'cap') toasts.push({ id: null, kind: 'info', title: '12 terminals open', sub: 'Close one to open another' });

@@ -1204,7 +1204,7 @@ function renderDrawerAgent() {
   const a = TASK_AGENTS[DRAWER_TASK.path];
   const short = dirOf(DRAWER_TASK.path).split('/').slice(-2).join('/');
   const btn = $('d-agent');
-  const state = a ? twAgentText(a.state, agentLabel()) : '';
+  const state = a ? twAgentText(a.state, a.label || agentLabel()) : '';   // the agent in that terminal, else the default's name
   btn.dataset.tip = a
     ? `Go to agent\n${state} — jump to its terminal`
     : `Start agent\nOpens ${agentLabel() || 'the agent'} in ${short}/ to brief you on where it stands and what's next`;
