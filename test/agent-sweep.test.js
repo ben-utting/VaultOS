@@ -133,11 +133,14 @@ test('nextAgent (round 2): Cursor asked to run a command and went silent: needs 
   assert.deepEqual(b, { ...w, state: 'blocked', inferred: true, since: now });
   assert.equal(S.nextAgent(w, opt({ quietMs: 2000 })), w, 'a command running (its spinner prints) stays working');
   assert.equal(S.nextAgent({ ...w, ask: false }, opt({ quietMs: 5000 })).state, 'working', 'no command asked for: not a wait');
-  const back = S.nextAgent(b, opt({ quietMs: 500, now: now + 9000 }));
+  // A redraw from a focus or a resize (output within 1.5s of input/resize: activeQuietMs stays high) is not Cursor
+  // carrying on: still waiting. Only real output (activeQuietMs) ends the wait.
+  assert.equal(S.nextAgent(b, opt({ quietMs: 500, activeQuietMs: Infinity })), b, 'a focus or resize redraw keeps needs you');
+  const back = S.nextAgent(b, opt({ quietMs: 500, activeQuietMs: 500, now: now + 9000 }));
   assert.equal(back.state, 'working');
   assert.equal(back.ask, false);
   assert.equal(back.inferred, undefined);
-  assert.equal(S.nextAgent(b, opt({ quietMs: 4000 })), b, 'still silent: still waiting');
+  assert.equal(S.nextAgent(b, opt({ quietMs: 4000, activeQuietMs: 4000 })), b, 'still silent: still waiting');
   const claude = { state: 'blocked', since: now - 100, kind: 'claude', via: 'hook', sessionId: '' };
   assert.equal(S.nextAgent(claude, { ...opt({ quietMs: 500 }), kind: 'claude' }), claude, "Claude's own blocked is never inferred");
 });
