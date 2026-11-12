@@ -451,6 +451,7 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
   button.refresh-done .icon { animation: none !important; }
   /* Marks are static: the colour and glyph carry the state, never motion. */
   .agent-dot[data-agent="working"], #termbtn[data-alert]::after, #mnav-term[data-alert]::after { animation: none !important; }
+  .tm, .tm * { animation: none !important; }
 }
 
 /* ---------- Board ---------- */
@@ -2582,6 +2583,34 @@ body.term-popout > .term-area { flex: 1; min-height: 0; }
 .tw-mark[data-agent="done"] { color: var(--done); }
 .tw-mark[data-agent="done"]::before { content: '✓'; }
 .tw-mark[data-agent="idle"]::before { content: '○'; }
+
+/* Agent marks (termmark.js, spec 2026-11-12): each agent's own one-colour mark, coloured by state. Full motion
+   (agents list, space rows, rail, Go-to picker): working = the agent's own movement (Claude turns, Cursor taps,
+   the rest bob), needs you = a breath, done = one pop on arrival. Quiet (pane strips, the bar, Board card pills):
+   only the breath. Nothing moves under reduced motion (see the block near the top). The phase of a running
+   animation comes from the clock (TermMark.sync), so a redraw never restarts it. */
+.tm { position: relative; display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 14px; height: 14px; vertical-align: -2px; color: var(--muted-2); }
+.tm > svg { display: block; width: 14px; height: 14px; transform-origin: 50% 50%; }
+.tm[data-agent="working"] { color: var(--in-progress); }
+.tm[data-agent="blocked"] { color: var(--review); }
+.tm[data-agent="done"] { color: var(--done); }
+.tm[data-agent="idle"] { color: var(--muted-2); }
+.tm-ok { position: absolute; right: -4px; bottom: -4px; display: block; width: 8px; height: 8px; color: var(--done); }
+.tm-ok svg { display: block; width: 8px; height: 8px; }
+.tm[data-motion="full"][data-family="claude"][data-agent="working"] > svg { animation: tm-spin 3s linear infinite; }
+.tm[data-motion="full"][data-family="cursor"][data-agent="working"] > svg { animation: tm-tap 1.2s ease-in-out infinite; }
+.tm[data-motion="full"][data-family="other"][data-agent="working"] > svg { animation: tm-bob 2.4s ease-in-out infinite; }
+.tm[data-agent="blocked"] { animation: tm-breathe 1.6s ease-in-out infinite; }
+.tm[data-motion="full"].tm-arrive { animation: tm-arrive 400ms ease-out 1; }
+@keyframes tm-spin { to { transform: rotate(360deg); } }
+@keyframes tm-tap { 0%, 60%, 100% { transform: translate(0, 0); } 30% { transform: translate(1.5px, -1.5px); } }
+@keyframes tm-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+@keyframes tm-breathe {
+  0%, 100% { transform: scale(1); filter: none; }
+  50% { transform: scale(1.12); filter: drop-shadow(0 0 3px color-mix(in srgb, var(--review) 70%, transparent)); }
+}
+@keyframes tm-arrive { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.25); } }
 
 /* Dividers of the active space: a wide, invisible hit strip over the gap,
    showing a line on hover and while dragging. A stacked pane's gap is taller
