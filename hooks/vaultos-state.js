@@ -28,6 +28,7 @@ process.stdin.on('data', (d) => { input += d; });
 process.stdin.on('end', () => {
   let ev;
   try { ev = JSON.parse(input); } catch { return done(); }
+  if (!ev || typeof ev !== 'object') return done();   // never a stack trace or a non-zero exit inside an agent's hook
   // Only the fields the server maps on; tool inputs, prompts, commands and Cursor's user_email stay here.
   const agent = process.argv[2] === 'cursor' || (ev && ev.cursor_version) ? 'cursor' : 'claude';
   const body = JSON.stringify({

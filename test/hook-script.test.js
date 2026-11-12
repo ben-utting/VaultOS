@@ -62,3 +62,12 @@ test('outside a VaultOS terminal it posts nothing and exits 0', async () => {
   assert.equal(r.code, 0);
   assert.equal(r.stdout, '');
 });
+
+test('a payload that is null or not an object posts nothing and still exits 0, silently', async () => {
+  for (const payload of [null, 7, 'x']) {
+    const r = await run(['cursor'], payload);
+    assert.equal(r.code, 0, JSON.stringify(payload));
+    assert.equal(r.stdout, '');
+    assert.equal(r.posted, null);
+  }
+});
