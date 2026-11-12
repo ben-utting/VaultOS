@@ -674,7 +674,8 @@ function agentPill(p) {
   const a = TASK_AGENTS[p];
   if (!a) return automationPill(p);
   const text = { working: 'working', blocked: 'needs you', done: 'finished', idle: 'idle' }[a.state] || a.state;
-  return `<button type="button" class="card-agent" data-agent="${esc(a.state)}" data-term="${esc(a.id)}" title="${esc(twAgentText(a.state, agentLabel()))} — click to go to its terminal"><span class="agent-dot" data-agent="${esc(a.state)}"></span>${esc(agentLabel() || 'Agent')} ${esc(text)}</button>`;
+  const who = a.label || agentLabel();   // the agent in that terminal (Claude, Cursor…), else the default's name
+  return `<button type="button" class="card-agent" data-agent="${esc(a.state)}" data-term="${esc(a.id)}" title="${esc(twAgentText(a.state, who))} — click to go to its terminal">${TermMark.html({ kind: a.kind, state: a.state, motion: 'quiet', id: a.id })}${esc(who || 'Agent')} ${esc(text)}</button>`;
 }
 // An automation's agent on this card (automations.js polls the current run): the same pill, naming the
 // automation; clicking it opens that run. A terminal agent's pill wins if both are on one card.

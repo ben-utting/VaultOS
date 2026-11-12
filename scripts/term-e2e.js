@@ -1804,22 +1804,99 @@ SCEN.S10 = async () => {
   await sleep(1200);
   await fake(p, A, 'working');
   await listWait(A, (x) => x.agent && x.agent.state === 'working');
-  await waitFor(p, () => !!document.querySelector('.tw-mark[data-agent="working"]'), 5000);
+  await waitFor(p, () => !!document.querySelector('.tw-pane-strip .tw-mark .tm[data-agent="working"]'), 5000);
   const r = await ev(p, () => {
     const dot = document.createElement('span'); dot.className = 'agent-dot'; dot.dataset.agent = 'working'; document.body.appendChild(dot);
     const btn = document.getElementById('termbtn'); btn.dataset.alert = 'blocked';
     const out = {
       dot: getComputedStyle(dot).animationName,
       ring: getComputedStyle(btn, '::after').animationName,
-      mark: getComputedStyle(document.querySelector('.tw-mark[data-agent="working"]')).animationName,
+      mark: (() => { const m = document.querySelector('.tw-pane-strip .tw-mark .tm[data-agent="working"] > svg'); return m ? getComputedStyle(m).animationName : 'missing'; })(),
+      side: [...document.querySelectorAll('.tw-side .tm, .tw-side .tm > svg')].map((m) => getComputedStyle(m).animationName),
     };
     dot.remove(); delete btn.dataset.alert;
     return out;
   });
   check('S10 .agent-dot[working] has no animation', r.dot === 'none', r);
   check('S10 #termbtn[data-alert]::after has no animation', r.ring === 'none', r);
-  check('S10 .tw-mark[working] has no animation', r.mark === 'none', r);
+  check('S10 the pane strip mark (.tm, working) has no animation', r.mark === 'none', r);
+  check('S10 no sidebar mark animates', Array.isArray(r.side) && r.side.every((a) => a === 'none'), r);
   await p.close();
+};
+
+// S13 (spec 2026-11-12): every agent in the agents list whatever the default, named, with its state, age and space;
+// each mark moves as its agent and state say (full in the sidebar, quiet on the pane strip); reduced motion stops all.
+const setDefaultAgent = (profile) => fetch(BASE + '/api/settings/agent', {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookieHeader(), Origin: BASE }, body: JSON.stringify({ profile }),
+}).then((r) => r.status);
+SCEN.S13 = async () => {
+  for (const profile of ['cursor', 'claude']) {
+    const tag = `S13 (default ${profile})`;
+    check(`${tag} the default agent is set`, (await setDefaultAgent(profile)) === 200);
+    const p = await page('/terminal.html');
+    await waitFor(p, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+    const first = await ev(p, () => TW.sessions()[0].id);
+    await ev(p, () => TW.newSpace());
+    await waitFor(p, () => TW.sessions().length === 2, 10000);
+    const second = await ev(p, (f) => TW.sessions().find((s) => s.id !== f).id, first);
+    await sleep(800);
+    await typeIn(p, first, '(exec -a claude node /app/scripts/term-fake-agent.js working)\r');
+    await typeIn(p, second, `(exec -a agent node -e "setInterval(()=>process.stdout.write('.'),1000)")\r`);
+    const two = await waitFor(p, () => document.querySelectorAll('.tw-side .tw-ag-row').length === 2, 12000);
+    const rowsNow = () => ev(p, () => [...document.querySelectorAll('.tw-side .tw-ag-row')].map((r) => ({
+      id: r.dataset.id, name: r.querySelector('.tw-ag-name').textContent, space: r.querySelector('.tw-ag-space').textContent,
+      meta: r.querySelector('.tw-ag-meta').textContent, family: r.querySelector('.tm').dataset.family,
+      anim: getComputedStyle(r.querySelector('.tm > svg')).animationName, delay: r.querySelector('.tm > svg').style.animationDelay,
+    })));
+    let rows = await rowsNow();
+    const named = Array.isArray(rows) ? Object.fromEntries(rows.map((r) => [r.name, r])) : {};
+    check(`${tag} two agent rows, Claude and Cursor`, two && Object.keys(named).sort().join() === 'Claude,Cursor', rows);
+    check(`${tag} each row names its own space`, !!named.Claude && !!named.Cursor && named.Claude.space && named.Cursor.space && named.Claude.space !== named.Cursor.space, rows);
+    check(`${tag} the rows read "<state> · <age>"`, Array.isArray(rows) && rows.every((r) => /^(working|needs you|done|idle) · (now|\d+m)$/.test(r.meta)), rows);
+    await sleep(7000);
+    check(`${tag} both still listed after a sweep`, (await ev(p, () => document.querySelectorAll('.tw-side .tw-ag-row').length)) === 2);
+    if (profile === 'cursor') {
+      rows = await rowsNow();
+      const by = Array.isArray(rows) ? Object.fromEntries(rows.map((r) => [r.name, r])) : {};
+      check('S13 Claude working turns (tm-spin), Cursor working taps (tm-tap)', by.Claude && by.Claude.anim === 'tm-spin' && by.Cursor && by.Cursor.anim === 'tm-tap', rows);
+      check('S13 a drawn mark takes its phase from the clock (a negative delay)', Array.isArray(rows) && rows.every((r) => /^-\d+ms$/.test(r.delay)), rows);
+      const strip = await ev(p, (i) => { const m = document.querySelector(`.tw-pane[data-id="${i}"] .tw-pane-strip .tm`); return m ? { motion: m.dataset.motion, anim: getComputedStyle(m.querySelector(':scope > svg')).animationName } : null; }, second);
+      check('S13 the pane strip mark is quiet: working does not move there', !!strip && strip.motion === 'quiet' && strip.anim === 'none', strip);
+      await typeIn(p, first, 'b');
+      const blocked = await waitFor(p, () => [...document.querySelectorAll('.tw-side .tw-ag-row')].some((r) => r.querySelector('.tw-ag-state').textContent === 'needs you'), 6000);
+      const breath = await ev(p, (i) => ({
+        side: getComputedStyle(document.querySelector(`.tw-side .tw-ag-row[data-id="${i}"] .tm`)).animationName,
+        strip: getComputedStyle(document.querySelector(`.tw-pane[data-id="${i}"] .tw-pane-strip .tm`)).animationName,
+      }), first);
+      check('S13 needs you breathes, in the sidebar and on the strip', blocked && breath.side === 'tm-breathe' && breath.strip === 'tm-breathe', breath);
+      await sleep(400);
+      await shot(p, 's13-dark');
+      await ev(p, () => { document.documentElement.dataset.theme = 'light'; });
+      await sleep(600);
+      await shot(p, 's13-sepia');
+      await ev(p, () => { document.documentElement.dataset.theme = 'dark'; });
+      await p.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+      await sleep(300);
+      const still = await ev(p, () => [...document.querySelectorAll('.tm, .tm > svg')].map((m) => getComputedStyle(m).animationName));
+      check('S13 reduced motion: no mark moves', Array.isArray(still) && still.length > 0 && still.every((a) => a === 'none'), still);
+    }
+    await ev(p, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+    await sleep(500);
+    await p.close();
+  }
+  const ph = await page('/terminal.html', { phone: true, noGL: true });
+  await waitFor(ph, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+  const pid = await ev(ph, () => TW.sessions()[0].id);
+  await sleep(800);
+  await typeIn(ph, pid, '(exec -a claude node /app/scripts/term-fake-agent.js blocked)\r');
+  await waitFor(ph, () => !!document.querySelector('.tw-summary .tm[data-agent="blocked"]'), 8000);
+  await ev(ph, () => TW.openPicker());
+  await sleep(600);
+  check('S13 the phone sheet lists the agent with its mark and "needs you"', await ev(ph, () => {
+    const r = document.querySelector('.tw-pick-row'); return !!r && !!r.querySelector('.tm[data-family="claude"]') && r.querySelector('.tw-pick-state').textContent === 'needs you';
+  }) === true);
+  await shot(ph, 's13-phone');
+  await ph.close();
 };
 
 // S9: a + for spaces and a + for agents (2026-11-11). spaces + gives Space 2, Space 3, each its own space; agents +

@@ -1391,7 +1391,7 @@ TW.onList((list) => {
   let alert = '';
   for (const x of list) {
     if (!x.agent) continue;
-    if (x.task) byTask[x.task] = { id: x.id, cwd: x.cwd, task: x.task, state: x.agent.state };
+    if (x.task) byTask[x.task] = { id: x.id, cwd: x.cwd, task: x.task, state: x.agent.state, kind: x.agent.kind || '', label: x.agent.label || '' };
     if (x.agent.state === 'blocked') alert = 'blocked';
     else if (x.agent.state === 'done' && !alert) alert = 'done';
   }

@@ -2579,16 +2579,8 @@ body.term-popout > .term-area { flex: 1; min-height: 0; }
 .tw-main .tw-pane .term-host { padding: 3px 0 0 8px; }
 .tw-main .tw-pane[data-single] .term-host { padding: 6px 0 0 10px; }
 
-/* Agent marks: a glyph per state as well as a colour, never animated. */
-.tw-mark { color: var(--muted-2); }
-.tw-mark::before { content: '·'; }
-.tw-mark[data-agent="working"] { color: var(--in-progress); }
-.tw-mark[data-agent="working"]::before { content: '◐'; }
-.tw-mark[data-agent="blocked"] { color: var(--review); }
-.tw-mark[data-agent="blocked"]::before { content: '×'; }
-.tw-mark[data-agent="done"] { color: var(--done); }
-.tw-mark[data-agent="done"]::before { content: '✓'; }
-.tw-mark[data-agent="idle"]::before { content: '○'; }
+/* A .tw-mark slot (pane strip, the phone bar) holds a quiet TermMark (below), or a plain dot with no agent. */
+.tw-mark { display: inline-flex; align-items: center; justify-content: center; color: var(--muted-2); }
 
 /* Agent marks (termmark.js, spec 2026-11-12): each agent's own one-colour mark, coloured by state. Full motion
    (agents list, space rows, rail, Go-to picker): working = the agent's own movement (Claude turns, Cursor taps,

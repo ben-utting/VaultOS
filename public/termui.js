@@ -227,6 +227,16 @@ function createTermWorkspace(root, opts = {}) {
   const openPicker = () => picker.open({ present: isPhone() ? 'sheet' : 'modal' });
   summaryEl.addEventListener('click', openPicker);
   switchEl.addEventListener('click', openPicker);
+  // A quiet agent mark (TermMark: only "needs you" moves) in a .tw-mark slot: a pane strip, the phone bar's
+  // summary and switch. Redrawn only when the agent's kind or state changes, so a breath never restarts; a plain
+  // dot with no agent. data-agent stays on the slot for the tooltips and tests.
+  function setMark(el, agent, id) {
+    const sig = agent ? `${agent.kind || ''}|${agent.state}` : '';
+    el.dataset.agent = agent ? agent.state : '';
+    if (el.dataset.sig === sig && el.firstChild) return;
+    el.dataset.sig = sig;
+    el.innerHTML = agent ? TermMark.html({ kind: agent.kind, state: agent.state, motion: 'quiet', id: id || '' }) : '·';
+  }
   // The phone bar's summary and switch, and the open sheet: drawn with the sidebar, from the same model.
   function renderPhone() {
     const key = W.store.active;
@@ -237,12 +247,13 @@ function createTermWorkspace(root, opts = {}) {
     const sumText = summaryEl.querySelector('.tw-summary-text');
     if (sumText.textContent !== sum) sumText.textContent = sum;
     summaryEl.title = sum;
-    summaryEl.querySelector('.tw-mark').dataset.agent = (f0 && f0.agent && f0.agent.state) || '';
+    setMark(summaryEl.querySelector('.tw-mark'), f0 && f0.agent, f0 && f0.id);
     const allRows = rows();
     const nTxt = `≡ ${spaces(allRows).length}`;
     const nEl = switchEl.querySelector('.tw-switch-n');
     if (nEl.textContent !== nTxt) nEl.textContent = nTxt;
-    switchEl.querySelector('.tw-mark').dataset.agent = TermTree.rollup(allRows.map((r) => r.agent && r.agent.state));
+    const urgent = TermTree.agentOrder(allRows)[0];   // the rollup: the most urgent agent, its kind and state
+    setMark(switchEl.querySelector('.tw-mark'), urgent && urgent.agent, 'switch');
     if (picker.isOpen()) picker.refresh();
   }
   function renderSide() {
@@ -493,7 +504,7 @@ function createTermWorkspace(root, opts = {}) {
     const status = s.agent ? agentText(s.agent.state) : TW_STATE_TEXT[s.state] || '';
     nameEl.title = status ? `${name} — ${status}` : name;
     const mark = s.pane.querySelector('.tw-mark');
-    mark.dataset.agent = s.agent ? s.agent.state : '';
+    setMark(mark, s.agent, s.id);
     mark.title = status;
     s.pane.dataset.state = s.state;
   }
