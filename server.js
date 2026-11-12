@@ -1459,7 +1459,7 @@ async function ensureClaudeHook() {
 // the Cursor CLI is, whichever agent is the default, like Claude's.
 async function ensureCursorHook() {
   if (!(await isInstalled(PROFILES.cursor))) return false;
-  return installCursorHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'));
+  return installCursorHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'), { log: (m) => console.log(m) });
 }
 // Every agent for the picker: the eight built-ins, then a saved custom agent, each with a live installed
 // check (run side by side), and which one is the default.

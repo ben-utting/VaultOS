@@ -314,3 +314,22 @@ test('the Cursor guard is silent outside a VaultOS terminal', async () => {
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
 });
+
+test('installCursorHook: a hooks.json it cannot safely extend is left alone, and says why', async () => {
+  const cases = [
+    JSON.stringify({ version: 1, hooks: { stop: { command: 'theirs' } } }),   // one of our events, not a list
+    JSON.stringify({ version: 2, hooks: {} }),                               // a format we don't write
+    '{ not json',
+  ];
+  for (const text of cases) {
+    const h = tmpHome();
+    fs.mkdirSync(path.join(h, '.cursor'));
+    fs.writeFileSync(cursorFile(h), text);
+    const said = [];
+    assert.equal(await A.installCursorHook(h, HOOK_SRC, { log: (m) => said.push(m) }), false, text);
+    assert.equal(fs.readFileSync(cursorFile(h), 'utf8'), text);
+    assert.equal(fs.existsSync(path.join(h, '.cursor', 'hooks')), false, 'nothing else is written either');
+    assert.equal(said.length, 1, text);
+    assert.match(said[0], /hooks\.json/);
+  }
+});
