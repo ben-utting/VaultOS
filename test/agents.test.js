@@ -233,3 +233,21 @@ test('plainStartCommand drops the prompt, and a flag that only carries it', () =
   assert.equal(A.plainStartCommand({ start: "mytool --model x --prompt '{prompt}'" }), 'mytool --model x');
   assert.equal(A.plainStartCommand({ start: 'mytool --fast' }), 'mytool --fast');
 });
+
+// Final review: npm sets process.title, so its cmdline is one string ("npm install @openai/codex") padded with NULs;
+// installing or viewing an agent package is not the agent running. npx / npm exec / pnpm dlx / bunx running one is.
+test('detectAgent: a package manager installing an agent is not the agent; one running it is', () => {
+  const P = A.agentProfiles({});
+  assert.equal(A.detectAgent(['npm install -g --prefix /h/.local @openai/codex', '', ''], P), null);
+  assert.equal(A.detectAgent(['npm view @openai/codex version', ''], P), null);
+  assert.equal(A.detectAgent(['npm', 'install', '-g', '@anthropic-ai/claude-code'], P), null);
+  assert.equal(A.detectAgent(['pnpm', 'add', '-g', '@mariozechner/pi-coding-agent'], P), null);
+  assert.equal(A.detectAgent(['npm exec @anthropic-ai/claude-code', '', ''], P), 'claude');
+  assert.equal(A.detectAgent(['npx', '@openai/codex'], P), 'codex');
+  assert.equal(A.detectAgent(['pnpm', 'dlx', '@openai/codex'], P), 'codex');
+  assert.equal(A.detectAgent(['bunx', '@github/copilot'], P), 'copilot');
+});
+
+test('detectAgent: an agent installed under a path with a space is still found by name', () => {
+  assert.equal(A.detectAgent(['/opt/my tools/claude'], A.agentProfiles({})), 'claude');
+});
