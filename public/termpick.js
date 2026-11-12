@@ -13,7 +13,6 @@
 // termui.js, which loads after this file and is only called at render time.
 // ========================================================================
 const createTermPicker = (() => {
-  const MARK = { blocked: '×', working: '◐', done: '✓', idle: '○' };
 
   return function createTermPicker(ctx) {
     let el = null;
@@ -40,10 +39,10 @@ const createTermPicker = (() => {
       const st = stateOf(r);
       const away = r.where !== 'here';
       return `<div class="tw-pick-row${r.id === sel ? ' sel' : ''}${away ? ' dim' : ''}" role="option" data-id="${twEsc(r.id)}" aria-selected="${r.id === sel}">`
-        + `<span class="tw-pick-mark" data-agent="${twEsc(st)}">${MARK[st] || '·'}</span>`
+        + `<span class="tw-pick-mark" data-agent="${twEsc(st)}">${st ? TermMark.html({ kind: r.agent.kind, state: st, motion: 'full', id: r.id }) : '·'}</span>`
         + `<span class="tw-pick-title">${twEsc(titleOf(r))}</span>`
         + `<span class="tw-pick-cmd">${twEsc(r.cmd || '')}</span>`
-        + `<span class="tw-pick-state" data-agent="${twEsc(st)}">${twEsc(st)}</span></div>`;
+        + `<span class="tw-pick-state" data-agent="${twEsc(st)}">${twEsc(TermMark.word(st) || st)}</span></div>`;
     }
 
     function renderList() {
@@ -55,6 +54,7 @@ const createTermPicker = (() => {
         ? gs.map((g) => `<div class="tw-pick-group"><div class="tw-pick-head"><span class="tw-pick-space">${twEsc(g.sp.name)}</span>`
           + `<span class="tw-pick-detail">${twEsc(g.sp.detail || '')}</span></div>${g.rows.map(rowHtml).join('')}</div>`).join('')
         : '<div class="tw-pick-empty">No terminals match</div>';
+      TermMark.sync(list);
       const cur = list.querySelector('.sel');
       if (cur) cur.scrollIntoView({ block: 'nearest' });
     }

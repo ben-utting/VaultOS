@@ -8,7 +8,8 @@
 // rendering: createTermSide(el, ctx) draws a model and calls ctx back; the
 // workspace (termui.js) owns every action.
 //
-//   model = { mode: 'side'|'rail', brand, spaces: Space[], agents: Row[], activeKey, focusedId, agentReady }
+//   model = { mode: 'side'|'rail', brand, spaces: Space[], agents: Row[], activeKey, focusedId, agentReady, now }
+//   (now: the server's clock, for each agent's age; the workspace redraws once a minute so ages move on)
 //   ctx   = { onSpace(key), onAgent(id), onNewSpace(), onNewAgent(), onMenu(anchorEl), onRenameSpace(key), onToggle() }
 //
 // Two +s: beside "spaces" a new space; beside "agents" the default agent in the active space. The rail lists
@@ -19,9 +20,8 @@
 // time. Rows are buttons; their text truncates with an ellipsis.
 // ========================================================================
 const createTermSide = (() => {
-  const MARK = { blocked: '×', working: '◐', done: '✓', idle: '○' };
-  const mark = (state) => MARK[state] || '·';
-  const WORD = { blocked: 'blocked', working: 'working', done: 'done', idle: 'idle' };
+  // A space's mark: its most urgent agent (TermMark, full motion), or a plain dot when it has none.
+  const spaceMark = (sp) => (sp.rollup ? TermMark.html({ kind: sp.rollupKind, state: sp.rollup, motion: 'full', id: `sp:${sp.key}` }) : '·');
 
   // Where a row that isn't held by this page is: the tooltip says so.
   function whereNote(where) {
@@ -45,21 +45,25 @@ const createTermSide = (() => {
       // No number without a pane here: the rail shows the mark alone; the sidebar keeps the column, so marks line up.
       const num = sp.num ? `<span class="tw-sp-num">${sp.num}</span> ` : rail ? '' : '<span class="tw-sp-num"></span> ';
       return `<button type="button" class="${cls}" data-key="${twEsc(sp.key)}" title="${twEsc(tip)}"${sp.key === activeKey ? ' aria-current="true"' : ''}>`
-        + `${num}<span class="tw-sp-mark" data-agent="${twEsc(sp.rollup || '')}">${mark(sp.rollup)}</span>`
+        + `${num}<span class="tw-sp-mark" data-agent="${twEsc(sp.rollup || '')}">${spaceMark(sp)}</span>`
         + (rail ? '' : ` <span class="tw-sp-name">${twEsc(sp.name)}</span>`)
         + '</button>';
     }
 
-    function agentRow(r, names, focusedId) {
+    // Two lines: mark, the agent's short name (Claude, Cursor…), its state and how long it has been in it; then
+    // the space it is in.
+    function agentRow(r, names, focusedId, now) {
       const state = r.agent.state;
-      const who = r.agent.label || r.cmd || 'agent';   // the agent's short name (Claude, Cursor…) from the server
-      const line = `${who} · ${WORD[state] || state}`;
+      const who = r.agent.label || r.cmd || 'agent';
+      const word = TermMark.word(state) || state;
+      const age = TermTree.agentAge(now - (r.agent.since || now));
       const away = r.where !== 'here';
       const cls = ['tw-ag-row', away ? 'dim' : '', r.id === focusedId ? 'active' : ''].filter(Boolean).join(' ');
       const space = names.get(r.key) || '';
-      const tip = `${line} · ${space}${away ? ` (${whereNote(r.where)})` : ''}`;
+      const tip = [who, word, age, space].filter(Boolean).join(' · ') + (away ? ` (${whereNote(r.where)})` : '');
       return `<button type="button" class="${cls}" data-id="${twEsc(r.id)}" title="${twEsc(tip)}">`
-        + `<span class="tw-ag-line">${twEsc(who)} · <span class="tw-ag-state" data-agent="${twEsc(state)}">${twEsc(WORD[state] || state)}</span></span>`
+        + `<span class="tw-ag-top">${TermMark.html({ kind: r.agent.kind, state, motion: 'full', id: r.id })} <span class="tw-ag-name">${twEsc(who)}</span> `
+        + `<span class="tw-ag-meta"><span class="tw-ag-state" data-agent="${twEsc(state)}">${twEsc(word)}</span> · ${twEsc(age)}</span></span>`
         + `<span class="tw-ag-space">${twEsc(space)}</span></button>`;
     }
 
@@ -95,9 +99,10 @@ const createTermSide = (() => {
         body = `<div class="tw-side-h"><span>spaces</span>${newSpace}</div>`
           + (spaces.length ? spaces.map((s) => spaceRow(s, last.activeKey, false)).join('') : '<div class="tw-side-empty">no terminals</div>')
           + `<div class="tw-side-h"><span>agents</span>${newAgent}</div>`
-          + (agents.length ? agents.map((r) => agentRow(r, names, last.focusedId)).join('') : '<div class="tw-side-empty">none running</div>');
+          + (agents.length ? agents.map((r) => agentRow(r, names, last.focusedId, last.now || Date.now())).join('') : '<div class="tw-side-empty">none running</div>');
       }
       put(scrollEl, 'list', body);
+      TermMark.sync(scrollEl, last.now || Date.now());
       put(footEl, 'foot', rail
         ? '<button type="button" class="tw-side-menu" title="Menu" aria-label="Menu" aria-haspopup="menu">⋯</button>'
           + '<button type="button" class="tw-side-toggle" title="Expand the sidebar" aria-label="Expand the sidebar">»</button>'

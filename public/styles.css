@@ -2496,15 +2496,21 @@ body.term-popout > .term-area { flex: 1; min-height: 0; }
 /* Detached or elsewhere: the words go --muted and italic, but the marks and state words keep their
    full agent colour (a 0.6 opacity took the blue and amber under 3:1 in Sepia). */
 .tw-sp-row.dim, .tw-ag-row.dim { color: var(--muted); }
-.tw-sp-row.dim .tw-sp-name, .tw-ag-row.dim .tw-ag-space, .tw-ag-row.dim .tw-ag-line { font-style: italic; }
+.tw-sp-row.dim .tw-sp-name, .tw-ag-row.dim .tw-ag-space, .tw-ag-row.dim .tw-ag-top { font-style: italic; }
 .tw-sp-num { display: inline-block; min-width: 1.2em; color: var(--muted); font-weight: 400; }
 .tw-sp-mark { display: inline-block; min-width: 1.1em; text-align: center; color: var(--muted-2); }
 .tw-side [data-agent="blocked"] { color: var(--review); }
 .tw-side [data-agent="working"] { color: var(--in-progress); }
 .tw-side [data-agent="done"] { color: var(--done); }
 .tw-side [data-agent="idle"] { color: var(--muted-2); }
-.tw-ag-line, .tw-ag-space { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tw-ag-space { color: var(--muted); font-weight: 400; }
+/* An agent row: mark, name and, on the right, "<state> · <age>"; the space under the name. */
+.tw-ag-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tw-ag-name, .tw-ag-space { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The name never gives way (short names: "Antigravity" at most); "<state> · <age>" does, rarely. */
+.tw-ag-name { flex: none; max-width: 60%; }
+.tw-ag-meta { flex: 0 1 auto; min-width: 0; margin-left: auto; color: var(--muted); font-weight: 400;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tw-ag-space { color: var(--muted); font-weight: 400; padding-left: 20px; }
 .tw-side[data-mode="rail"] .tw-sp-row { padding: 5px 0; text-align: center; }   /* "10 ×" is 35px: 0 side padding keeps it inside the 37px row */
 .tw-side[data-mode="rail"] .tw-sp-num { min-width: 0; }
 .tw-side-new, .tw-side-menu, .tw-side-toggle {

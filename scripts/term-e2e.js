@@ -1018,7 +1018,8 @@ SCEN['S12-cap-window'] = async () => {
 // ---- Task 7: the sidebar (window) and the numbered rail (dock) ----
 const WEB = 'Personal/1. apps/02-web-login';
 const OPS = 'Personal/2. platform/03-ops-dns';
-const MARKS = ['×', '◐', '✓', '○', '·'];
+// A space's mark (TermMark, spec 2026-11-12): its most urgent agent's state, or '·' for a space with no agent.
+const MARKS = ['blocked', 'working', 'done', 'idle', '·'];
 // A window page with three spaces (vault root, web-login, ops-dns), settled with their task names.
 async function sideWin(theme) {
   const p = await page('/terminal.html', theme ? { theme } : {});
@@ -1032,8 +1033,9 @@ async function sideWin(theme) {
   return p;
 }
 const sideRows = (p) => ev(p, () => [...document.querySelectorAll('.tw-side .tw-sp-row')].map((r) => ({
-  key: r.dataset.key, text: r.textContent, mark: r.querySelector('.tw-sp-mark').textContent,
-  color: getComputedStyle(r.querySelector('.tw-sp-mark')).color, active: r.classList.contains('active'),
+  key: r.dataset.key, text: r.textContent,
+  mark: r.querySelector('.tw-sp-mark .tm') ? r.querySelector('.tw-sp-mark .tm').dataset.agent : r.querySelector('.tw-sp-mark').textContent,
+  color: getComputedStyle(r.querySelector('.tw-sp-mark .tm') || r.querySelector('.tw-sp-mark')).color, active: r.classList.contains('active'),
   weight: getComputedStyle(r).fontWeight, bg: getComputedStyle(r).backgroundColor, dim: r.classList.contains('dim'), title: r.title,
 })));
 // The computed colour of a CSS token.
@@ -1049,23 +1051,23 @@ SCEN['S2-side'] = async () => {
   const active = Array.isArray(rows) ? rows.filter((r) => r.active) : [];
   check('S2-side one active row', active.length === 1, active);
   check('S2-side the active row is bold on --panel-2', active.length === 1 && Number(active[0].weight) >= 600 && active[0].bg === await token(p, '--panel-2', 'backgroundColor'), { active, panel2: await token(p, '--panel-2', 'backgroundColor') });
-  check('S2-side every mark is one of × ◐ ✓ ○ ·', Array.isArray(rows) && rows.every((r) => MARKS.includes(r.mark)), rows);
+  check('S2-side every space mark is an agent mark or ·', Array.isArray(rows) && rows.every((r) => MARKS.includes(r.mark)), rows);
   const headers = await ev(p, () => [...document.querySelectorAll('.tw-side .tw-side-h')].map((h) => h.textContent.replace('+', '').trim()));
   check('S2-side section headers are lowercase spaces / agents', Array.isArray(headers) && headers.join() === 'spaces,agents', headers);
   const web = await ev(p, () => TW.sessions().find((s) => s.key.includes('02-web-login')).id);
   await fake(p, web, 'blocked');
-  const marked = await waitFor(p, (k) => { const r = [...document.querySelectorAll('.tw-side .tw-sp-row')].find((x) => x.dataset.key === k); return r && r.querySelector('.tw-sp-mark').textContent === '×'; }, 8000, `t:${WEB}/task.md`);
+  const marked = await waitFor(p, (k) => { const r = [...document.querySelectorAll('.tw-side .tw-sp-row')].find((x) => x.dataset.key === k); return r && !!r.querySelector('.tw-sp-mark .tm[data-agent="blocked"]'); }, 8000, `t:${WEB}/task.md`);
   rows = await sideRows(p);
   const webRow = Array.isArray(rows) ? rows.find((r) => r.key === `t:${WEB}/task.md`) : null;
-  check('S2-side the blocked agent makes its space mark ×', marked && !!webRow && webRow.mark === '×', webRow);
-  check('S2-side the × is --review', !!webRow && webRow.color === await token(p, '--review'), { webRow, review: await token(p, '--review') });
+  check('S2-side the blocked agent gives its space the needs-you mark', marked && !!webRow && webRow.mark === 'blocked', webRow);
+  check('S2-side the needs-you mark is --review', !!webRow && webRow.color === await token(p, '--review'), { webRow, review: await token(p, '--review') });
   // The command comes with the next list poll (3s), not with the agent event.
-  await waitFor(p, () => { const r = document.querySelector('.tw-side .tw-ag-row .tw-ag-line'); return r && /^(Claude|claude|node) /.test(r.textContent); }, 8000);
+  await waitFor(p, () => { const r = document.querySelector('.tw-side .tw-ag-row .tw-ag-top'); return r && /^(Claude|Cursor|claude|node) /.test(r.textContent.replace(/\s+/g, ' ').trim()); }, 8000);
   const ag = await ev(p, () => [...document.querySelectorAll('.tw-side .tw-ag-row')].map((r) => ({
-    line: r.querySelector('.tw-ag-line').textContent, space: r.querySelector('.tw-ag-space').textContent, id: r.dataset.id,
+    line: r.querySelector('.tw-ag-top').textContent.replace(/\s+/g, ' ').trim(), space: r.querySelector('.tw-ag-space').textContent, id: r.dataset.id,
     stateColor: getComputedStyle(r.querySelector('.tw-ag-state')).color,
   })));
-  check('S2-side the first agent row reads "<agent> · blocked" with its space under it', Array.isArray(ag) && ag.length > 0 && /^(Claude|claude|node) · blocked$/.test(ag[0].line) && ag[0].space === 'Web login flow', ag);
+  check('S2-side the first agent row reads "<agent> needs you · <age>" with its space under it', Array.isArray(ag) && ag.length > 0 && /^Claude needs you · (now|\d+m)$/.test(ag[0].line) && ag[0].space === 'Web login flow', ag);
   check('S2-side the state word is --review', Array.isArray(ag) && ag.length > 0 && ag[0].stateColor === await token(p, '--review'), ag);
   // Another space is active (the last created); an agent row in web-login switches to it.
   const before = await ev(p, () => TW.activeSpace());
@@ -1115,11 +1117,12 @@ SCEN['S2-rail'] = async () => {
   await waitFor(p, () => TW.spaces().length === 2 && TW.spaces().some((x) => x.name === 'Web login flow'), 10000);
   const web = await ev(p, () => TW.sessions().find((s) => s.key.includes('02-web-login')).id);
   await fake(p, web, 'working');
-  await waitFor(p, () => [...document.querySelectorAll('.tw-side .tw-sp-mark')].some((m) => m.textContent === '◐'), 8000);
+  await waitFor(p, () => !!document.querySelector('.tw-side .tw-sp-mark .tm[data-agent="working"]'), 8000);
   const geo = await ev(p, () => { const s = document.querySelector('.tw-side'); return { mode: s.dataset.mode, w: s.getBoundingClientRect().width }; });
   check('S2-rail the dock starts as a rail ≤ 48px', !geo.error && geo.mode === 'rail' && geo.w <= 48, geo);
-  const rows = await ev(p, () => ({ t: [...document.querySelectorAll('.tw-side .tw-sp-row')].map((r) => r.textContent.trim()), nums: TW.spaces().map((x) => x.num) }));
-  check('S2-rail rows read "<n> <mark>" in Alt+N order', !rows.error && rows.t.length === 2 && rows.t.every((t, i) => new RegExp(`^${rows.nums[i]} [×◐✓○·]$`).test(t)) && rows.nums.join() === '1,2' && rows.t.some((t) => t.endsWith('◐')), rows);
+  const rows = await ev(p, () => ({ t: [...document.querySelectorAll('.tw-side .tw-sp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()), nums: TW.spaces().map((x) => x.num),
+    working: document.querySelectorAll('.tw-side .tw-sp-row .tm[data-agent="working"]').length }));
+  check('S2-rail rows read "<n> <mark>" in Alt+N order', !rows.error && rows.t.length === 2 && rows.t.every((t, i) => new RegExp(`^${rows.nums[i]}( ·)?$`).test(t)) && rows.nums.join() === '1,2' && rows.working === 1, rows);
   check('S2-rail names are in the title', await ev(p, () => [...document.querySelectorAll('.tw-side .tw-sp-row')].some((r) => r.title.includes('Web login flow'))) === true);
   // Regression: the sidebar's agent colours must not leak onto Board cards' "Claude working" chips.
   const chip = await waitFor(p, () => !!document.querySelector('.card-agent[data-agent="working"]'), 8000);
@@ -1153,7 +1156,7 @@ SCEN['S2-rail'] = async () => {
   let rr = await railRows();
   const rootRow = Array.isArray(rr) ? rr.find((r) => r.key === 'd:') : null;
   check('S2-rail rows follow the server order: root, web, ops', Array.isArray(rr) && rr.map((r) => r.key).join() === ['d:', WEB_KEY, OPS_KEY].join(), rr);
-  check('S2-rail the detached space is dimmed and shows only its mark', !!rootRow && rootRow.dim && rootRow.num === '' && /^[×◐✓○·]$/.test(rootRow.text), rr);
+  check('S2-rail the detached space is dimmed and shows only its mark', !!rootRow && rootRow.dim && rootRow.num === '' && /^·?$/.test(rootRow.text), rr);
   check('S2-rail its tooltip says detached', !!rootRow && /detached: running in the background/.test(rootRow.title), rootRow);
   const heldRows = Array.isArray(rr) ? rr.filter((r) => r.key !== 'd:') : [];
   check('S2-rail the held spaces are numbered 1, 2 and not dimmed', heldRows.map((r) => r.num).join() === '1,2' && heldRows.every((r) => !r.dim), rr);

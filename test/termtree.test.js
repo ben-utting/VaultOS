@@ -330,12 +330,12 @@ test('rows: for a held row the page\'s space wins over the list\'s; an unknown o
 test('agentAge', () => {
   const m = 60e3;
   const h = 60 * m;
-  assert.equal(TT.agentAge(-5000), 'just now');
-  assert.equal(TT.agentAge(59e3), 'just now');
+  assert.equal(TT.agentAge(-5000), 'now');
+  assert.equal(TT.agentAge(59e3), 'now');
   assert.equal(TT.agentAge(4 * m + 30e3), '4m');
   assert.equal(TT.agentAge(h + 20 * m), '1h 20m');
   assert.equal(TT.agentAge(26 * h), '1d 2h');
-  assert.equal(TT.agentAge(NaN), 'just now');
+  assert.equal(TT.agentAge(NaN), 'now');
 });
 
 test('a space rolls up its most urgent agent kind', () => {

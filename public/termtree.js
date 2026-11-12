@@ -317,11 +317,12 @@
     return out;
   }
 
-  // How long an agent has been in its state, for its row: "just now", "4m", "1h 20m", "1d 2h". Below a minute,
-  // or below zero (a browser clock ahead of the server's), it is "just now".
+  // How long an agent has been in its state, for its row: "now", "4m", "1h 20m", "1d 2h". Below a minute, or
+  // below zero (a browser clock ahead of the server's), it is "now" (the spec said "just now"; it clipped the
+  // narrow sidebar's "needs you · just now").
   function agentAge(ms) {
     const min = Math.floor((Number(ms) || 0) / 60e3);
-    if (min < 1) return 'just now';
+    if (min < 1) return 'now';
     if (min < 60) return `${min}m`;
     const h = Math.floor(min / 60);
     if (h < 24) return `${h}h ${min % 60}m`;

@@ -135,6 +135,7 @@ function createTermWorkspace(root, opts = {}) {
     menuFor: null,         // the session whose ⋯ menu is open
     footAnchor: null,      // the sidebar button the footer menu opened from
     menuShut: null,        // { id, t }: the menu that a press on its own ⋯ just closed
+    clockOffset: 0,        // the server's clock less ours (from the list's now), for agent ages
   };
   W.pend = { active: W.store.active, focus: tabGet(K.focused, null) };
 
@@ -251,9 +252,11 @@ function createTermWorkspace(root, opts = {}) {
     side.render({
       mode: sideMode, brand: HOST === 'window', spaces: spaces(rs), agents: TermTree.agentOrder(rs),
       activeKey: W.sessions.some((s) => s.key === W.store.active) ? W.store.active : null, focusedId: f ? f.id : null,
-      agentReady: !!agentCommand(),
+      agentReady: !!agentCommand(), now: Date.now() + (W.clockOffset || 0),
     });
   }
+  // Agent ages ("4m") move on once a minute, while the page is visible.
+  setInterval(() => { if (document.visibilityState === 'visible') renderSide(); }, 60e3);
 
   const session = (id) => W.sessions.find((s) => s.id === id);
   const focused = () => session(W.focused) || W.sessions[0] || null;
@@ -1145,7 +1148,7 @@ function createTermWorkspace(root, opts = {}) {
       .then((r) => {
         if (r.status === 401) return { state: 'denied', list: null };
         if (!r.ok) return { state: 'error' };
-        return r.json().then((d) => ({ state: 'ok', list: Array.isArray(d && d.sessions) ? d.sessions : [] }));
+        return r.json().then((d) => ({ state: 'ok', list: Array.isArray(d && d.sessions) ? d.sessions : [], now: d && d.now }));
       })
       .catch(() => ({ state: 'error' }))
       .then((res) => {
@@ -1154,6 +1157,8 @@ function createTermWorkspace(root, opts = {}) {
         W.listState = res.state;
         if (res.state === 'error') return W.list;
         W.list = res.list;
+        // The server's clock less ours, so an agent's age (its since is the server's) reads right on a skewed clock.
+        if (typeof res.now === 'number') W.clockOffset = res.now - Date.now();
         afterList();
         return W.list;
       });

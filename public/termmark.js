@@ -42,7 +42,9 @@
     if (!mem) { mem = new Map(); seen.set(container, mem); }
     for (const el of container.querySelectorAll('.tm')) {
       const state = el.dataset.agent || '';
-      if (state === 'working' || state === 'blocked') {
+      // Once per drawn mark: re-setting the delay of a running animation would make it jump.
+      if ((state === 'working' || state === 'blocked') && !el.dataset.tmSync) {
+        el.dataset.tmSync = '1';
         const period = state === 'blocked' ? PERIOD.blocked : PERIOD[el.dataset.family] || PERIOD.other;
         const delay = `-${now % period}ms`;
         el.style.animationDelay = delay;
