@@ -48,7 +48,8 @@ async function ready(t) {
   };
   const setDefault = async (profile) => assert.equal((await call(base, 'POST', '/api/settings/agent', { cookie, body: { profile } })).status, 200);
   const hook = (tm, ev) => call(base, 'POST', '/api/term/agent', { body: { id: tm.id, token: tm.token, hook_event_name: ev, session_id: 's1' } });
-  return { term, list, agentOf, until, setDefault, hook };
+  const hookAs = (tm, body) => call(base, 'POST', '/api/term/agent', { body: { id: tm.id, token: tm.token, session_id: 's1', ...body } });
+  return { term, list, agentOf, until, setDefault, hook, hookAs };
 }
 
 test('Claude and Cursor both stay in the list with Cursor as the default, then with Claude', { timeout: 90000 }, async (t) => {
@@ -107,4 +108,28 @@ test('an agent run by a wrapper script that does not exec is found, and Claude k
   const after = await s.agentOf(a.id);
   assert.equal(after && after.kind, 'claude', 'still listed after a sweep');
   assert.equal(after.state, 'idle');
+});
+
+// Round 2: Cursor's own hook events (agent: cursor) drive its row; it stays Cursor through a sweep.
+test('Cursor\'s hook events give it idle, working and done, labelled Cursor', { timeout: 60000 }, async (t) => {
+  const s = await ready(t);
+  await s.setDefault('claude');
+  const c = await s.term();
+  c.send({ t: 'in', d: '(exec -a agent sleep 120)\r' });
+  await sleep(800);
+  const post = (ev, x = {}) => s.hookAs(c, { agent: 'cursor', hook_event_name: ev, ...x });
+  assert.equal((await post('sessionStart')).status, 200);
+  let a = await s.until(c.id, (x) => x && x.state === 'idle' && x.kind === 'cursor');
+  assert.equal(a && a.label, 'Cursor');
+  await post('beforeSubmitPrompt');
+  a = await s.agentOf(c.id);
+  assert.deepEqual([a.state, a.kind], ['working', 'cursor']);
+  await post('stop', { status: 'completed' });
+  a = await s.agentOf(c.id);
+  assert.deepEqual([a.state, a.kind], ['done', 'cursor']);
+  await sleep(6000);   // a sweep: the hook's done stands, still Cursor
+  a = await s.agentOf(c.id);
+  assert.deepEqual([a.state, a.kind], ['done', 'cursor']);
+  await post('sessionEnd');
+  assert.equal(await s.agentOf(c.id), null);
 });

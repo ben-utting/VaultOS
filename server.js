@@ -44,7 +44,7 @@ const { createConnectorService, ConnectorError } = require('./lib/connector-serv
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
 const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
-const { foreground, nextAgent } = require('./lib/agent-sweep');
+const { foreground, hookState, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -3175,19 +3175,6 @@ const TERMS = new Map(); // id -> { pty, buf, ws, shell, cwd, idleSince, token, 
 // Claude anywhere else (code-server, the host) has no VAULTOS_TERM_ID and the
 // hook does nothing. Every other agent, and Claude when its hook is silent, is
 // found by sweepAgents from the terminal's foreground command line.
-function agentStateFor(b) {
-  switch (b.hook_event_name) {
-    case 'SessionStart': return 'idle';
-    case 'UserPromptSubmit': case 'PostToolUse': return 'working';
-    case 'PreToolUse': return b.tool_name === 'AskUserQuestion' ? 'blocked' : 'working';
-    case 'PermissionRequest': return 'blocked';
-    case 'Notification':
-      return ['permission_prompt', 'elicitation_dialog'].includes(b.notification_type) ? 'blocked' : undefined;
-    case 'Stop': return 'done';
-    case 'SessionEnd': return null;
-    default: return undefined;   // an event we don't map: leave the state alone
-  }
-}
 // t.agent = { state, since, kind, via: 'hook'|'proc', sessionId } or null. The page gets
 // { state, since, kind, label }: label is the agent's short name (Claude, Cursor…).
 function agentLabel(kind) {
@@ -3199,15 +3186,21 @@ function sendAgent(t) {
   if (t.ws && t.ws.readyState === 1) t.ws.send(JSON.stringify({ t: 'agent', a: agentInfo(t) }));
 }
 // A hook's state, or "seen" turning done into idle. kind and via default to the agent's own; since moves only
-// when the state or the kind changes.
-function setAgent(t, state, { kind, via, sessionId } = {}) {
+// when the state or the kind changes. ask (Cursor asked to run a command) rides along: a change of ask alone is
+// kept without a page message, since the page doesn't show it.
+function setAgent(t, state, { kind, via, sessionId, ask } = {}) {
   const prev = t.agent;
   if (!prev && !state) return;
   const k = kind || (prev && prev.kind) || '';
   const v = via || (prev && prev.via) || 'hook';
-  if (prev && state === prev.state && k === prev.kind && v === prev.via) { if (sessionId) prev.sessionId = sessionId; return; }
+  const q = ask === undefined ? !!(prev && prev.ask) : !!ask;
+  if (prev && state === prev.state && k === prev.kind && v === prev.via) {
+    if (sessionId) prev.sessionId = sessionId;
+    prev.ask = q;
+    return;
+  }
   t.agent = state ? {
-    state, kind: k, via: v,
+    state, kind: k, via: v, ask: q,
     since: prev && prev.state === state && prev.kind === k ? prev.since : Date.now(),
     sessionId: sessionId || (prev && prev.sessionId) || '',
   } : null;
@@ -3231,8 +3224,8 @@ function termAgentHook(req, res) {
   const b = req.body || {};
   const t = termCaller(req);
   if (!t) return res.status(403).json({ error: 'Forbidden' });
-  const state = agentStateFor(b);
-  if (state !== undefined) setAgent(t, state, { kind: 'claude', via: 'hook', sessionId: typeof b.session_id === 'string' ? b.session_id : '' });
+  const h = hookState(b);   // lib/agent-sweep.js: Claude's events, and Cursor's (agent: 'cursor')
+  if (h) setAgent(t, h.state, { kind: b.agent === 'cursor' ? 'cursor' : 'claude', via: 'hook', sessionId: typeof b.session_id === 'string' ? b.session_id : '', ask: h.ask });
   res.json({ ok: true });
 }
 // Every terminal, every agent, whatever the default (lib/agent-sweep.js). The

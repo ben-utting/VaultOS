@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// Claude Code hook → VaultOS agent badge. Registered in the container user's
-// ~/.claude/settings.json for SessionStart, UserPromptSubmit, PreToolUse,
-// PostToolUse, PermissionRequest, Notification, Stop and SessionEnd.
+// Agent hook → VaultOS agent badge, for Claude Code and the Cursor CLI. Registered in the container user's
+// ~/.claude/settings.json for SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest,
+// Notification, Stop and SessionEnd, and (through ~/.cursor/hooks/vaultos-state.sh, which passes `cursor`) in
+// ~/.cursor/hooks.json for Cursor's events. Cursor also runs Claude's hooks, with its own camelCase names; its
+// payload's cursor_version tells them apart, so every event is sent as the agent's own.
 //
 // Installed copy lives at /home/coder/.claude/hooks/vaultos-state.js (the
 // shared code-server home volume); this file in board/hooks/ is the source.
@@ -26,13 +28,15 @@ process.stdin.on('data', (d) => { input += d; });
 process.stdin.on('end', () => {
   let ev;
   try { ev = JSON.parse(input); } catch { return done(); }
-  // Only the fields the server maps on; tool inputs and prompts stay here.
+  // Only the fields the server maps on; tool inputs, prompts, commands and Cursor's user_email stay here.
+  const agent = process.argv[2] === 'cursor' || (ev && ev.cursor_version) ? 'cursor' : 'claude';
   const body = JSON.stringify({
-    id, token,
+    id, token, agent,
     hook_event_name: ev.hook_event_name,
     notification_type: ev.notification_type,
     tool_name: ev.tool_name,
     session_id: ev.session_id,
+    status: ev.status,
   });
   try {
     const req = require('http').request(url, {

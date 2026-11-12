@@ -72,3 +72,36 @@ test('foreground gives the foreground group and its command line; null group whe
   assert.deepEqual(S.foreground(10, 'bash', (p) => prompt[p]), { pgid: 10, argv: ['bash'] });
   assert.deepEqual(S.foreground(11, 'claude', () => { throw new Error('ENOENT'); }), { pgid: null, argv: ['claude'] });
 });
+
+// Round 2 (spec R2.4): hook events → states, Claude's and Cursor's.
+test('hookState: Claude events map as they always did', () => {
+  const h = (e, x = {}) => S.hookState({ hook_event_name: e, ...x });
+  assert.deepEqual(h('SessionStart'), { state: 'idle' });
+  assert.deepEqual(h('UserPromptSubmit'), { state: 'working' });
+  assert.deepEqual(h('PostToolUse'), { state: 'working' });
+  assert.deepEqual(h('PreToolUse', { tool_name: 'Bash' }), { state: 'working' });
+  assert.deepEqual(h('PreToolUse', { tool_name: 'AskUserQuestion' }), { state: 'blocked' });
+  assert.deepEqual(h('PermissionRequest'), { state: 'blocked' });
+  assert.deepEqual(h('Notification', { notification_type: 'permission_prompt' }), { state: 'blocked' });
+  assert.deepEqual(h('Notification', { notification_type: 'elicitation_dialog' }), { state: 'blocked' });
+  assert.equal(h('Notification', { notification_type: 'idle_prompt' }), undefined);
+  assert.deepEqual(h('Stop'), { state: 'done' });
+  assert.deepEqual(h('SessionEnd'), { state: null });
+  assert.equal(h('Whatever'), undefined);
+  assert.equal(h('sessionStart'), undefined, 'a Cursor name without agent: cursor is not a Claude event');
+});
+
+test('hookState: Cursor events (agent: cursor)', () => {
+  const c = (e, x = {}) => S.hookState({ agent: 'cursor', hook_event_name: e, ...x });
+  assert.deepEqual(c('sessionStart'), { state: 'idle', ask: false });
+  for (const e of ['beforeSubmitPrompt', 'afterAgentThought', 'preToolUse', 'afterShellExecution', 'postToolUse']) {
+    assert.deepEqual(c(e), { state: 'working', ask: false }, e);
+  }
+  assert.deepEqual(c('beforeShellExecution'), { state: 'working', ask: true });
+  assert.deepEqual(c('stop', { status: 'completed' }), { state: 'done', ask: false });
+  assert.deepEqual(c('stop'), { state: 'done', ask: false });
+  assert.deepEqual(c('stop', { status: 'aborted' }), { state: 'idle', ask: false });
+  assert.deepEqual(c('stop', { status: 'error' }), { state: 'idle', ask: false });
+  assert.deepEqual(c('sessionEnd'), { state: null });
+  assert.equal(c('beforeReadFile'), undefined);
+});
