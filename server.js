@@ -44,7 +44,7 @@ const { createConnectorService, ConnectorError } = require('./lib/connector-serv
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
 const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
-const { foreground, hookState, nextAgent } = require('./lib/agent-sweep');
+const { foreground, hookState, noteOutput, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -3249,7 +3249,10 @@ function sweepAgents() {
     const fg = foreground(t.pty.pid, termCmd(t));
     const busy = fg.pgid ? fg.pgid !== t.pty.pid : termBusy(t);
     const kind = busy ? detectAgent(fg.argv, profiles) : null;
-    const next = nextAgent(t.agent, { kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, now });
+    const next = nextAgent(t.agent, {
+      kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, now,
+      activeQuietMs: t.actLast ? now - t.actLast : Infinity, runMs: t.actLast - t.actStart,
+    });
     if (next !== t.agent) { t.agent = next; sendAgent(t); }
   }
 }
@@ -3333,10 +3336,11 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
       cwd,
       env: termEnv(id, token),
     });
-    t = { pty: proc, buf: '', ws: null, shell, cwd, idleSince: Date.now(), token, task: task || '', agentTerm: !!agentTerm, agent: null, lastOut: Date.now(), inputAt: 0, space: '', spaceName: '' };
+    t = { pty: proc, buf: '', ws: null, shell, cwd, idleSince: Date.now(), token, task: task || '', agentTerm: !!agentTerm, agent: null, lastOut: Date.now(), inputAt: 0, space: '', spaceName: '', actStart: 0, actLast: 0, resizeAt: 0 };
     TERMS.set(id, t);
     proc.onData((d) => {
       t.lastOut = Date.now();
+      noteOutput(t, { now: t.lastOut, inputAt: t.inputAt, resizeAt: t.resizeAt });   // a hook-less agent's activity run
       t.buf = (t.buf + d).slice(-TERM_SCROLLBACK);
       if (t.ws && t.ws.readyState === 1) t.ws.send(JSON.stringify({ t: 'o', d }));
     });
@@ -3350,7 +3354,7 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
   } else {
     if (t.ws && t.ws !== ws) try { t.ws.close(4000, 'Opened elsewhere'); } catch { /* already gone */ }
     if (t.buf) ws.send(JSON.stringify({ t: 'o', d: t.buf }));
-    if (cols && rows) try { t.pty.resize(cols, rows); } catch { /* exited */ }
+    if (cols && rows) try { t.pty.resize(cols, rows); t.resizeAt = Date.now(); } catch { /* exited */ }
   }
   if ('space' in spaceIn) t.space = spaceIn.space;
   if ('spaceName' in spaceIn) t.spaceName = spaceIn.spaceName;
@@ -3367,7 +3371,7 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
       if ('space' in v) t.space = v.space;
       if ('spaceName' in v) t.spaceName = v.spaceName;
     }
-    else if (m.t === 'resize' && m.cols > 0 && m.rows > 0) try { t.pty.resize(Math.min(m.cols, 500), Math.min(m.rows, 200)); } catch { /* exited */ }
+    else if (m.t === 'resize' && m.cols > 0 && m.rows > 0) try { t.pty.resize(Math.min(m.cols, 500), Math.min(m.rows, 200)); t.resizeAt = Date.now(); } catch { /* exited */ }
     else if (m.t === 'kill') t.pty.kill();
   });
   ws.on('close', () => {

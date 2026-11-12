@@ -72,10 +72,13 @@ test('installClaudeHook keeps other settings and hooks', async () => {
   assert.equal(s.hooks.Stop[1].hooks[0].command, A.HOOK_CMD);
 });
 
+// An agent without hooks (spec R2.5): working takes at least 2s of steady output, some of it in the last 8s.
 test('processState', () => {
-  assert.equal(A.processState({ running: true, quietMs: 5000 }), 'working');
-  assert.equal(A.processState({ running: true, quietMs: 25000 }), 'idle');
-  assert.equal(A.processState({ running: false, quietMs: 0 }), null);
+  assert.equal(A.processState({ activeQuietMs: 100, runMs: 2000 }), 'working');
+  assert.equal(A.processState({ activeQuietMs: 7900, runMs: 5000 }), 'working');
+  assert.equal(A.processState({ activeQuietMs: 100, runMs: 1500 }), 'idle', 'a single burst (a redraw) is not work');
+  assert.equal(A.processState({ activeQuietMs: 9000, runMs: 3000 }), 'idle', 'quiet for 8s: idle again');
+  assert.equal(A.processState({ activeQuietMs: Infinity, runMs: 0 }), 'idle', 'nothing printed yet: idle');
 });
 
 test('isInstalled quotes the name it checks', async () => {

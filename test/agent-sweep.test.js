@@ -40,11 +40,11 @@ test('a hook state survives when detection cannot name the program, while someth
   assert.equal(S.nextAgent(a, { kind: null, busy: false, quietMs: 1e3, inputAt: 0, now }), null);
 });
 
-test('a hook-less agent is working while it prints and idle after 20s quiet; since moves only on a change', () => {
-  const w = S.nextAgent(null, { kind: 'cursor', busy: true, quietMs: 1e3, inputAt: 0, now });
+test('a hook-less agent is working while it prints steadily and idle 8s after; since moves only on a change', () => {
+  const w = S.nextAgent(null, { kind: 'cursor', busy: true, quietMs: 1e3, activeQuietMs: 1e3, runMs: 3e3, inputAt: 0, now });
   assert.deepEqual(w, { state: 'working', since: now, kind: 'cursor', via: 'proc', sessionId: '' });
-  assert.equal(S.nextAgent(w, { kind: 'cursor', busy: true, quietMs: 2e3, inputAt: 0, now: now + 5e3 }), w);
-  const idle = S.nextAgent(w, { kind: 'cursor', busy: true, quietMs: 21e3, inputAt: 0, now: now + 9e3 });
+  assert.equal(S.nextAgent(w, { kind: 'cursor', busy: true, quietMs: 2e3, activeQuietMs: 2e3, runMs: 4e3, inputAt: 0, now: now + 5e3 }), w);
+  const idle = S.nextAgent(w, { kind: 'cursor', busy: true, quietMs: 9e3, activeQuietMs: 9e3, runMs: 4e3, inputAt: 0, now: now + 9e3 });
   assert.equal(idle.state, 'idle');
   assert.equal(idle.since, now + 9e3);
 });
@@ -104,4 +104,40 @@ test('hookState: Cursor events (agent: cursor)', () => {
   assert.deepEqual(c('stop', { status: 'error' }), { state: 'idle', ask: false });
   assert.deepEqual(c('sessionEnd'), { state: null });
   assert.equal(c('beforeReadFile'), undefined);
+});
+
+// Round 2 (spec R2.5): an activity run counts output that isn't your own echo or a redraw.
+test('noteOutput: echo after input or resize is ignored; steady output makes a run; a gap starts a new one', () => {
+  const act = { actStart: 0, actLast: 0 };
+  S.noteOutput(act, { now: 10800, inputAt: 10000, resizeAt: 0 });
+  assert.deepEqual(act, { actStart: 0, actLast: 0 }, 'output 800ms after a keypress is its echo');
+  S.noteOutput(act, { now: 11000, inputAt: 9000, resizeAt: 10000 });
+  assert.deepEqual(act, { actStart: 0, actLast: 0 }, 'output 1000ms after a resize is a redraw');
+  for (const now of [20000, 21000, 22000]) S.noteOutput(act, { now, inputAt: 0, resizeAt: 0 });
+  assert.deepEqual(act, { actStart: 20000, actLast: 22000 });
+  S.noteOutput(act, { now: 24500, inputAt: 0, resizeAt: 0 });
+  assert.deepEqual(act, { actStart: 24500, actLast: 24500 }, 'a 2.5s gap starts a new run');
+});
+
+test('nextAgent (round 2): a new hook-less agent is idle; steady output makes it working', () => {
+  const opt = (x) => ({ kind: 'codex', busy: true, quietMs: 0, inputAt: 0, now, ...x });
+  assert.equal(S.nextAgent(null, opt({ activeQuietMs: Infinity, runMs: 0 })).state, 'idle');
+  assert.equal(S.nextAgent(null, opt({ activeQuietMs: 300, runMs: 1000 })).state, 'idle');
+  assert.equal(S.nextAgent(null, opt({ activeQuietMs: 300, runMs: 2500 })).state, 'working');
+});
+
+test('nextAgent (round 2): Cursor asked to run a command and went silent: needs you, until output resumes', () => {
+  const w = { state: 'working', since: now - 5000, kind: 'cursor', via: 'hook', sessionId: '', ask: true };
+  const opt = (x) => ({ kind: 'cursor', busy: true, activeQuietMs: 0, runMs: 0, inputAt: 0, now, ...x });
+  const b = S.nextAgent(w, opt({ quietMs: 3500 }));
+  assert.deepEqual(b, { ...w, state: 'blocked', inferred: true, since: now });
+  assert.equal(S.nextAgent(w, opt({ quietMs: 2000 })), w, 'a command running (its spinner prints) stays working');
+  assert.equal(S.nextAgent({ ...w, ask: false }, opt({ quietMs: 5000 })).state, 'working', 'no command asked for: not a wait');
+  const back = S.nextAgent(b, opt({ quietMs: 500, now: now + 9000 }));
+  assert.equal(back.state, 'working');
+  assert.equal(back.ask, false);
+  assert.equal(back.inferred, undefined);
+  assert.equal(S.nextAgent(b, opt({ quietMs: 4000 })), b, 'still silent: still waiting');
+  const claude = { state: 'blocked', since: now - 100, kind: 'claude', via: 'hook', sessionId: '' };
+  assert.equal(S.nextAgent(claude, { ...opt({ quietMs: 500 }), kind: 'claude' }), claude, "Claude's own blocked is never inferred");
 });

@@ -133,3 +133,21 @@ test('Cursor\'s hook events give it idle, working and done, labelled Cursor', { 
   await post('sessionEnd');
   assert.equal(await s.agentOf(c.id), null);
 });
+
+// Round 2: typing into a hook-less agent (its echo) is not work (Review Focus 4).
+test('a hook-less agent that only echoes your typing stays idle', { timeout: 60000 }, async (t) => {
+  const s = await ready(t);
+  const c = await s.term();
+  c.send({ t: 'in', d: '(exec -a codex cat)\r' });
+  await sleep(1500);
+  const seen = [];
+  for (let i = 0; i < 30; i++) {
+    c.send({ t: 'in', d: 'x' });
+    await sleep(300);
+    if (i % 5 === 4) seen.push(await s.agentOf(c.id));
+  }
+  for (let i = 0; i < 4; i++) { await sleep(1500); seen.push(await s.agentOf(c.id)); }
+  const states = seen.map((a) => (a ? `${a.kind}:${a.state}` : 'none'));
+  assert.ok(states.some((x) => x === 'codex:idle'), states.join());
+  assert.ok(!states.includes('codex:working'), states.join());
+});
