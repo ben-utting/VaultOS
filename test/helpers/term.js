@@ -29,6 +29,9 @@ function openTerm({ base, cookie }, { timeoutMs = 10000, id: want, query = {} } 
         // Leave the shell running server-side (a hand-over or a reload), resolved once the socket has closed.
         detach: () => new Promise((done) => { ws.once('close', done); ws.close(); }),
         send: (msg) => ws.send(JSON.stringify(msg)),
+        // Stop reading the socket, like a page on a device that went to sleep: pings go unanswered, nothing closes.
+        freeze: () => ws._socket.pause(),
+        closed: () => new Promise((done) => { if (ws.readyState === WebSocket.CLOSED) done(); else ws.once('close', done); }),
       });
     });
   });

@@ -605,7 +605,7 @@ SCEN['S4-restore'] = async () => {
   const took = Date.now() - t0;
   const held2 = await ev(p2, () => TW.sessions().map((s) => s.id));
   check('S4-restore the detached and the gone sessions come back', Array.isArray(held2) && held2.includes(d) && held2.includes(gone), { res, held2 });
-  check('S4-restore the one another tab holds is left there (after the wait)', Array.isArray(held2) && !held2.includes(a) && took >= 2000, { took, held2 });
+  check('S4-restore the one another tab holds is left there (that tab answered the check, no blind 2s wait)', Array.isArray(held2) && !held2.includes(a) && took < 2000, { took, held2 });
   await sleep(1500);
   check('S4-restore that tab keeps it, no moved event', (await ev(p1, (i) => !!TW.session(i) && TW.session(i).state === 'open' && !window.__ev.some((e) => e.kind === 'moved'), a)) === true,
     await ev(p1, (i) => ({ state: TW.session(i) && TW.session(i).state, ev: window.__ev }), a));
@@ -618,6 +618,52 @@ SCEN['S4-restore'] = async () => {
   check('S4-restore the popped shell keeps running (detached)', !!(await listWait(d, (x) => !x.attached)));
   await ev(p1, (m) => TW.adopt(m), metas);
   check('S4-restore adopt takes it in and focuses it', await waitFor(p1, (i) => TW.session(i) && TW.session(i).state === 'open' && TW.focused().id === i, 5000, d));
+  await p2.close();
+  await p1.close();
+};
+
+// A page that went away without closing its socket (a laptop asleep, a tab the browser dropped): a raw websocket
+// upgrade that attaches to the terminal and then never reads again, so the server's pings go unanswered.
+// Resolves to a function that drops the connection.
+function frozenHolder(id) {
+  const net = require('net');
+  const url = new URL(BASE);
+  return new Promise((resolve, reject) => {
+    const sock = net.connect(Number(url.port), url.hostname, () => {
+      sock.write([`GET /api/term?id=${encodeURIComponent(id)} HTTP/1.1`, `Host: ${url.host}`, 'Upgrade: websocket', 'Connection: Upgrade',
+        `Sec-WebSocket-Key: ${require('crypto').randomBytes(16).toString('base64')}`, 'Sec-WebSocket-Version: 13',
+        `Origin: ${BASE}`, `Cookie: ${cookieHeader()}`, '', ''].join('\r\n'));
+    });
+    sock.once('data', (d) => {
+      if (!/^HTTP\/1\.1 101/.test(d.toString())) { sock.destroy(); reject(new Error('no upgrade: ' + d.toString().split('\r\n')[0])); return; }
+      sock.pause();
+      resolve(() => sock.destroy());
+    });
+    sock.on('error', reject);
+  });
+}
+
+// S4-restore-dead: a terminal held only by such a page comes back to the page restoring it: the server checks the
+// holder, gets no answer, and lets go. Before the fix it stayed "held elsewhere" and its space was dimmed.
+SCEN['S4-restore-dead'] = async () => {
+  const ctx = await launch();
+  const p1 = await page('/', { context: ctx });
+  await dock(p1);
+  const a = await openTerm(p1, {});
+  await p1.evaluate((i) => TW.remove(i, { kill: false }), a);
+  check('S4-restore-dead A starts detached', !!(await listWait(a, (x) => !x.attached)));
+  const drop = await frozenHolder(a);
+  check('S4-restore-dead the frozen holder counts as attached', !!(await listWait(a, (x) => x.attached)));
+  const p2 = await page('/terminal.html', { context: ctx });
+  await waitFor(p2, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+  const t0 = Date.now();
+  await ev(p2, (s) => TW.restore(s, []).then(() => 0), [{ id: a }]);
+  const took = Date.now() - t0;
+  const held = await ev(p2, () => TW.sessions().map((s) => s.id));
+  check('S4-restore-dead the terminal comes back to the page restoring it', Array.isArray(held) && held.includes(a), { held });
+  check('S4-restore-dead it took about the probe time, not forever', took >= 1000 && took < 4000, { took });
+  check('S4-restore-dead its pane is open', await waitFor(p2, (i) => TW.session(i) && TW.session(i).state === 'open', 5000, a));
+  drop();
   await p2.close();
   await p1.close();
 };
@@ -659,15 +705,19 @@ SCEN['S4-restore-focus'] = async () => {
       el.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px;z-index:50';
       document.body.appendChild(el);
       const W2 = window.TW2 = createTermWorkspace(el, { store: S, persist: true });
+      // The check of A's holder answers in a few ms here; (3) slows it, so the user can act while it runs.
+      const f0 = window.fetch;
+      if (o.createDuring) window.fetch = (u, init) => (String(u).includes('/api/term/probe') ? new Promise((r) => setTimeout(r, 1500)).then(() => f0(u, init)) : f0(u, init));
       const t0 = Date.now();
       const done = W2.restore(W2.savedSessions(), [o.mR]);
       let mine = null;
       if (o.createDuring) {
-        await new Promise((r) => setTimeout(r, 700));   // inside the 2s wait for A
+        await new Promise((r) => setTimeout(r, 700));   // while A's holder is being checked
         const s = W2.create({});
         mine = s && s.id;
       }
       await done;
+      window.fetch = f0;
       return { focused: W2.focused() && W2.focused().id, active: W2.activeSpace(), held: W2.sessions().map((s) => s.id), mine, ms: Date.now() - t0 };
     }, { mA, mF, mR, focus, createDuring });
     // Hand A, F and R back (detached) for the next run; end the extra shells.
@@ -686,15 +736,15 @@ SCEN['S4-restore-focus'] = async () => {
   check('S4-restore-focus (1) all detached: the saved focus F wins over returning R, root space active',
     r1.focused === F && r1.active === 'd:', { r1, F, R });
   const r2 = await run({ holdA: true });
-  check('S4-restore-focus (2) A held elsewhere: the 2s wait ran, A stays there, F and R come back',
-    Array.isArray(r2.held) && !r2.held.includes(A) && r2.held.includes(F) && r2.held.includes(R) && r2.ms >= 2000, { r2, A, F, R });
+  check('S4-restore-focus (2) A held elsewhere: its holder answered the check, A stays there, F and R come back',
+    Array.isArray(r2.held) && !r2.held.includes(A) && r2.held.includes(F) && r2.held.includes(R) && r2.ms < 2000, { r2, A, F, R });
   check('S4-restore-focus (2) A held elsewhere: the saved focus F wins over returning R, root space active',
     r2.focused === F && r2.active === 'd:', { r2, F, R });
   check('S4-restore-focus (1) and (2) end on the same focus and space', r1.focused === r2.focused && r1.active === r2.active,
     { r1: [r1.focused, r1.active], r2: [r2.focused, r2.active] });
   const r3 = await run({ holdA: true, createDuring: true });
-  check('S4-restore-focus (3) a terminal the user opens during the wait keeps the focus',
-    !!r3.mine && r3.focused === r3.mine && r3.ms >= 2000, { r3, F, R });
+  check('S4-restore-focus (3) a terminal the user opens during the check keeps the focus',
+    !!r3.mine && r3.focused === r3.mine && r3.ms >= 1500, { r3, F, R });
   const r4 = await run({ holdA: true, focus: A });
   check('S4-restore-focus (4) the saved focus was dropped: returning R gets the focus and its space',
     Array.isArray(r4.held) && !r4.held.includes(A) && r4.focused === R && r4.active === 'd:' + REPO, { r4, A, F, R });

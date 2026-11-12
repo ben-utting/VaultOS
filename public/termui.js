@@ -74,7 +74,7 @@ function createTermWorkspace(root, opts = {}) {
   const PAGE_ID = twNewId();   // this page, in presence messages
   const GAP = 4;               // px between panes
   const POLL_MS = 3000;        // /api/term/list while the page is visible
-  const RESTORE_WAIT_MS = 2000;   // a saved session still attached after this is held by another page
+  const RESTORE_WAIT_MS = 2000;   // no probe (an older server): a saved session still attached after this is held by another page
 
   // Per-tab storage: sessionStorage first, so two VaultOS tabs (or a reload)
   // each get their own back, with a localStorage mirror for a new tab.
@@ -1128,6 +1128,15 @@ function createTermWorkspace(root, opts = {}) {
     for (const cb of W.listCbs) try { cb(W.list, rs); } catch (err) { console.error(err); }
   }
 
+  // Ask the server whether the pages holding these sessions are still there: it pings each one and lets go of any
+  // that doesn't answer within 1.5s. True once it has checked; false if it couldn't (an older server, offline).
+  function probeHolders(ids) {
+    return fetch('/api/term/probe', {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }),
+    }).then((r) => r.ok, () => false);
+  }
+
   // 401 → list null (held rows only). Unreachable (a server restart) keeps
   // the last list. Answers apply in order: an older, slower one never wins.
   function refreshList() {
@@ -1326,10 +1335,13 @@ function createTermWorkspace(root, opts = {}) {
   // After a reload, without stealing: the sessions handed back by the window
   // (`returning`) come back at once; a saved one comes back when the server
   // has no page on it (detached, or gone: a fresh shell under the same id).
-  // One still attached is given 2s (this page's own old socket may not have
-  // closed yet); still attached then, another page has it and it stays there.
-  // The focus is settled once, at the end, by one rule (whether or not the 2s
-  // wait ran): see settleFocus.
+  // For one still attached, the server pings whoever holds it (probeHolders):
+  // a holder that doesn't answer (this page's own old socket, a laptop that
+  // slept, a tab the browser dropped) is let go and the session comes back;
+  // one that answers is another page, and it stays there. An older server
+  // without the probe: 2s for an old socket to close, then the same rule.
+  // The focus is settled once, at the end, by one rule (whether or not there
+  // was anything to check): see settleFocus.
   async function restore(saved, returning) {
     const want = (Array.isArray(saved) ? saved : []).filter((m) => m && typeof m.id === 'string' && m.id);
     const back = (Array.isArray(returning) ? returning : []).filter((m) => m && typeof m.id === 'string' && m.id);
@@ -1349,7 +1361,7 @@ function createTermWorkspace(root, opts = {}) {
         if (attached(m.id)) later.push(m); else add({ ...m });
       }
       if (later.length) {
-        await new Promise((r) => setTimeout(r, RESTORE_WAIT_MS));
+        if (!(await probeHolders(later.map((m) => m.id)))) await new Promise((r) => setTimeout(r, RESTORE_WAIT_MS));
         await refreshList();
         for (const m of later) {
           if (!W.expected.has(m.id) || session(m.id)) continue;

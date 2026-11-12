@@ -3158,6 +3158,10 @@ app.get('/api/skills', async (req, res) => {
 // minutes until 2026-10-01, which ended overnight Claude sessions.)
 const TERM_IDLE_MS = 24 * 3600e3;
 const TERM_MAX = 12;   // across all tabs and windows; each is a real shell (and maybe an agent)
+// Pages that went away without closing their socket (lib/term-alive.js): pinged every TERM_PING_MS, and on the spot
+// when a page restoring its terminals asks (/api/term/probe), so a dead one doesn't hold a terminal for hours.
+const TERM_PING_MS = Number(process.env.TERM_PING_MS) > 0 ? Number(process.env.TERM_PING_MS) : 30e3;
+const TERM_ALIVE = require('./lib/term-alive').createAlive({ probeMs: 1500 });
 const TERM_SCROLLBACK = 200 * 1024;
 const TERMS = new Map(); // id -> { pty, buf, ws, shell, cwd, idleSince, token, task, agent, lastOut }
 
@@ -3275,7 +3279,7 @@ function termEnv(id, token) {
     VAULTOS_TERM_ID: id, VAULTOS_TERM_TOKEN: token,
     VAULTOS_HOOK_URL: `http://127.0.0.1:${PORT}/api/term/agent`,
   };
-  for (const k of ['PORT', 'TERMINAL', 'TRUST_PROXY', 'SECURE_COOKIE', 'CHROMIUM_PATH', 'LOCAL_READ', 'ALLOWED_HOSTS', 'DATA_DIR', 'SETUP_WINDOW_MIN', 'TODAY_QUOTES']) delete env[k];
+  for (const k of ['PORT', 'TERMINAL', 'TRUST_PROXY', 'SECURE_COOKIE', 'CHROMIUM_PATH', 'LOCAL_READ', 'ALLOWED_HOSTS', 'DATA_DIR', 'SETUP_WINDOW_MIN', 'TODAY_QUOTES', 'TERM_PING_MS']) delete env[k];
   // Without TZ the container runs on UTC, so `date` (and the task-board Stop hook's
   // "is updated: today?") would disagree with the user near midnight. The timezone
   // chosen in setup fills in; a TZ given to the container wins.
@@ -3344,6 +3348,7 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
   if ('space' in spaceIn) t.space = spaceIn.space;
   if ('spaceName' in spaceIn) t.spaceName = spaceIn.spaceName;
   t.ws = ws;
+  TERM_ALIVE.track(ws);
   if (t.agent) ws.send(JSON.stringify({ t: 'agent', a: agentInfo(t) }));
   ws.on('message', (raw) => {
     let m;
@@ -3405,6 +3410,22 @@ function mountTerminal(server) {
   });
   setInterval(sweepTerms, 60e3).unref();
   setInterval(sweepAgents, 5e3).unref();
+  setInterval(() => TERM_ALIVE.beat([...TERMS.values()].map((t) => t.ws).filter(Boolean)), TERM_PING_MS).unref();
+
+  // A page restoring its terminals finds some still attached: is whoever holds them still there? Each holder is
+  // pinged; one that doesn't answer within 1.5s is let go (the terminal is detached, its shell keeps running) and
+  // listed in `dropped`, so the page can take it. A holder that answers (another tab, the phone) keeps it.
+  app.post('/api/term/probe', async (req, res) => {
+    if (!(req.session && req.session.authed)) return res.status(401).json({ error: 'Unauthorized' });
+    const asked = Array.isArray(req.body && req.body.ids) ? req.body.ids : [];
+    const ids = [...new Set(asked.filter((x) => typeof x === 'string'))].slice(0, TERM_MAX * 2);
+    const dropped = [];
+    await Promise.all(ids.map(async (id) => {
+      const t = TERMS.get(id);
+      if (t && t.ws && !(await TERM_ALIVE.probe(t.ws))) dropped.push(id);
+    }));
+    res.json({ dropped: ids.filter((id) => dropped.includes(id)) });
+  });
 
   // Every shell the server is holding, so the terminal bar can offer to reopen
   // ones no open window knows about (a browser that crashed, another device,
