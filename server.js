@@ -44,7 +44,7 @@ const { createConnectorService, ConnectorError } = require('./lib/connector-serv
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
 const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
-const { foregroundArgv, nextAgent } = require('./lib/agent-sweep');
+const { foreground, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -3251,8 +3251,11 @@ function sweepAgents() {
   const now = Date.now();
   const profiles = agentProfiles(SETTINGS());
   for (const t of TERMS.values()) {
-    const busy = termBusy(t);
-    const kind = busy ? detectAgent(foregroundArgv(t.pty.pid, termCmd(t)), profiles) : null;
+    // Busy: the shell isn't in front. Not node-pty's name check alone: a wrapper script that doesn't exec leaves a
+    // `bash` in front, the shell's own name, and its agent would never show (nor keep Claude's hook state).
+    const fg = foreground(t.pty.pid, termCmd(t));
+    const busy = fg.pgid ? fg.pgid !== t.pty.pid : termBusy(t);
+    const kind = busy ? detectAgent(fg.argv, profiles) : null;
     const next = nextAgent(t.agent, { kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, now });
     if (next !== t.agent) { t.agent = next; sendAgent(t); }
   }

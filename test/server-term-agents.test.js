@@ -86,3 +86,25 @@ test('Claude and Cursor both stay in the list with Cursor as the default, then w
   const gone = await s.until(b.id, (x) => x === null);
   assert.equal(gone, null, 'the Cursor row goes once it exits');
 });
+
+// Final review: a wrapper script that doesn't exec leaves bash as the foreground process (argv[0] 'bash', the same
+// name as the shell), which read as "nothing running": the agent never showed and Claude's hook state was wiped.
+test('an agent run by a wrapper script that does not exec is found, and Claude keeps its hook state', { timeout: 60000 }, async (t) => {
+  const s = await ready(t);
+  await s.setDefault('cursor');
+  const a = await s.term();
+  const b = await s.term();
+  const wrap = (name) => `mkdir -p "$HOME/w" && printf '#!/bin/bash\\nsleep 120\\n' > "$HOME/w/${name}" && chmod +x "$HOME/w/${name}" && "$HOME/w/${name}"\r`;
+  a.send({ t: 'in', d: wrap('claude') });
+  b.send({ t: 'in', d: wrap('agent') });
+  await sleep(1000);
+  assert.equal((await s.hook(a, 'SessionStart')).status, 200);
+  const ca = await s.until(a.id, (x) => x && x.kind === 'claude');
+  assert.equal(ca && ca.state, 'idle');
+  const cb = await s.until(b.id, (x) => x && x.kind === 'cursor');
+  assert.equal(cb && cb.label, 'Cursor');
+  await sleep(6000);
+  const after = await s.agentOf(a.id);
+  assert.equal(after && after.kind, 'claude', 'still listed after a sweep');
+  assert.equal(after.state, 'idle');
+});

@@ -64,3 +64,11 @@ test('the quiet and dismiss times are the ones the hooks fallbacks always used',
   assert.equal(S.AGENT_QUIET_MS, 20e3);
   assert.equal(S.AGENT_DISMISS_MS, 8e3);
 });
+
+test('foreground gives the foreground group and its command line; null group when /proc cannot tell', () => {
+  const files = { '/proc/10/stat': '10 (bash) S 1 10 10 34816 22 0', '/proc/22/cmdline': '/bin/bash\0/h/w/claude\0' };
+  assert.deepEqual(S.foreground(10, 'bash', (p) => files[p]), { pgid: 22, argv: ['/bin/bash', '/h/w/claude'] });
+  const prompt = { '/proc/10/stat': '10 (bash) S 1 10 10 34816 10 0', '/proc/10/cmdline': 'bash\0' };
+  assert.deepEqual(S.foreground(10, 'bash', (p) => prompt[p]), { pgid: 10, argv: ['bash'] });
+  assert.deepEqual(S.foreground(11, 'claude', () => { throw new Error('ENOENT'); }), { pgid: null, argv: ['claude'] });
+});
