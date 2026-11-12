@@ -43,7 +43,8 @@ const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup')
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
-const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, processMatches, processState, terminalTask } = require('./lib/agents');
+const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
+const { foregroundArgv, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
 let SETTINGS_ERROR = null;
@@ -3172,9 +3173,8 @@ const TERMS = new Map(); // id -> { pty, buf, ws, shell, cwd, idleSince, token, 
 //   working · blocked (an approval or question is waiting) · done (finished,
 //   not looked at yet) · idle (finished and seen, or interrupted).
 // Claude anywhere else (code-server, the host) has no VAULTOS_TERM_ID and the
-// hook does nothing.
-const AGENT_QUIET_MS = 20e3;   // working but silent this long = interrupted (Esc fires no Stop hook)
-const AGENT_DISMISS_MS = 8e3;  // blocked, you pressed a key, then silence = dialog dismissed (Esc fires nothing)
+// hook does nothing. Every other agent, and Claude when its hook is silent, is
+// found by sweepAgents from the terminal's foreground command line.
 function agentStateFor(b) {
   switch (b.hook_event_name) {
     case 'SessionStart': return 'idle';
@@ -3188,12 +3188,30 @@ function agentStateFor(b) {
     default: return undefined;   // an event we don't map: leave the state alone
   }
 }
-const agentInfo = (t) => (t.agent ? { state: t.agent.state, since: t.agent.since } : null);
-function setAgent(t, state, sessionId) {
-  const prev = t.agent ? t.agent.state : null;
-  if (state === prev) { if (t.agent && sessionId) t.agent.sessionId = sessionId; return; }
-  t.agent = state ? { state, since: Date.now(), sessionId: sessionId || (t.agent && t.agent.sessionId) || '' } : null;
+// t.agent = { state, since, kind, via: 'hook'|'proc', sessionId } or null. The page gets
+// { state, since, kind, label }: label is the agent's short name (Claude, Cursor…).
+function agentLabel(kind) {
+  const p = kind ? agentProfiles(SETTINGS()).find((x) => x.id === kind) : null;
+  return p ? p.short : (kind || '');
+}
+const agentInfo = (t) => (t.agent ? { state: t.agent.state, since: t.agent.since, kind: t.agent.kind || '', label: agentLabel(t.agent.kind) } : null);
+function sendAgent(t) {
   if (t.ws && t.ws.readyState === 1) t.ws.send(JSON.stringify({ t: 'agent', a: agentInfo(t) }));
+}
+// A hook's state, or "seen" turning done into idle. kind and via default to the agent's own; since moves only
+// when the state or the kind changes.
+function setAgent(t, state, { kind, via, sessionId } = {}) {
+  const prev = t.agent;
+  if (!prev && !state) return;
+  const k = kind || (prev && prev.kind) || '';
+  const v = via || (prev && prev.via) || 'hook';
+  if (prev && state === prev.state && k === prev.kind && v === prev.via) { if (sessionId) prev.sessionId = sessionId; return; }
+  t.agent = state ? {
+    state, kind: k, via: v,
+    since: prev && prev.state === state && prev.kind === k ? prev.since : Date.now(),
+    sessionId: sessionId || (prev && prev.sessionId) || '',
+  } : null;
+  sendAgent(t);
 }
 function isLoopback(req) {
   const a = req.socket.remoteAddress || '';
@@ -3214,36 +3232,29 @@ function termAgentHook(req, res) {
   const t = termCaller(req);
   if (!t) return res.status(403).json({ error: 'Forbidden' });
   const state = agentStateFor(b);
-  if (state !== undefined) setAgent(t, state, typeof b.session_id === 'string' ? b.session_id : '');
+  if (state !== undefined) setAgent(t, state, { kind: 'claude', via: 'hook', sessionId: typeof b.session_id === 'string' ? b.session_id : '' });
   res.json({ ok: true });
 }
-// Fallbacks for what hooks can't see:
+// Every terminal, every agent, whatever the default (lib/agent-sweep.js). The
+// agent is named from the foreground process's whole command line. A state
+// Claude's hook reported is kept, with the fallbacks for what hooks can't see:
 //  - Esc mid-turn: no Stop hook, but the spinner stops redrawing.
 //  - Esc on a question/approval: no hook at all. Answering one makes Claude
 //    carry on (spinner output, then a tool hook), so "you typed, then it went
 //    quiet" means the dialog was dismissed. (herdr reads the rendered screen for
 //    this; the server only has the raw pty stream, so it uses timing instead.)
 //  - Claude exiting without SessionEnd: the shell is back in the foreground.
-//  - An agent without hooks (hooks !== 'claude'): the state comes from the
-//    foreground process alone, running and recently noisy = working, running
-//    and quiet = idle, gone = no badge.
+// Any other agent: running and recently noisy = working, running and quiet =
+// idle, gone = no badge. Until 2026-11-12 only the default agent was looked at,
+// and with Cursor as the default this sweep wiped Claude's hook state every 5s.
 function sweepAgents() {
   const now = Date.now();
-  const profile = profileFor(SETTINGS());
-  if (profile && profile.hooks !== 'claude') {
-    for (const t of TERMS.values()) {
-      const cmd = termCmd(t);
-      const next = processState({ running: !!cmd && termBusy(t) && processMatches(profile, cmd, { agentTerm: t.agentTerm }), quietMs: now - t.lastOut });
-      if (next !== (t.agent ? t.agent.state : null)) setAgent(t, next);
-    }
-    return;
-  }
+  const profiles = agentProfiles(SETTINGS());
   for (const t of TERMS.values()) {
-    if (!t.agent) continue;
-    const quiet = now - t.lastOut;
-    if (!termBusy(t)) setAgent(t, null);
-    else if (t.agent.state === 'working' && quiet > AGENT_QUIET_MS) setAgent(t, 'idle');
-    else if (t.agent.state === 'blocked' && t.inputAt > t.agent.since && quiet > AGENT_DISMISS_MS) setAgent(t, 'idle');
+    const busy = termBusy(t);
+    const kind = busy ? detectAgent(foregroundArgv(t.pty.pid, termCmd(t)), profiles) : null;
+    const next = nextAgent(t.agent, { kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, now });
+    if (next !== t.agent) { t.agent = next; sendAgent(t); }
   }
 }
 
@@ -3458,7 +3469,7 @@ function mountTerminal(server) {
         branch,
       });
     }
-    res.json({ sessions });
+    res.json({ sessions, now: Date.now() });   // now: the page reads agent ages on the server's clock
   });
   console.log('terminal enabled on /api/term');
 }

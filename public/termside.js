@@ -52,13 +52,14 @@ const createTermSide = (() => {
 
     function agentRow(r, names, focusedId) {
       const state = r.agent.state;
-      const line = `${r.cmd || 'agent'} · ${WORD[state] || state}`;
+      const who = r.agent.label || r.cmd || 'agent';   // the agent's short name (Claude, Cursor…) from the server
+      const line = `${who} · ${WORD[state] || state}`;
       const away = r.where !== 'here';
       const cls = ['tw-ag-row', away ? 'dim' : '', r.id === focusedId ? 'active' : ''].filter(Boolean).join(' ');
       const space = names.get(r.key) || '';
       const tip = `${line} · ${space}${away ? ` (${whereNote(r.where)})` : ''}`;
       return `<button type="button" class="${cls}" data-id="${twEsc(r.id)}" title="${twEsc(tip)}">`
-        + `<span class="tw-ag-line">${twEsc(r.cmd || 'agent')} · <span class="tw-ag-state" data-agent="${twEsc(state)}">${twEsc(WORD[state] || state)}</span></span>`
+        + `<span class="tw-ag-line">${twEsc(who)} · <span class="tw-ag-state" data-agent="${twEsc(state)}">${twEsc(WORD[state] || state)}</span></span>`
         + `<span class="tw-ag-space">${twEsc(space)}</span></button>`;
     }
 

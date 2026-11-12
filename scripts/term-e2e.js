@@ -1060,12 +1060,12 @@ SCEN['S2-side'] = async () => {
   check('S2-side the blocked agent makes its space mark ×', marked && !!webRow && webRow.mark === '×', webRow);
   check('S2-side the × is --review', !!webRow && webRow.color === await token(p, '--review'), { webRow, review: await token(p, '--review') });
   // The command comes with the next list poll (3s), not with the agent event.
-  await waitFor(p, () => { const r = document.querySelector('.tw-side .tw-ag-row .tw-ag-line'); return r && /^(claude|node) /.test(r.textContent); }, 8000);
+  await waitFor(p, () => { const r = document.querySelector('.tw-side .tw-ag-row .tw-ag-line'); return r && /^(Claude|claude|node) /.test(r.textContent); }, 8000);
   const ag = await ev(p, () => [...document.querySelectorAll('.tw-side .tw-ag-row')].map((r) => ({
     line: r.querySelector('.tw-ag-line').textContent, space: r.querySelector('.tw-ag-space').textContent, id: r.dataset.id,
     stateColor: getComputedStyle(r.querySelector('.tw-ag-state')).color,
   })));
-  check('S2-side the first agent row reads "<cmd> · blocked" with its space under it', Array.isArray(ag) && ag.length > 0 && /^(claude|node) · blocked$/.test(ag[0].line) && ag[0].space === 'Web login flow', ag);
+  check('S2-side the first agent row reads "<agent> · blocked" with its space under it', Array.isArray(ag) && ag.length > 0 && /^(Claude|claude|node) · blocked$/.test(ag[0].line) && ag[0].space === 'Web login flow', ag);
   check('S2-side the state word is --review', Array.isArray(ag) && ag.length > 0 && ag[0].stateColor === await token(p, '--review'), ag);
   // Another space is active (the last created); an agent row in web-login switches to it.
   const before = await ev(p, () => TW.activeSpace());
