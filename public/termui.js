@@ -989,7 +989,7 @@ function createTermWorkspace(root, opts = {}) {
     if (opts.onOpenFolder) h += rowItem('folder', 'Open its folder in Files');
     if (r.task && opts.onOpenTask) h += rowItem('card', 'Open its card');
     if (s) {
-      h += rowItem('rename', 'Rename…');
+      h += rowItem('rename', 'Rename pane…');   // the pane's name, not the agent's: the row keeps showing the agent
       if (heldIn(s.key).length > 1) h += rowItem('own-space', 'Move to its own space');
       h += combineItems(s.key) + rowItem('end', 'End it');
     }
