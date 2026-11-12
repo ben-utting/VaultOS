@@ -1419,13 +1419,18 @@ TW.onList((list) => {
   renderDrawerAgent();
 });
 
-// The header button: hide a visible dock; show one that already holds
-// sessions (ones sent back from the window live here until moved again);
-// otherwise open a terminal wherever the setting says.
+// The header button (and the phone's, which forwards here): hide a visible dock; show one that already holds
+// sessions (ones sent back from the window live here until moved again); otherwise open a terminal wherever the
+// setting says, running the default agent (agents +'s plain command; a plain shell with none set). A Terminals
+// window that is already open is only raised: the button never starts a second agent.
 $('termbtn').addEventListener('click', () => {
   if (dockVisible()) dockShow(false);
   else if (TW.sessions().length) showTerminals();
-  else termOpen();
+  else {
+    const run = (ME.agent && ME.agent.plainCommand) || undefined;
+    const winOpen = termWhere() === 'window' && TW.rows().some((r) => r.where === 'window');
+    termOpen(run && !winOpen ? { run } : {});
+  }
 });
 $('term-min').addEventListener('click', () => dockShow(false));
 // Close ends the shells too — minimise is the one that keeps them. Same

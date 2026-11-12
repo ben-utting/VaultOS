@@ -1939,6 +1939,58 @@ SCEN.S13 = async () => {
   await ph.close();
 };
 
+// S15: the header's terminal button starts the default agent when it opens a new terminal, and only then.
+SCEN.S15 = async () => {
+  check('S15 the default agent is Cursor', (await setDefaultAgent('cursor')) === 200);
+  let p = await page('/');
+  await bare(p);
+  await waitFor(p, () => typeof ME !== 'undefined' && !!ME.agent && ME.agent.plainCommand === 'agent', 8000);
+  await ev(p, () => document.getElementById('termbtn').click());
+  check('S15 the button opens one terminal', await waitFor(p, () => TW.sessions().length === 1, 10000));
+  const id = await ev(p, () => TW.sessions()[0].id);
+  const typed = await waitFor(p, (i) => {
+    const b = TW.session(i).handle.term.buffer.active;
+    for (let y = 0; y < b.length; y++) { const l = b.getLine(y).translateToString(true); if (/\$ agent$/.test(l) || /agent: (command )?not found/.test(l)) return true; }
+    return false;
+  }, 8000, id);
+  check('S15 it starts the default agent (agent)', typed, await screen(p, id));
+  await ev(p, () => document.getElementById('termbtn').click());   // hides the dock
+  await ev(p, () => document.getElementById('termbtn').click());   // shows it again
+  await sleep(800);
+  check('S15 pressing it again starts no second terminal', await ev(p, () => TW.sessions().length) === 1);
+  await ev(p, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+  await p.close();
+  // Terminals open in the window (a fresh page: bare() pins the dock on every load): the press opens the window
+  // with the agent; a second press only raises it.
+  const ctx = await launch();
+  const p2 = await ctx.newPage();
+  await p2.setViewport({ width: 1600, height: 1000 });
+  await p2.evaluateOnNewDocument(() => { try { localStorage.setItem('vaultboard.term.where', JSON.stringify('window')); } catch {} });
+  await p2.goto(BASE + '/', { waitUntil: 'networkidle2' });
+  await waitFor(p2, () => typeof ME !== 'undefined' && !!ME.agent, 8000);
+  p = p2;
+  const popP = nextPopup(p);
+  await p.click('#termbtn');   // a real click: a pop-up from a script click is blocked
+  const w = await Promise.race([popP, sleep(8000).then(() => null)]);
+  check('S15 (window) the press opens the Terminals window', !!w);
+  if (w) {
+    await waitFor(w, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+    const wid = await ev(w, () => TW.sessions()[0].id);
+    check('S15 (window) its terminal starts the default agent', await waitFor(w, (i) => {
+      const b = TW.session(i).handle.term.buffer.active;
+      for (let y = 0; y < b.length; y++) { const l = b.getLine(y).translateToString(true); if (/\$ agent$/.test(l) || /agent: (command )?not found/.test(l)) return true; }
+      return false;
+    }, 8000, wid));
+    await sleep(3500);   // the dock's list poll sees the window's terminal
+    await p.click('#termbtn');
+    await sleep(1500);
+    check('S15 (window) a second press starts no second terminal', await ev(w, () => TW.sessions().length) === 1);
+    await ev(w, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+    await w.close();
+  }
+  await p.close();
+};
+
 // S14 (spec R2.6): right-click menus on agent and space rows. Items follow the row (left out when they don't
 // apply), each action does what it says, and a dimmed row offers only what works without its pane here.
 const menuItems = (p) => ev(p, () => [...document.querySelectorAll('.tw-menu:not([hidden]) button[data-m]')].map((b) => b.dataset.m + (b.dataset.to ? ':' + b.dataset.to : '')));
