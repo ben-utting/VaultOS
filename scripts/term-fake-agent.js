@@ -5,7 +5,8 @@
 //   node /app/scripts/term-fake-agent.js [--cursor] <working|blocked|done|idle>
 //
 // Stays in the foreground (so the server sees a busy terminal) and prints "." every 2s.
-// Keys: w working, b blocked, d done, i idle, Esc idle (what Esc does to a real Claude), q quit.
+// Keys: w working, b blocked, d done, i idle, q quit. Esc does what it does to a real Claude mid-turn: it stops
+// printing and fires no hook (the server reads Esc then quiet as idle).
 // --cursor: posts Cursor's events (agent: cursor, spec 2026-11-12 R2.4) instead. Cursor has no approval event:
 // blocked posts beforeShellExecution and stops the dots, so the server sees "a command asked for, then silence";
 // w posts beforeSubmitPrompt and starts them again.
@@ -21,7 +22,7 @@ const CURSOR_EVENTS = {
   done: [['sessionStart'], ['beforeSubmitPrompt'], ['stop', 'completed']],
   idle: [['sessionStart']],
 };
-const KEYS = { w: 'working', b: 'blocked', d: 'done', i: 'idle', '\x1b': 'idle' };
+const KEYS = { w: 'working', b: 'blocked', d: 'done', i: 'idle' };
 const { VAULTOS_TERM_ID: id, VAULTOS_TERM_TOKEN: token, VAULTOS_HOOK_URL: url } = process.env;
 const cursor = process.argv[2] === '--cursor';
 const first = process.argv[cursor ? 3 : 2];
@@ -51,7 +52,8 @@ async function report(state) {
   process.stdin.on('data', (d) => {
     for (const k of d.toString()) {
       if (k === 'q' || k === '\x03') process.exit(0);
-      if (KEYS[k]) report(KEYS[k]).catch(() => {});
+      if (k === '\x1b' && !cursor) { quiet = true; continue; }
+      if (KEYS[k]) { if (!cursor) quiet = false; report(KEYS[k]).catch(() => {}); }
     }
   });
   setInterval(() => { if (!quiet) process.stdout.write('.'); }, 2000);

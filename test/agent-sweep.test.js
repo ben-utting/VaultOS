@@ -144,3 +144,13 @@ test('nextAgent (round 2): Cursor asked to run a command and went silent: needs 
   const claude = { state: 'blocked', since: now - 100, kind: 'claude', via: 'hook', sessionId: '' };
   assert.equal(S.nextAgent(claude, { ...opt({ quietMs: 500 }), kind: 'claude' }), claude, "Claude's own blocked is never inferred");
 });
+
+// Final review: Esc stops a Claude turn but fires no hook; Esc after the turn began, then 3s quiet, is idle.
+test('nextAgent: Esc on a working Claude, then quiet, is idle', () => {
+  const w = { state: 'working', since: now - 10000, kind: 'claude', via: 'hook', sessionId: '' };
+  const opt = (x) => ({ kind: 'claude', busy: true, activeQuietMs: Infinity, runMs: 0, inputAt: 0, now, ...x });
+  assert.equal(S.nextAgent(w, opt({ quietMs: 3500, escAt: now - 4000 })).state, 'idle');
+  assert.equal(S.nextAgent(w, opt({ quietMs: 2000, escAt: now - 2500 })), w, 'still printing after the Esc: still working');
+  assert.equal(S.nextAgent(w, opt({ quietMs: 3500, escAt: now - 20000 })), w, 'an Esc before this turn began is not a stop');
+  assert.equal(S.nextAgent(w, opt({ quietMs: 3500 })), w, 'no Esc: the 20s rule still applies');
+});

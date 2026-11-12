@@ -1956,7 +1956,8 @@ SCEN.S14 = async () => {
   let items = await menuItems(p);
   check('S14 a working agent: Go to, Stop, folder, Rename, Combine, End', JSON.stringify(items) === JSON.stringify(['goto', 'stop', 'folder', 'rename', `combine:${keyB}`, 'end']), items);
   await shot(p, 's14-menu-dark');
-  check('S14 Stop sends Esc to Claude, which goes idle', (await pickItem(p, 'stop')) === true && await waitFor(p, (a) => { const s = TW.session(a); return !!s.agent && s.agent.state === 'idle'; }, 6000, A), await agentState(p, A));
+  // A real Claude stops on Esc, prints nothing more and fires no hook (the fake does the same): Esc then quiet is idle.
+  check('S14 Stop sends Esc to Claude, which goes idle', (await pickItem(p, 'stop')) === true && await waitFor(p, (a) => { const s = TW.session(a); return !!s.agent && s.agent.state === 'idle'; }, 12000, A), await agentState(p, A));
   await typeIn(p, A, 'd');
   await waitFor(p, (a) => { const s = TW.session(a); return !!s.agent && s.agent.state === 'done'; }, 6000, A);
   await ev(p, (a) => TW.openRowMenu('agent', a, { x: 60, y: 60 }), A);

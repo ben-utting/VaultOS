@@ -3258,7 +3258,7 @@ function sweepAgents() {
     const busy = fg.pgid ? fg.pgid !== t.pty.pid : termBusy(t);
     const kind = busy ? detectAgent(fg.argv, profiles) : null;
     const next = nextAgent(t.agent, {
-      kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, now,
+      kind, busy, quietMs: now - t.lastOut, inputAt: t.inputAt, escAt: t.escAt || 0, now,
       activeQuietMs: t.actLast ? now - t.actLast : Infinity, runMs: t.actLast - t.actStart,
     });
     if (next !== t.agent) { t.agent = next; sendAgent(t); }
@@ -3372,7 +3372,11 @@ function attachTerm(ws, id, cwd, cols, rows, task, agentTerm, spaceIn = {}) {
   ws.on('message', (raw) => {
     let m;
     try { m = JSON.parse(raw); } catch { return; }
-    if (m.t === 'in' && typeof m.d === 'string') { t.pty.write(m.d); t.inputAt = Date.now(); }
+    if (m.t === 'in' && typeof m.d === 'string') {
+      t.pty.write(m.d);
+      t.inputAt = Date.now();
+      if (m.d === '\x1b') t.escAt = t.inputAt;   // a bare Esc (not an arrow key's sequence): it may stop a Claude turn
+    }
     else if (m.t === 'seen') { if (t.agent && t.agent.state === 'done') setAgent(t, 'idle'); }
     else if (m.t === 'space') {   // a combine moved this pane: same rules as the connect parameters
       const v = termSpaceParams(new URLSearchParams({ space: typeof m.space === 'string' ? m.space : '', spaceName: typeof m.spaceName === 'string' ? m.spaceName : '' }));
