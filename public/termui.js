@@ -745,7 +745,10 @@ function createTermWorkspace(root, opts = {}) {
   }
   // agents +: the default agent in the active space (a plain terminal with no agent set). With no space here, a new one.
   function newAgent() {
-    return newIn(W.store.active, agentCommand() || undefined) || newSpace({ run: agentCommand() || undefined });
+    const run = agentCommand() || undefined;
+    const key = W.store.active;
+    // A new space only when the active space has no pane here; at the cap, newIn's create() says so once.
+    return key && W.sessions.some((x) => x.key === key) ? newIn(key, run) : newSpace({ run });
   }
   // A new pane in a space held here (its focused pane's folder, card and space id), running `run` if given; null
   // when the space has no pane here. The space menus' New agent here / New terminal here.

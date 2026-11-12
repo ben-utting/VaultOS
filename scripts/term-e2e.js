@@ -877,6 +877,12 @@ SCEN['S12-cap'] = async () => {
   check('S12-cap create() returns null and adds no pane', r === null && n2.s === n.s && n2.panes === n.panes && n.s === 12, { r, n, n2 });
   const e = await ev(p, () => window.__ev);
   check('S12-cap a cap event is emitted', Array.isArray(e) && e.some((x) => x.kind === 'cap'), e);
+  // agents + at the cap: one cap event, not a second try as a new space (final review, round 2).
+  const before = await ev(p, () => window.__ev.filter((x) => x.kind === 'cap').length);
+  await ev(p, () => { TW.newAgent(); });
+  await sleep(500);
+  const after = await ev(p, () => window.__ev.filter((x) => x.kind === 'cap').length);
+  check('S12-cap agents + at the cap emits one cap event', after - before === 1, { before, after });
   await shot(p, 's12-cap');
   await p.close();
 };
