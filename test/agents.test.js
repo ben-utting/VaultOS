@@ -254,3 +254,63 @@ test('detectAgent: a package manager installing an agent is not the agent; one r
 test('detectAgent: an agent installed under a path with a space is still found by name', () => {
   assert.equal(A.detectAgent(['/opt/my tools/claude'], A.agentProfiles({})), 'claude');
 });
+
+// Round 2 (spec R2.4): VaultOS installs Cursor's hooks into ~/.cursor/hooks.json, keeping everything else.
+const cursorFile = (h) => path.join(h, '.cursor', 'hooks.json');
+const KNOWN_CURSOR = ['sessionStart', 'beforeSubmitPrompt', 'afterAgentThought', 'preToolUse', 'beforeShellExecution', 'afterShellExecution', 'postToolUse', 'stop', 'sessionEnd'];
+
+test('installCursorHook: a fresh home gets the nine events, the script and its guard', async () => {
+  const h = tmpHome();
+  assert.equal(await A.installCursorHook(h, HOOK_SRC), true);
+  const j = JSON.parse(fs.readFileSync(cursorFile(h), 'utf8'));
+  assert.equal(j.version, 1);
+  assert.deepEqual(Object.keys(j.hooks).sort(), [...KNOWN_CURSOR].sort());
+  assert.deepEqual(A.CURSOR_HOOK_EVENTS.slice().sort(), [...KNOWN_CURSOR].sort());
+  const sh = path.join(h, '.cursor', 'hooks', 'vaultos-state.sh');
+  for (const ev of KNOWN_CURSOR) assert.deepEqual(j.hooks[ev], [{ command: sh }], ev);
+  assert.equal(fs.readFileSync(path.join(h, '.cursor', 'hooks', 'vaultos-state.js'), 'utf8'), fs.readFileSync(HOOK_SRC, 'utf8'));
+  const guard = fs.readFileSync(sh, 'utf8');
+  assert.match(guard, /^#!\/bin\/sh/);
+  assert.match(guard, /VAULTOS_TERM_ID/);
+  assert.ok(fs.statSync(sh).mode & 0o111, 'the guard is executable');
+});
+
+test('installCursorHook: a second call changes nothing', async () => {
+  const h = tmpHome();
+  await A.installCursorHook(h, HOOK_SRC);
+  const before = fs.readFileSync(cursorFile(h), 'utf8');
+  assert.equal(await A.installCursorHook(h, HOOK_SRC), false);
+  assert.equal(fs.readFileSync(cursorFile(h), 'utf8'), before);
+});
+
+test('installCursorHook: your own hooks and keys stay, ours are added after', async () => {
+  const h = tmpHome();
+  fs.mkdirSync(path.join(h, '.cursor'));
+  fs.writeFileSync(cursorFile(h), JSON.stringify({ version: 1, hooks: { stop: [{ command: 'echo mine' }], beforeReadFile: [{ command: 'x' }] }, other: 1 }));
+  assert.equal(await A.installCursorHook(h, HOOK_SRC), true);
+  const j = JSON.parse(fs.readFileSync(cursorFile(h), 'utf8'));
+  assert.equal(j.other, 1);
+  assert.deepEqual(j.hooks.beforeReadFile, [{ command: 'x' }]);
+  assert.equal(j.hooks.stop[0].command, 'echo mine');
+  assert.match(j.hooks.stop[1].command, /vaultos-state\.sh$/);
+  for (const k of Object.keys(j.hooks)) assert.ok(KNOWN_CURSOR.includes(k) || k === 'beforeReadFile', k);
+});
+
+test('installCursorHook: a file that is not valid JSON, or whose hooks is not an object, is left alone', async () => {
+  for (const text of ['{ not json', JSON.stringify({ version: 1, hooks: [] })]) {
+    const h = tmpHome();
+    fs.mkdirSync(path.join(h, '.cursor'));
+    fs.writeFileSync(cursorFile(h), text);
+    assert.equal(await A.installCursorHook(h, HOOK_SRC), false, text);
+    assert.equal(fs.readFileSync(cursorFile(h), 'utf8'), text);
+  }
+});
+
+test('the Cursor guard is silent outside a VaultOS terminal', async () => {
+  const h = tmpHome();
+  await A.installCursorHook(h, HOOK_SRC);
+  const { spawnSync } = require('node:child_process');
+  const r = spawnSync(path.join(h, '.cursor', 'hooks', 'vaultos-state.sh'), [], { input: '{}', env: { PATH: process.env.PATH }, encoding: 'utf8' });
+  assert.equal(r.status, 0);
+  assert.equal(r.stdout, '');
+});

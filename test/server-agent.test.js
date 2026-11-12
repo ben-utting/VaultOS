@@ -184,3 +184,18 @@ test('making a built-in the default keeps the saved Other agent, and Other can b
   r = await call(s.base, 'GET', '/api/agents', { cookie: s.cookie });
   assert.equal(r.body.default, 'custom');
 });
+
+// Round 2: with Cursor installed, VaultOS puts its hooks in ~/.cursor/hooks.json; without it, ~/.cursor is never made.
+test('choosing cursor installs Cursor\'s hooks when Cursor is installed', async (t) => {
+  const s = await ready(t, { bins: ['claude', 'agent'] });
+  await call(s.base, 'POST', '/api/settings/agent', { cookie: s.cookie, body: { profile: 'cursor' } });
+  const j = JSON.parse(fs.readFileSync(path.join(s.home, '.cursor', 'hooks.json'), 'utf8'));
+  assert.equal(Object.keys(j.hooks).length, 9);
+  assert.match(j.hooks.stop[0].command, /vaultos-state\.sh$/);
+});
+
+test('without Cursor installed, no ~/.cursor is made', async (t) => {
+  const s = await ready(t, { bins: ['claude'] });
+  await call(s.base, 'POST', '/api/settings/agent', { cookie: s.cookie, body: { profile: 'claude' } });
+  assert.equal(fs.existsSync(path.join(s.home, '.cursor')), false);
+});

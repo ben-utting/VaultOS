@@ -43,7 +43,7 @@ const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup')
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
-const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
+const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, installCursorHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
 const { foreground, hookState, noteOutput, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
@@ -1455,6 +1455,12 @@ async function ensureClaudeHook() {
   if (!(await isInstalled(PROFILES.claude))) return false;
   return installClaudeHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'), path.join(ROOT, 'hooks', 'vault-recall.js'));
 }
+// Cursor reports its state through its own hooks (~/.cursor/hooks.json, spec 2026-11-12 R2.4): installed whenever
+// the Cursor CLI is, whichever agent is the default, like Claude's.
+async function ensureCursorHook() {
+  if (!(await isInstalled(PROFILES.cursor))) return false;
+  return installCursorHook(os.homedir(), path.join(ROOT, 'hooks', 'vaultos-state.js'));
+}
 // Every agent for the picker: the eight built-ins, then a saved custom agent, each with a live installed
 // check (run side by side), and which one is the default.
 async function agentsList() {
@@ -1473,6 +1479,7 @@ async function agentsList() {
 app.get('/api/agents', settingsGuard, async (req, res) => {
   try {
     try { await ensureClaudeHook(); } catch (err) { console.error('claude hook install failed:', err && err.message); }
+    try { await ensureCursorHook(); } catch (err) { console.error('cursor hook install failed:', err && err.message); }
     // A newly installed agent gets the connectors' entries; the answer does not wait for it.
     connectors.sync().catch((err) => console.error('connectors sync failed:', err && err.message));
     res.json(await agentsList());
@@ -1585,6 +1592,7 @@ app.post('/api/settings/agent', settingsGuard, async (req, res) => {
         console.error('claude hook install failed:', err && err.message);
         hookError = 'Could not install the Claude status hook';
       }
+      try { await ensureCursorHook(); } catch (err) { console.error('cursor hook install failed:', err && err.message); }
       return { ...(await agentStatus()), ...(hookError ? { hookError } : {}) };
     }));
   } catch (err) {
@@ -3518,6 +3526,11 @@ async function boot() {
     if (await ensureClaudeHook()) console.log('claude hook installed');
   } catch (err) {
     console.error('claude hook install failed:', err.message);
+  }
+  try {   // and Cursor's, on its own: a box may have only Cursor
+    if (await ensureCursorHook()) console.log('cursor hook installed');
+  } catch (err) {
+    console.error('cursor hook install failed:', err && err.message);
   }
   const svc = todayService();
   if (svc) svc.boot().catch((err) => console.error('Today boot failed:', err.message));
