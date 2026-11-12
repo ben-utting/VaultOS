@@ -10,7 +10,8 @@
 //
 //   model = { mode: 'side'|'rail', brand, spaces: Space[], agents: Row[], activeKey, focusedId, agentReady, now }
 //   (now: the server's clock, for each agent's age; the workspace redraws once a minute so ages move on)
-//   ctx   = { onSpace(key), onAgent(id), onNewSpace(), onNewAgent(), onMenu(anchorEl), onRenameSpace(key), onToggle() }
+//   ctx   = { onSpace(key), onAgent(id), onNewSpace(), onNewAgent(), onMenu(anchorEl), onToggle(),
+//             onAgentMenu(id, {x, y}), onSpaceMenu(key, {x, y}) }   (right-click, or the context-menu key, on a row)
 //
 // Two +s: beside "spaces" a new space; beside "agents" the default agent in the active space. The rail lists
 // spaces only, so its one + is a new space. The first class names the button (put() refocuses by it).
@@ -121,10 +122,15 @@ const createTermSide = (() => {
       else if (t.classList.contains('tw-side-toggle')) ctx.onToggle();
     });
     el.addEventListener('contextmenu', (e) => {
-      const row = e.target.closest('.tw-sp-row');
-      if (!row) return;
+      const ag = e.target.closest('.tw-ag-row');
+      const sp = e.target.closest('.tw-sp-row');
+      if (!ag && !sp) return;
       e.preventDefault();
-      ctx.onRenameSpace(row.dataset.key);
+      // The context-menu key fires with no pointer position: open it at the row instead.
+      const r = (ag || sp).getBoundingClientRect();
+      const at = e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : { x: r.left + 12, y: r.bottom };
+      if (ag) ctx.onAgentMenu(ag.dataset.id, at);
+      else ctx.onSpaceMenu(sp.dataset.key, at);
     });
 
     return {

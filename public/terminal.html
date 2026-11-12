@@ -60,6 +60,25 @@
         if (chan) chan.postMessage({ open: rel });
         try { if (window.opener) window.opener.focus(); } catch (e) { /* best effort */ }
       },
+      // The row menus: a folder or a card opens in the main VaultOS window; a space goes back to the dock.
+      onOpenFolder: (rel) => {
+        if (chan) chan.postMessage({ openFolder: rel });
+        try { if (window.opener) window.opener.focus(); } catch (e) { /* best effort */ }
+      },
+      onOpenTask: (p) => {
+        if (chan) chan.postMessage({ openTask: p });
+        try { if (window.opener) window.opener.focus(); } catch (e) { /* best effort */ }
+      },
+      onMoveSpace: (key) => {
+        const metas = TW.popSpace(key);
+        if (!metas.length) return;
+        try {
+          const prev = JSON.parse(localStorage.getItem('vaultboard.term.returning') || '[]');
+          localStorage.setItem('vaultboard.term.returning', JSON.stringify([...prev.filter((p) => !metas.some((m) => m.id === p.id)), ...metas]));
+        } catch (e) { /* private mode */ }
+        if (chan) chan.postMessage({ returned: metas });
+        if (!TW.sessions().length) window.close();   // the last space went back: nothing left here
+      },
       onChange: (n) => { count = n; retitle(); },
       // The window title is what shows in the taskbar while it's behind others.
       onAgents: (sum) => { alert = sum.blocked ? '⚠ needs you · ' : sum.done ? '✓ finished · ' : ''; retitle(); },

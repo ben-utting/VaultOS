@@ -1086,11 +1086,13 @@ SCEN['S2-side'] = async () => {
   const dim = await ev(p, () => ({ ag: [...document.querySelectorAll('.tw-side .tw-ag-row.dim')].map((r) => r.title), sp: [...document.querySelectorAll('.tw-side .tw-sp-row.dim')].map((r) => r.title) }));
   check('S2-side a detached agent row is dim with a "detached" tooltip', !dim.error && dim.ag.length === 1 && /detached|elsewhere/.test(dim.ag[0]), dim);
   check('S2-side a detached space row is dim with a tooltip', !dim.error && dim.sp.length === 1 && /detached|elsewhere/.test(dim.sp[0]), dim);
-  // Right-click renames (prompt answered).
+  // Right-click opens the space's menu (round 2); its Rename… renames (prompt answered).
   p.removeAllListeners('dialog');
   p.on('dialog', (d) => d.accept('Login work'));
-  await ev(p, (k) => document.querySelector(`.tw-side .tw-sp-row[data-key="${k}"]`).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })), `t:${WEB}/task.md`);
-  check('S2-side right-click renames the space', await waitFor(p, (k) => document.querySelector(`.tw-side .tw-sp-row[data-key="${k}"] .tw-sp-name`).textContent === 'Login work', 3000, `t:${WEB}/task.md`));
+  await ev(p, (k) => document.querySelector(`.tw-side .tw-sp-row[data-key="${k}"]`).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 120 })), `t:${WEB}/task.md`);
+  check('S2-side right-click opens the space menu', await waitFor(p, () => !document.querySelector('.tw-menu').hidden && !!document.querySelector('.tw-menu button[data-m="rename-space"]'), 3000));
+  await ev(p, () => document.querySelector('.tw-menu button[data-m="rename-space"]').click());
+  check('S2-side its Rename… renames the space', await waitFor(p, (k) => document.querySelector(`.tw-side .tw-sp-row[data-key="${k}"] .tw-sp-name`).textContent === 'Login work', 3000, `t:${WEB}/task.md`));
   // The footer menu.
   await ev(p, () => localStorage.setItem('vaultboard.term.sound', 'true'));
   await ev(p, () => document.querySelector('.tw-side .tw-side-menu').click());
@@ -1890,6 +1892,20 @@ SCEN.S13 = async () => {
     await sleep(500);
     await p.close();
   }
+  // A fake Cursor reporting through its hooks (round 2): a command asked for, then silence, is needs you.
+  const cp = await page('/terminal.html');
+  await waitFor(cp, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+  const cid = await ev(cp, () => TW.sessions()[0].id);
+  await sleep(800);
+  await typeIn(cp, cid, '(exec -a agent node /app/scripts/term-fake-agent.js --cursor working)\r');
+  const cRow = (re) => (i, r) => { const x = document.querySelector(`.tw-side .tw-ag-row[data-id="${i}"]`); return !!x && /Cursor/.test(x.textContent) && new RegExp(r).test(x.textContent); };
+  check('S13 a Cursor reporting through its hooks reads working', await waitFor(cp, cRow(), 8000, cid, 'working'));
+  await typeIn(cp, cid, 'b');
+  check('S13 Cursor asks to run a command and goes silent: needs you', await waitFor(cp, cRow(), 14000, cid, 'needs you'));
+  await typeIn(cp, cid, 'w');
+  check('S13 Cursor carries on: working again', await waitFor(cp, cRow(), 8000, cid, 'working'));
+  await ev(cp, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+  await cp.close();
   // The card drawer's Go to agent names the agent in that terminal too.
   check('S13 the default agent is Cursor again', (await setDefaultAgent('cursor')) === 200);
   const bp = await page('/');
@@ -1915,6 +1931,83 @@ SCEN.S13 = async () => {
   }) === true);
   await shot(ph, 's13-phone');
   await ph.close();
+};
+
+// S14 (spec R2.6): right-click menus on agent and space rows. Items follow the row (left out when they don't
+// apply), each action does what it says, and a dimmed row offers only what works without its pane here.
+const menuItems = (p) => ev(p, () => [...document.querySelectorAll('.tw-menu:not([hidden]) button[data-m]')].map((b) => b.dataset.m + (b.dataset.to ? ':' + b.dataset.to : '')));
+const pickItem = (p, m) => ev(p, (x) => { const b = [...document.querySelectorAll('.tw-menu:not([hidden]) button[data-m]')].find((y) => y.dataset.m === x); if (!b) return false; b.click(); return true; }, m);
+const agentState = (p, id) => ev(p, (i) => { const s = TW.session(i); return s && s.agent ? s.agent.state : null; }, id);
+SCEN.S14 = async () => {
+  const ctx = await launch();
+  const p = await page('/terminal.html', { context: ctx });
+  p.on('dialog', (d) => d.accept());
+  await waitFor(p, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+  const A = await ev(p, () => TW.sessions()[0].id);
+  await ev(p, () => TW.newSpace());
+  await waitFor(p, () => TW.sessions().length === 2, 10000);
+  const B = await ev(p, (a) => TW.sessions().find((s) => s.id !== a).id, A);
+  await sleep(800);
+  await typeIn(p, A, '(exec -a claude node /app/scripts/term-fake-agent.js working)\r');
+  await waitFor(p, (a) => { const s = TW.session(a); return !!s && !!s.agent && s.agent.state === 'working'; }, 8000, A);
+  const keyA = await ev(p, (a) => TW.session(a).key, A);
+  const keyB = await ev(p, (b) => TW.session(b).key, B);
+  await ev(p, (a) => TW.openRowMenu('agent', a, { x: 60, y: 60 }), A);
+  let items = await menuItems(p);
+  check('S14 a working agent: Go to, Stop, folder, Rename, Combine, End', JSON.stringify(items) === JSON.stringify(['goto', 'stop', 'folder', 'rename', `combine:${keyB}`, 'end']), items);
+  await shot(p, 's14-menu-dark');
+  check('S14 Stop sends Esc to Claude, which goes idle', (await pickItem(p, 'stop')) === true && await waitFor(p, (a) => { const s = TW.session(a); return !!s.agent && s.agent.state === 'idle'; }, 6000, A), await agentState(p, A));
+  await typeIn(p, A, 'd');
+  await waitFor(p, (a) => { const s = TW.session(a); return !!s.agent && s.agent.state === 'done'; }, 6000, A);
+  await ev(p, (a) => TW.openRowMenu('agent', a, { x: 60, y: 60 }), A);
+  items = await menuItems(p);
+  check('S14 a done agent offers Mark as seen and not Stop', Array.isArray(items) && items.includes('seen') && !items.includes('stop'), items);
+  check('S14 Mark as seen: idle', (await pickItem(p, 'seen')) === true && await waitFor(p, (a) => TW.session(a).agent.state === 'idle', 6000, A), await agentState(p, A));
+  await ev(p, (k) => TW.openRowMenu('space', k, { x: 60, y: 60 }), keyB);
+  items = await menuItems(p);
+  check('S14 a space: New agent, New terminal, Rename, folder, Move, Combine, Close', JSON.stringify(items) === JSON.stringify(['new-agent', 'new-term', 'rename-space', 'folder', 'move', `combine:${keyA}`, 'close-space']), items);
+  check('S14 New terminal here adds a pane to that space', (await pickItem(p, 'new-term')) === true && await waitFor(p, (k) => TW.sessions().filter((s) => s.key === k).length === 2, 8000, keyB));
+  const C = await ev(p, (k, b) => (TW.sessions().find((s) => s.key === k && s.id !== b) || {}).id, keyB, B);
+  await sleep(800);
+  await typeIn(p, C, '(exec -a claude node /app/scripts/term-fake-agent.js working)\r');
+  await waitFor(p, (c) => { const s = TW.session(c); return !!s && !!s.agent; }, 8000, C);
+  await ev(p, (c) => TW.openRowMenu('agent', c, { x: 60, y: 60 }), C);
+  check('S14 an agent sharing its space offers Move to its own space', (await menuItems(p)).includes('own-space'));
+  await pickItem(p, 'own-space');
+  const own = await waitFor(p, (c, k) => TW.session(c).key !== k && TW.session(c).key.startsWith('s:'), 6000, C, keyB);
+  const ownKey = await ev(p, (c) => TW.session(c).key, C);
+  const ownName = await ev(p, (k) => (TW.spaces().find((x) => x.key === k) || {}).name, ownKey);
+  check('S14 Move to its own space: a new "Space N" holds it', own && /^Space \d+$/.test(ownName || ''), { ownKey, ownName });
+  await ev(p, (k) => TW.openRowMenu('space', k, { x: 60, y: 60 }), ownKey);
+  await pickItem(p, 'combine');
+  check('S14 Combine into: the pane joins that space', await waitFor(p, (c, k) => TW.session(c).key === k, 6000, C, keyA), await ev(p, (c) => TW.session(c).key, C));
+  await ev(p, (k) => TW.openRowMenu('space', k, { x: 60, y: 60 }), keyB);
+  await pickItem(p, 'close-space');
+  check('S14 Close the space ends its panes (after one confirm)', await waitFor(p, (k) => !TW.sessions().some((s) => s.key === k), 6000, keyB));
+  // A dimmed row: another tab takes A.
+  const p2 = await page('/terminal.html', { context: ctx });
+  await waitFor(p2, () => typeof TW !== 'undefined' && TW.sessions().length === 1, 10000);
+  await ev(p2, (a) => { TW.bring({ id: a }); }, A);
+  await waitFor(p, (a) => !TW.session(a) && !!document.querySelector(`.tw-side .tw-ag-row[data-id="${a}"]`), 10000, A);
+  await ev(p, (a) => TW.openRowMenu('agent', a, { x: 60, y: 60 }), A);
+  items = await menuItems(p);
+  check('S14 a dimmed agent row offers only Go to and the folder', JSON.stringify(items) === JSON.stringify(['goto', 'folder']), items);
+  await ev(p, () => document.querySelector('.tw-menu').hidden = true);
+  await ev(p2, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+  await ev(p, () => { for (const s of [...TW.sessions()]) TW.remove(s.id, { kill: true }); });
+  await p2.close();
+  await p.close();
+  // The dock: a card's space opens its card.
+  const d = await page('/', { context: ctx });
+  await dock(d);
+  const T = await openTerm(d, { cwd: WEB });
+  await waitFor(d, (t) => !!TW.session(t) && TW.session(t).key.startsWith('t:'), 8000, T);
+  const tk = await ev(d, (t) => TW.session(t).key, T);
+  await ev(d, (k) => TW.openRowMenu('space', k, { x: 60, y: 60 }), tk);
+  check('S14 a card\'s space offers Open its card', (await menuItems(d)).includes('card'));
+  await pickItem(d, 'card');
+  check('S14 Open its card opens the drawer on that card', await waitFor(d, (w) => typeof DRAWER_TASK !== 'undefined' && !!DRAWER_TASK && DRAWER_TASK.path === `${w}/task.md`, 6000, WEB));
+  await d.close();
 };
 
 // S9: a + for spaces and a + for agents (2026-11-11). spaces + gives Space 2, Space 3, each its own space; agents +

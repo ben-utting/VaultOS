@@ -301,6 +301,12 @@ async function fxToggleDir(p, force) {
   }
 }
 
+// A folder from a terminal row's menu: Files mode, that folder opened and in view ('' = the vault root).
+function fxShowFolder(rel) {
+  if (STATE.mode !== 'files') setMode('files');
+  if (rel) fxReveal(rel, { self: true }).catch(() => {});
+}
+
 // Open every ancestor folder of a path (and the path itself, for a folder),
 // then scroll its row into view.
 async function fxReveal(p, { self = false } = {}) {
@@ -1276,6 +1282,15 @@ const TW = createTermWorkspace($('term-area'), {
     + `<button id="term-min" class="ghost" type="button" title="Minimise (the shells keep running) — Ctrl+\`" aria-label="Minimise terminals"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>`
     + `<button id="term-close" class="ghost" type="button" title="Close — ends every terminal session" aria-label="Close terminals"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>`,
   onOpenPath: (rel) => fxOpen(rel, { pin: true, reveal: true }),
+  // The row menus (right-click an agent or a space): a folder in Files, a card's drawer, a space to the window.
+  onOpenFolder: (rel) => fxShowFolder(rel),
+  onOpenTask: (p) => openTask(p),
+  onMoveSpace: (key) => {
+    const w = openTermWindow();
+    if (!w) return;
+    handToWindow(w, TW.popSpace(key));
+    if (!TW.sessions().length) dockShow(false);
+  },
   onChange: (n) => { $('termbtn').dataset.n = n || ''; },
   beforeNew: () => showTerminals(),
   // agents +: the default agent, started plainly (no check-in prompt; that's the card's Start agent).
@@ -1477,6 +1492,8 @@ try {
   new BroadcastChannel('vaultos-workbench').onmessage = (e) => {
     if (!e.data) return;
     if (e.data.open) fxOpen(e.data.open, { pin: true, reveal: true });
+    if (typeof e.data.openFolder === 'string') fxShowFolder(e.data.openFolder);
+    if (typeof e.data.openTask === 'string' && e.data.openTask.endsWith('/task.md')) openTask(e.data.openTask);
     if (e.data.returned) adoptReturned(e.data.returned);   // (presence messages are termui's)
   };
 } catch { /* no BroadcastChannel: returned sessions are picked up on next load instead */ }

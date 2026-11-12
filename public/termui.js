@@ -59,6 +59,9 @@ const twNewId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.ran
 //   opts.onChange(count)   sessions were added or removed
 //   opts.beforeNew()       called before a new session is created (the dock uses it to show itself)
 //   opts.agentCommand()    the default agent's plain start command for agents + (null: none set)
+//   opts.onOpenFolder(rel) a row menu's "Open its folder in Files" ('' = the vault root)
+//   opts.onOpenTask(path)  a row menu's "Open its card" (a vault-relative …/task.md)
+//   opts.onMoveSpace(key)  a space menu's "Move to the Terminals window" (dock) / "Move back to the dock" (window)
 //   opts.isActive()        whether Alt+1…9 / Ctrl+Shift+` should act on this workspace right now
 //                          (also: whether the focused terminal counts as looked at)
 //   opts.onAgents(sum)     an agent's state changed; sum = { working, blocked, done, idle } counts
@@ -136,6 +139,7 @@ function createTermWorkspace(root, opts = {}) {
     menuFor: null,         // the session whose ⋯ menu is open
     footAnchor: null,      // the sidebar button the footer menu opened from
     menuShut: null,        // { id, t }: the menu that a press on its own ⋯ just closed
+    rowMenu: null,         // { kind: 'agent'|'space', target }: what an open row menu (menuFor ROW) is for
     clockOffset: 0,        // the server's clock less ours (from the list's now), for agent ages
   };
   W.pend = { active: W.store.active, focus: tabGet(K.focused, null) };
@@ -205,7 +209,8 @@ function createTermWorkspace(root, opts = {}) {
     onNewSpace: () => newSpace(),
     onNewAgent: () => newAgent(),
     onMenu: (anchor) => openFootMenu(anchor),
-    onRenameSpace: (key) => renameSpacePrompt(key),
+    onAgentMenu: (id, at) => openRowMenu('agent', id, at),
+    onSpaceMenu: (key, at) => openRowMenu('space', key, at),
     onToggle: () => toggleSide(),
   });
   function toggleSide() { sideMode = sideMode === 'side' ? 'rail' : 'side'; twSet(K.side, sideMode); side.setMode(sideMode); }
@@ -740,11 +745,43 @@ function createTermWorkspace(root, opts = {}) {
   }
   // agents +: the default agent in the active space (a plain terminal with no agent set). With no space here, a new one.
   function newAgent() {
-    const run = agentCommand() || undefined;
-    const key = W.store.active;
+    return newIn(W.store.active, agentCommand() || undefined) || newSpace({ run: agentCommand() || undefined });
+  }
+  // A new pane in a space held here (its focused pane's folder, card and space id), running `run` if given; null
+  // when the space has no pane here. The space menus' New agent here / New terminal here.
+  function newIn(key, run) {
     const f = key && W.sessions.some((x) => x.key === key) ? session(focusOf(key)) : null;
-    if (!f) return newSpace({ run });
+    if (!f) return null;
     return create({ cwd: f.cwd, task: f.task, space: f.space, spaceName: f.spaceName, into: f.key, run });
+  }
+
+  // A pane leaves a space that has others for a new space of its own, "Space N" (an agent row's menu).
+  function moveToOwnSpace(id) {
+    const s = session(id);
+    if (!s || heldIn(s.key).length < 2) return;
+    const space = twNewId().replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+    const toKey = `s:${space}`;
+    const name = TermTree.nextSpaceName(spaces().map((x) => x.name));
+    const box = paneBox();
+    W.store = TermTree.rekey(W.store, id, s.key, toKey, { w: box.w, h: box.h }).store;
+    s.key = toKey;
+    s.joined = true;
+    s.space = space;
+    s.spaceName = name;
+    if (s.handle && s.handle.sendSpace) s.handle.sendSpace();
+    picked();
+    focusSession(id);
+    heldChanged();
+  }
+
+  // Every pane of a space ends, after one confirm (a space row's menu).
+  function closeSpace(key) {
+    const ids = heldIn(key);
+    if (!ids.length) return;
+    const sp = spaces().find((x) => x.key === key);
+    const n = ids.length;
+    if (!confirm(`Close ${sp ? `"${sp.name}"` : 'this space'}? It ends ${n === 1 ? 'its terminal' : `its ${n} terminals`}; anything running in them is stopped.`)) return;
+    for (const id of ids) remove(id);
   }
 
   function split(dir) {
@@ -914,13 +951,95 @@ function createTermWorkspace(root, opts = {}) {
         .map((sp) => `<button type="button" role="menuitem" data-m="combine" data-to="${twEsc(sp.key)}">${TW_ICONS.splitRight}<span>Combine into ${twEsc(sp.name)}</span></button>`).join('')
       + item('close', TW_ICONS.close, 'Close');
     W.menuFor = id;
+    showMenuAt(x, y, alignRight);
+  }
+  // Shows the filled menu at a point, kept on screen (flipped left/up when it would run off the edge).
+  function showMenuAt(x, y, alignRight = false) {
     menuEl.hidden = false;
-    // Keep it on screen: flip left/up when it would run off the edge.
     const r = menuEl.getBoundingClientRect();
     const left = alignRight ? x - r.width : x;
     menuEl.style.left = Math.max(4, Math.min(left, window.innerWidth - r.width - 4)) + 'px';
     menuEl.style.top = Math.max(4, y + r.height > window.innerHeight - 4 ? y - r.height : y) + 'px';
     menuEl.querySelector('button:not(:disabled)').focus();
+  }
+
+  // ---------- Row menus (right-click an agent or a space in the sidebar, spec 2026-11-12 R2.6) ----------
+  // Items that don't apply are left out. An agent or space held by another page, or detached, offers only what
+  // works without its pane here (Go to, its folder, its card); a click on the row still brings it here.
+  const ROW = '\u0000row';
+  const rowItem = (m, text, to) => `<button type="button" role="menuitem" data-m="${m}"${to ? ` data-to="${twEsc(to)}"` : ''}><span>${twEsc(text)}</span></button>`;
+  const combineItems = (fromKey) => spaces().filter((sp) => sp.key !== fromKey && heldIn(sp.key).length).slice(0, 8)
+    .map((sp) => rowItem('combine', `Combine into ${sp.name}`, sp.key)).join('');
+  const taskOfKey = (key) => (key.startsWith('t:') ? key.slice(2) : '');
+  function spaceFolder(key) {
+    const r = rows().find((x) => x.key === key);
+    if (r) return r.cwd || '';
+    return key.startsWith('d:') ? key.slice(2) : '';
+  }
+  function agentMenu(id) {
+    const r = rows().find((x) => x.id === id);
+    if (!r || !r.agent) return '';
+    const s = session(id);
+    let h = rowItem('goto', 'Go to it');
+    if (s && r.agent.state === 'working') h += rowItem('stop', "Stop what it's doing");
+    if (s && r.agent.state === 'done') h += rowItem('seen', 'Mark as seen');
+    if (opts.onOpenFolder) h += rowItem('folder', 'Open its folder in Files');
+    if (r.task && opts.onOpenTask) h += rowItem('card', 'Open its card');
+    if (s) {
+      h += rowItem('rename', 'Rename…');
+      if (heldIn(s.key).length > 1) h += rowItem('own-space', 'Move to its own space');
+      h += combineItems(s.key) + rowItem('end', 'End it');
+    }
+    return h;
+  }
+  function spaceMenu(key) {
+    if (!spaces().some((x) => x.key === key)) return '';
+    const here = heldIn(key).length > 0;
+    let h = '';
+    if (here) h += rowItem('new-agent', 'New agent here') + rowItem('new-term', 'New terminal here');
+    h += rowItem('rename-space', 'Rename…');
+    if (opts.onOpenFolder) h += rowItem('folder', 'Open its folder in Files');
+    if (taskOfKey(key) && opts.onOpenTask) h += rowItem('card', 'Open its card');
+    if (here) {
+      if (opts.onMoveSpace) h += rowItem('move', HOST === 'window' ? 'Move back to the dock' : 'Move to the Terminals window');
+      h += combineItems(key) + rowItem('close-space', 'Close the space');
+    }
+    return h;
+  }
+  function openRowMenu(kind, target, { x, y } = {}) {
+    const html = kind === 'agent' ? agentMenu(target) : spaceMenu(target);
+    if (!html) return;
+    menuEl.innerHTML = html;
+    W.menuFor = ROW;
+    W.rowMenu = { kind, target };
+    showMenuAt(x || 0, y || 0);
+  }
+  function rowAction({ kind, target }, m, b) {
+    if (kind === 'agent') {
+      const id = target;
+      const s = session(id);
+      const r = rows().find((x) => x.id === id) || {};
+      if (m === 'goto') goTo(id);
+      // Claude stops a turn on Esc; Cursor (its screen says "ctrl+c to stop") and the rest on Ctrl+C.
+      else if (m === 'stop' && s) s.handle.type(r.agent && r.agent.kind === 'claude' ? '\x1b' : '\x03');
+      else if (m === 'seen' && s) s.handle.seen();
+      else if (m === 'folder') opts.onOpenFolder(r.cwd || '');
+      else if (m === 'card' && r.task) opts.onOpenTask(r.task);
+      else if (m === 'rename') renamePane(id);
+      else if (m === 'own-space') moveToOwnSpace(id);
+      else if (m === 'combine' && s) combineSpace(s.key, b.dataset.to);
+      else if (m === 'end') closePane(id);
+      return;
+    }
+    const key = target;
+    if (m === 'new-agent') newIn(key, agentCommand() || undefined);
+    else if (m === 'new-term') newIn(key);
+    else if (m === 'rename-space') renameSpacePrompt(key);
+    else if (m === 'folder') opts.onOpenFolder(spaceFolder(key));
+    else if (m === 'card') opts.onOpenTask(taskOfKey(key));
+    else if (m === 'move') opts.onMoveSpace(key);
+    else if (m === 'combine') combineSpace(key, b.dataset.to);
+    else if (m === 'close-space') closeSpace(key);
   }
   // The sidebar's footer menu: the same .tw-menu, opened above its button.
   const SOUND_KEY = 'vaultboard.term.sound';
@@ -973,6 +1092,7 @@ function createTermWorkspace(root, opts = {}) {
     if (!b || !id) return;
     closeMenu(false);
     const m = b.dataset.m;
+    if (id === ROW) { rowAction(W.rowMenu, m, b); return; }
     if (id === FOOT) { if (m === 'goto') openPicker(); else if (m === 'keys') termKeys.openSheet(); else if (m === 'sound') twSet(SOUND_KEY, twGet(SOUND_KEY, false) !== true); return; }
     if (m === 'rename') renamePane(id);
     else if (m === 'split-right' || m === 'split-down') create({ split: m.slice(6), target: id });
@@ -1501,6 +1621,7 @@ function createTermWorkspace(root, opts = {}) {
     newSpace,
     newAgent,
     combineSpace,
+    openRowMenu,
     toggleZoom,
     focusDir,
     // The server list, merged
