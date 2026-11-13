@@ -345,3 +345,10 @@ test('yt-dlp gets a small environment: no keys or secrets from the server', asyn
     assert.match(r.stdout, /^PATH=/m);
   } finally { delete process.env.OPENROUTER_API_KEY; }
 });
+
+test('yt-dlp trusts the extra root certificates the entrypoint bundled (a work proxy that inspects HTTPS)', () => {
+  const env = ytdlpEnv({ PATH: '/usr/bin', HOME: '/home/x', SSL_CERT_FILE: '/tmp/vaultos-ca-bundle.pem', NODE_EXTRA_CA_CERTS: '/tmp/x.pem', GITHUB_TOKEN: 'ghp_secret' });
+  assert.equal(env.SSL_CERT_FILE, '/tmp/vaultos-ca-bundle.pem');
+  assert.deepEqual(Object.keys(env).sort(), ['HOME', 'LANG', 'PATH', 'SSL_CERT_FILE']);
+  assert.equal(ytdlpEnv({ PATH: '/usr/bin' }).SSL_CERT_FILE, undefined, 'not set when there is no bundle');
+});
