@@ -3894,6 +3894,17 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .ln-tabs.hidden { display: none; }
 .ln-term { position: relative; flex: 1; min-height: 0; }
 .ln-term.hidden, .ln-doc.hidden { display: none; }
+.ln-term-host { position: absolute; inset: 0; padding: 6px 0 0 8px; background: var(--term-bg, var(--bg)); }
+.ln-start, .ln-moved {
+  position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+}
+.ln-start.hidden, .ln-moved.hidden { display: none; }
+.ln-start-card { max-width: 420px; padding: 22px 24px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.ln-start-card h3 { margin: 0 0 6px; font-size: var(--t-lg); }
+.ln-start-btns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.ln-moved { flex-direction: column; gap: 10px; color: var(--muted); font-size: var(--t-sm); }
+.ln-moved p { margin: 0; }
 .ln-doc { flex: 1; min-height: 0; overflow-y: auto; }
 .ln-docbar {
   position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 12px; padding: 6px 14px;

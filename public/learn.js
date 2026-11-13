@@ -60,6 +60,7 @@ const Learn = (() => {
     if (L.open && !current()) {
       // The open notebook went away (renamed or deleted outside VaultOS): back to the list.
       if (L.picked) toast(`"${base(L.open)}" is gone`);
+      letGo();
       L.open = null;
       L.picked = false;
       put(K.notebook, null);
@@ -257,10 +258,145 @@ const Learn = (() => {
     if (!keepScroll) doc.scrollTop = 0;
   }
 
-  // The terminal pane. Filled in with the notebook's terminal and its start screen.
-  function renderTerminal() {
+  // ---------- The notebook's terminal ----------
+  // One terminal per notebook, found in the server's list by the notebook's space id, so any device reattaches to it.
+  // Learn holds at most one handle, the open notebook's; switching notebook lets go of it (it runs on, detached).
+  // The start screen sits over the pane while no agent runs there: the default agent, then one other installed one.
+  const T = { id: null, nb: null, handle: null, state: null, agent: null, dismissed: false, sawAgent: false, agents: null, list: [], attaching: false };
+  const hasTW = () => typeof TW !== 'undefined';
+  const rowById = (id) => T.list.find((x) => x.id === id) || null;
+  const rowFor = (nb) => (nb ? T.list.find((x) => x.space === nb.space) || null : null);
+  const held = () => !!T.handle && T.state !== 'moved' && T.state !== 'closed';
+  const told = () => { if (hasTW()) TW.localChanged(); };
+
+  function termSkeleton() {
     const el = $('ln-term');
-    if (!el.querySelector('.ln-term-note')) el.innerHTML = '<p class="fx-empty fx-pad ln-term-note">This notebook\'s terminal opens here.</p>';
+    if ($('ln-term-host')) return;
+    el.innerHTML = '<div id="ln-term-host" class="ln-term-host"></div>'
+      + '<div id="ln-start" class="ln-start hidden"></div>'
+      + '<div id="ln-moved" class="ln-moved hidden"><p>This notebook\'s terminal is open in another window.</p>'
+      + '<button type="button" id="ln-bring" class="su-btn su-sm">Bring it here</button></div>'
+      + '<p id="ln-term-off" class="fx-empty fx-pad hidden">Terminals are off on this machine.</p>';
+  }
+
+  function letGo() {
+    if (!T.handle) return;
+    try { T.handle.dispose(); } catch { /* already gone */ }
+    const host = $('ln-term-host');
+    if (host) host.innerHTML = '';
+    Object.assign(T, { id: null, nb: null, handle: null, state: null, agent: null, dismissed: false, sawAgent: false });
+    told();
+  }
+
+  function attach(id, nb, opts = {}) {
+    termSkeleton();
+    letGo();
+    T.id = id;
+    T.nb = nb.path;
+    T.state = 'connecting';
+    // createTerminal reports its first state before it returns; told() then runs the dock's list callbacks, which
+    // come back to syncTerm while T.handle is still unset. The flag stops that attaching a second time.
+    T.attaching = true;
+    try {
+      T.handle = createTerminal($('ln-term-host'), {
+        id, space: nb.space, spaceName: `Learn · ${nb.name}`.slice(0, 40), ...opts,
+        onState: (st) => { T.state = st; told(); overlay(); },
+        onAgent: (ag) => { T.agent = ag; overlay(); },
+        onOpenPath: (rel) => { if (L.open && rel.startsWith(`${L.open}/`)) openFile(rel); else { setMode('files'); fxOpen(rel, { pin: true }); } },
+        onExit: () => overlay(),
+      });
+    } finally { T.attaching = false; }
+    T.handle.onNextInput((d) => { T.dismissed = true; overlay(); return d; });
+    told();
+  }
+
+  // Attach to the open notebook's terminal if the server has one and Learn isn't holding it; let go of another's.
+  function syncTerm() {
+    if (T.attaching) return;
+    const nb = current();
+    if (T.handle && (!nb || T.nb !== nb.path)) letGo();
+    if (!nb || !termOn() || T.handle) return;
+    const row = rowFor(nb);
+    if (row) attach(row.id, nb);
+  }
+
+  function agentRunning() {
+    if (T.agent && T.agent.state && T.agent.state !== 'gone') return true;
+    const row = T.id ? rowById(T.id) : null;
+    return !!(row && (row.agent || row.cmd));
+  }
+
+  function overlay() {
+    if (!$('ln-term-host')) return;
+    const off = !termOn();
+    $('ln-term-off').classList.toggle('hidden', !off);
+    $('ln-moved').classList.toggle('hidden', off || T.state !== 'moved');
+    const running = agentRunning();
+    if (running) T.sawAgent = true;
+    else if (T.sawAgent) { T.sawAgent = false; T.dismissed = false; }   // the agent ended: offer the buttons again
+    const show = !off && T.state !== 'moved' && (!T.handle || (T.state === 'open' && !running && !T.dismissed));
+    const start = $('ln-start');
+    if (show && !start.dataset.ready) paintStart();
+    start.classList.toggle('hidden', !show);
+  }
+
+  function paintStart() {
+    const start = $('ln-start');
+    if (!T.agents) { start.innerHTML = '<p class="fx-empty">Loading…</p>'; return; }
+    const btns = LearnCore.startButtons(T.agents, termOn());
+    start.dataset.ready = '1';
+    start.innerHTML = '<div class="ln-start-card"><h3>Study with an agent</h3>'
+      + '<p class="su-hint">It opens in this notebook\'s folder, answers from your sources, and writes each answer into today\'s study log.</p>'
+      + `<div class="ln-start-btns">${btns.map((b, i) => `<button type="button" class="su-btn${i === 0 ? ' primary' : ''}" data-start="${esc(b.id)}">${esc(b.label)}</button>`).join('')}</div></div>`;
+  }
+
+  async function loadAgents() {
+    try { T.agents = (await api('/api/learn/agents')).agents; } catch { T.agents = []; }
+    const start = $('ln-start');
+    if (start) { delete start.dataset.ready; overlay(); }
+  }
+
+  function startAgent(id) {
+    const nb = current();
+    if (!nb) return;
+    const btn = LearnCore.startButtons(T.agents, termOn()).find((b) => b.id === id);
+    if (!btn) return;
+    T.dismissed = true;
+    if (T.handle && T.state === 'open') {
+      if (btn.command) T.handle.type(`${btn.command}\r`);
+    } else {
+      const fresh = `learn-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+      attach(fresh, nb, { cwd: nb.path, ...(btn.command ? { run: btn.command } : {}) });
+      T.dismissed = true;
+    }
+    overlay();
+    setTimeout(() => { if (T.handle) { T.handle.fit(); T.handle.focus(); } }, 50);
+  }
+
+  function renderTerminal() {
+    termSkeleton();
+    syncTerm();
+    overlay();
+    if (T.handle) requestAnimationFrame(() => { if (T.handle) T.handle.fit(); });
+  }
+
+  // A terminal of a Learn notebook (held here or not): the dock sends it to Learn instead of taking it.
+  function holds(id) {
+    if (T.id === id) return true;
+    const row = rowById(id);
+    return !!row && typeof row.space === 'string' && row.space.startsWith('learn-') && L.notebooks.some((n) => n.space === row.space);
+  }
+  async function goTo(id) {
+    const row = rowById(id);
+    const nb = row ? L.notebooks.find((n) => n.space === row.space) : (T.id === id ? current() : null);
+    if (!nb) return;
+    setMode('learn');
+    if (L.open !== nb.path) await open(nb.path);
+    activate('terminal');
+    if (phone()) setView('study');
+    if (T.handle && T.id === id && T.state !== 'open') { T.handle.reconnect(); told(); }
+    else if (!T.handle) attach(id, nb);
+    setTimeout(() => { if (T.handle) { T.handle.fit(); T.handle.focus(); } }, 50);
   }
 
   function renderStudio() {
@@ -312,6 +448,7 @@ const Learn = (() => {
     L.picked = true;
     put(K.notebook, nb);
     openFolders(nb);
+    letGo();
     render();
     await loadTree();
     render();
@@ -333,6 +470,7 @@ const Learn = (() => {
     renderSide();
     renderTabs();
     renderMain();
+    if (p === 'terminal' && T.handle) setTimeout(() => { if (T.handle) { T.handle.fit(); T.handle.focus(); } }, 30);
   }
 
   function closeTab(p) {
@@ -466,6 +604,7 @@ const Learn = (() => {
   async function show() {
     L.on = true;
     $('count').textContent = '';
+    if (!T.agents) loadAgents();
     render();
     await refresh();
     clearInterval(L.timer);
@@ -478,12 +617,19 @@ const Learn = (() => {
     closeMenu();
   }
 
+  $('ln-term').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-start]');
+    if (b) { startAgent(b.dataset.start); return; }
+    if (e.target.closest('#ln-bring') && T.handle) { T.handle.reconnect(); told(); }
+  });
+  if (hasTW()) TW.onList((list) => { T.list = list || []; if (L.on) { syncTerm(); overlay(); } });
+
   return {
     show, hide, open, openFile,
-    // Terminals held by Learn (the notebook terminal): filled in with the terminal.
-    holds: () => false,
-    heldMap: () => new Map(),
-    goTo: () => {},
+    holds,
+    heldMap: () => (held() ? new Map([[T.id, 'learn']]) : new Map()),
+    goTo,
+    terminal: () => (T.handle ? { id: T.id, handle: T.handle, state: T.state } : null),
   };
 })();
 window.Learn = Learn;

@@ -62,12 +62,14 @@ async function reset(...flags) {
 }
 
 let browser;
+const contexts = [];   // closed after each scenario, so no page from one reconnects its terminal into the next
 async function launch() {
   if (!browser) {
     const puppeteer = (await import(PUPPETEER)).default;
     browser = await puppeteer.launch({ executablePath: CHROME, args: ['--no-sandbox', '--disable-gpu'] });
   }
   const context = await browser.createBrowserContext();
+  contexts.push(context);
   const url = new URL(BASE);
   await context.setCookie(...mintCookie().split('; ').map((kv) => {
     const i = kv.indexOf('=');
@@ -213,6 +215,95 @@ S.L9 = async () => {
   check('L9 no page errors', errors.length === 0, errors);
 };
 
+// The text in Learn's terminal (xterm draws to a canvas, so read its buffer).
+const termText = (p) => ev(p, () => {
+  const t = Learn.terminal();
+  if (!t || !t.handle) return '';
+  const b = t.handle.term.buffer.active;
+  let out = '';
+  for (let y = 0; y < b.length; y++) out += b.getLine(y).translateToString(true) + '\n';
+  return out;
+});
+const learnTerms = async () => (((await api('GET', '/api/term/list')).body || {}).sessions || []).filter((x) => x.space && x.space.startsWith('learn-'));
+
+S.L5 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'study');
+  check('L5 the start screen shows', await waitFor(p, () => !!document.querySelector('#ln-start:not(.hidden)'), 6000));
+  const labels = await ev(p, () => [...document.querySelectorAll('#ln-start [data-start]')].map((b) => b.textContent.trim()));
+  check('L5 two buttons: the default agent, then the other one', JSON.stringify(labels) === JSON.stringify(['Start Claude', 'Start Cursor']), labels);
+  await shot(p, 'L5-start');
+  await tap(p, '#ln-start [data-start="claude"]');
+  check('L5 the agent starts with the Learn kickoff', await waitFor(p, () => {
+    const t = Learn.terminal();
+    if (!t || !t.handle) return false;
+    const b = t.handle.term.buffer.active;
+    for (let y = 0; y < b.length; y++) if (b.getLine(y).translateToString(true).includes('FAKE-claude started with: Tell me which sources')) return true;
+    return false;
+  }, 10000), await termText(p));
+  check('L5 the start screen goes', await waitFor(p, () => !document.querySelector('#ln-start:not(.hidden)'), 3000));
+  const id = await ev(p, () => Learn.terminal().id);
+  const list = await learnTerms();
+  check('L5 the server knows it as the notebook\'s space', list.length === 1 && list[0].id === id && list[0].spaceName === 'Learn · Sample notebook', list);
+  await shot(p, 'L5-running');
+  await sleep(6000);   // a sweep, so the server has seen the agent
+  await p.reload({ waitUntil: 'networkidle2' });
+  await toLearn(p);
+  await pane(p, 'study');
+  const back = await waitFor(p, (i) => { const t = Learn.terminal(); return !!t && t.id === i; }, 8000, id);
+  check('L5 a reload reattaches the same terminal', back,
+    await ev(p, () => ({ t: Learn.terminal() && Learn.terminal().id, list: TW.list().map((x) => [x.id, x.space]), mode: document.body.dataset.mode })));
+  check('L5 only one terminal was made on the page', (await ev(p, () => document.querySelectorAll('#ln-term-host .xterm').length)) === 1);
+  await sleep(4000);
+  check('L5 and no start screen over a running agent', !(await visible(p, '#ln-start')));
+  check('L5 still one terminal for the notebook', (await learnTerms()).length === 1);
+};
+
+S.L6 = async () => {
+  await reset();
+  const a = await page();
+  await toLearn(a);
+  await pane(a, 'study');
+  await waitFor(a, () => !!document.querySelector('#ln-start [data-start="claude"]'), 6000);
+  await tap(a, '#ln-start [data-start="claude"]');
+  await waitFor(a, () => !!Learn.terminal(), 6000);
+  await sleep(4000);   // the server lists it
+  const b = await page({ context: a.ctx });
+  await toLearn(b);
+  await pane(b, 'study');
+  check('L6 a second page attaches to the same terminal', await waitFor(b, () => !!Learn.terminal() && Learn.terminal().id.startsWith('learn-'), 8000));
+  check('L6 the first page says it is open elsewhere', await waitFor(a, () => !!document.querySelector('#ln-moved:not(.hidden)'), 8000));
+  await shot(a, 'L6-moved');
+  await a.bringToFront();
+  await tap(a, '#ln-bring');
+  check('L6 Bring it here takes it back', await waitFor(a, () => !document.querySelector('#ln-moved:not(.hidden)'), 8000)
+    && await waitFor(b, () => !!document.querySelector('#ln-moved:not(.hidden)'), 8000));
+  check('L6 no second agent was started', (await learnTerms()).length === 1, await learnTerms());
+};
+
+S.L7 = async () => {
+  if (OPTS.phone) { console.log('SKIP L7 (desktop dock)'); return; }
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await waitFor(p, () => !!document.querySelector('#ln-start [data-start="claude"]'), 6000);
+  await tap(p, '#ln-start [data-start="claude"]');
+  await waitFor(p, () => !!Learn.terminal(), 6000);
+  const id = await ev(p, () => Learn.terminal().id);
+  check('L7 the dock lists it as held in Learn', await waitFor(p, (i) => { const r = TW.rows().find((x) => x.id === i); return !!r && r.where === 'learn'; }, 8000, id));
+  await tap(p, modeBtn('board'));
+  await ev(p, (i) => TW.goTo(i), id);
+  check('L7 going to it from the dock switches to Learn', await waitFor(p, () => document.body.dataset.mode === 'learn', 4000));
+  check('L7 and the dock did not take it', await ev(p, (i) => !TW.session(i) && Learn.terminal().id === i, id));
+  // A notebook terminal Learn isn't holding (another notebook open) still goes to Learn, not the dock.
+  await ev(p, () => Learn.terminal().handle.detach());
+  await sleep(500);
+  await ev(p, (i) => TW.goTo(i), id);
+  check('L7 a detached notebook terminal also goes to Learn', await waitFor(p, (i) => !TW.session(i) && !!Learn.terminal() && Learn.terminal().id === i, 6000, id));
+};
+
 (async () => {
   const names = NAMES.length ? NAMES : Object.keys(S);
   const unknown = names.filter((n) => !S[n]);
@@ -220,6 +311,7 @@ S.L9 = async () => {
   for (const n of names) {
     console.log(`— ${n} (${OPTS.phone ? 'phone' : 'desktop'}, ${OPTS.theme})`);
     try { await S[n](); } catch (e) { check(`${n} ran`, false, String(e.message).split('\n')[0]); }
+    while (contexts.length) await contexts.pop().close().catch(() => {});
   }
   if (browser) await browser.close();
   if (failures) console.log(`\n${failures} failed: ${failed.join('; ')}`);
