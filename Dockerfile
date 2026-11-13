@@ -26,6 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     bash git less procps ca-certificates curl tini python3 python3-pip python3-venv libicu72 \
   && rm -rf /var/lib/apt/lists/*
 ENV CHROMIUM_PATH=/usr/bin/chromium
+# yt-dlp: Learn mode's YouTube transcripts (lib/learn-youtube.js). The release zipapp runs on the python3 above and
+# uses node as its JavaScript runtime. Pinned and checksum-checked: to update, bump both values from the release's
+# SHA2-256SUMS (the line for `yt-dlp`) and rebuild.
+ARG YTDLP_VERSION=2026.10.26
+ARG YTDLP_SHA256=e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+RUN curl -fsSL -o /usr/local/bin/yt-dlp "https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp" \
+  && echo "${YTDLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - && chmod 755 /usr/local/bin/yt-dlp
 # uid 1000 is `node` in this base image; rename it `vaultos` with home
 # /home/vaultos (the volume that keeps agent logins and settings).
 RUN groupmod -n vaultos node && usermod -l vaultos -d /home/vaultos -m node
