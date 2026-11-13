@@ -183,6 +183,24 @@ test('Notes on: /api/me carries the notes folders; a bad value is 400', async (t
   assert.equal((await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { notes: 'yes' } })).status, 400);
 });
 
+test('Learn on: /api/me carries learn; the folder can be changed; bad input is 400', async (t) => {
+  const s = await ready(t);
+  const off = await call(s.base, 'GET', '/api/me', { cookie: s.cookie });
+  assert.deepEqual(off.body.learn, { enabled: false, dir: 'Learning' });
+  const on = await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { learn: true } });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.settings.features.learn, true);
+  assert.deepEqual((await call(s.base, 'GET', '/api/me', { cookie: s.cookie })).body.learn, { enabled: true, dir: 'Learning' });
+  assert.equal((await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { learn: 'yes' } })).status, 400);
+  const moved = await call(s.base, 'POST', '/api/settings/learn', { cookie: s.cookie, body: { dir: 'Study' } });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.settings.learn.dir, 'Study');
+  assert.equal((await call(s.base, 'GET', '/api/me', { cookie: s.cookie })).body.learn.dir, 'Study');
+  assert.equal((await call(s.base, 'POST', '/api/settings/learn', { cookie: s.cookie, body: { dir: '../x' } })).status, 400);
+  assert.equal((await call(s.base, 'POST', '/api/settings/learn', { cookie: s.cookie, body: { dir: 'work' } })).status, 400);
+  assert.equal((await call(s.base, 'POST', '/api/settings/learn', { body: { dir: 'Elsewhere' } })).status, 401);
+});
+
 test('password change', async (t) => {
   const s = await ready(t);
   const post = (body) => call(s.base, 'POST', '/api/settings/password', { cookie: s.cookie, body });

@@ -12,9 +12,10 @@ const withBoards = (...boards) => ({ ...S.defaults(), boards });
 test('defaults validate', () => {
   assert.deepEqual(S.defaults(), {
     version: 1, setupDone: false, boards: [],
-    features: { today: false, terminal: true, morningRead: true, notes: false, automations: false },
+    features: { today: false, terminal: true, morningRead: true, notes: false, automations: false, learn: false },
     today: { dir: 'Today', timezone: 'UTC' }, agent: { profile: 'none' },
     notes: { dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' },
+    learn: { dir: 'Learning' },
   });
   assert.deepEqual(S.validate(S.defaults()), S.defaults());
   assert.equal(S.SETTINGS_REL, '.vaultos/settings.json');
@@ -208,4 +209,31 @@ test('features.automations defaults to false and must be boolean', () => {
   assert.equal(S.validate({ version: 1 }).features.automations, false);
   assert.equal(S.validate({ version: 1, features: { automations: true } }).features.automations, true);
   assert.throws(() => S.validate({ version: 1, features: { automations: 'yes' } }), /features\.automations must be true or false/);
+});
+
+test('learn: off by default, dir Learning', () => {
+  const s = S.validate({ version: 1 });
+  assert.equal(s.features.learn, false);
+  assert.deepEqual(s.learn, { dir: 'Learning' });
+  assert.equal(S.validate({ version: 1, features: { learn: true } }).features.learn, true);
+  assert.throws(() => S.validate({ version: 1, features: { learn: 'yes' } }), /features\.learn must be true or false/);
+});
+
+test('learn.dir must stay inside the vault and not clash', () => {
+  for (const dir of ['../x', '/abs', 'a/../../b', '.hidden', 'a/.b', '', 'a\u0000b', 5]) {
+    assert.throws(() => S.validate({ version: 1, learn: { dir } }), /learn\.dir/, JSON.stringify(dir));
+  }
+  const on = { learn: true };
+  assert.throws(() => S.validate({ ...withBoards(board('Work')), features: on, learn: { dir: 'work' } }), /learn\.dir/);
+  assert.throws(() => S.validate({ ...withBoards(board('Work')), features: on, learn: { dir: 'Work/Learning' } }), /learn\.dir/);
+  assert.throws(() => S.validate({ version: 1, features: on, notes: { dir: 'Notes' }, learn: { dir: 'Notes' } }), /learn\.dir/);
+  assert.throws(() => S.validate({ version: 1, features: on, learn: { dir: 'today' } }), /learn\.dir/);
+  assert.throws(() => S.validate({ version: 1, features: on, today: { dir: 'Life/Today' }, learn: { dir: 'Life' } }), /learn\.dir/);
+  assert.equal(S.validate({ version: 1, features: on, learn: { dir: 'Study/Learning' } }).learn.dir, 'Study/Learning');
+});
+
+test('a clash is only an error while Learn is on (an old install with a board called Learning still loads)', () => {
+  const s = S.validate({ ...withBoards(board('Learning')) });
+  assert.equal(s.learn.dir, 'Learning');
+  assert.throws(() => S.validate({ ...withBoards(board('Learning')), features: { learn: true } }), /learn\.dir/);
 });

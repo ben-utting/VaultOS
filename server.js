@@ -972,6 +972,7 @@ app.get('/api/me', (req, res) => {
     todayDir: s && s.features.today ? s.today.dir : '',
     features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead), automations: AUTOMATIONS.live() },
     notes: s ? { enabled: !!s.features.notes, dir: s.notes.dir, inbox: s.notes.inbox, main: s.notes.main, tags: s.notes.tags } : { enabled: false },
+    learn: s ? { enabled: !!s.features.learn, dir: s.learn.dir } : { enabled: false },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)), plainCommand: plainStartCommand(profile) } : null,
   });
 });
@@ -1200,6 +1201,11 @@ function today() {
   return svc;
 }
 
+// ---------- Learn ----------
+// After a settings save: with Learn on, make sure its folder and instruction files exist (filled in by the Learn
+// service).
+async function learnAfterSave(saved) { void saved; }
+
 // ---------- Notes (capture, Inbox, Main Notes) ----------
 // lib/notes-service.js does the file work; these routes only gate it. Opening and saving a note use the Files
 // routes (GET /api/fs/file, POST /api/fs/text/save), so locks, the 409 guard and the previous version are shared.
@@ -1400,9 +1406,9 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
 app.post('/api/settings/features', settingsGuard, (req, res) => withSettingsLock(() => setFeatures(req, res)));
 async function setFeatures(req, res) {
   try {
-    const { today: wantToday, terminal, morningRead, notes, automations, timezone } = req.body || {};
-    if ([wantToday, terminal, morningRead, notes, automations].some((v) => v !== undefined && typeof v !== 'boolean')) {
-      return res.status(400).json({ error: 'today, terminal, morningRead, notes and automations must be true or false' });
+    const { today: wantToday, terminal, morningRead, notes, automations, learn, timezone } = req.body || {};
+    if ([wantToday, terminal, morningRead, notes, automations, learn].some((v) => v !== undefined && typeof v !== 'boolean')) {
+      return res.status(400).json({ error: 'today, terminal, morningRead, notes, automations and learn must be true or false' });
     }
     if (timezone !== undefined && !validTimeZone(timezone)) return res.status(400).json({ error: 'Unknown time zone' });
     // Read inside the queue slot, after any earlier change has saved.
@@ -1416,6 +1422,7 @@ async function setFeatures(req, res) {
         ...(morningRead !== undefined ? { morningRead } : {}),
         ...(notes !== undefined ? { notes } : {}),
         ...(automations !== undefined ? { automations } : {}),
+        ...(learn !== undefined ? { learn } : {}),
       },
       today: { ...s.today, ...(timezone !== undefined ? { timezone } : {}) },
     };
@@ -1430,11 +1437,26 @@ async function setFeatures(req, res) {
       if (svc) await svc.boot();
     }
     await AUTOMATIONS.sync();
+    await learnAfterSave(saved);
     res.json({ settings: saved });
   } catch (err) {
     settingsFail(res, err, 'save the settings');
   }
 }
+
+// Learn's folder (Settings → Learn). Saving it with Learn on creates the folder and its instruction files.
+app.post('/api/settings/learn', settingsGuard, (req, res) => withSettingsLock(async () => {
+  try {
+    const { dir } = req.body || {};
+    if (typeof dir !== 'string') return res.status(400).json({ error: 'dir must be a folder name' });
+    const s = SETTINGS();
+    const saved = await settingsStore.save({ ...s, learn: { ...s.learn, dir: dir.trim() } });
+    await learnAfterSave(saved);
+    res.json({ settings: saved });
+  } catch (err) {
+    settingsFail(res, err, 'save the settings');
+  }
+}));
 
 // ---------- Agent ----------
 // What the settings sheet and the terminal's Start button need to know about the
