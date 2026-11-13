@@ -66,6 +66,8 @@ const twNewId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.ran
 //                          (also: whether the focused terminal counts as looked at)
 //   opts.onAgents(sum)     an agent's state changed; sum = { working, blocked, done, idle } counts
 //   opts.agentLabel()      the chosen agent's name, for "<name> needs you"; null (or absent) for neutral words
+//   opts.localHeld()       Map id -> 'learn' of terminals another part of this page holds (Learn mode); call
+//                          localChanged() when it changes
 function createTermWorkspace(root, opts = {}) {
   // "<agent> needs you": the agent in that terminal (its label from the server), else the default agent's name.
   const agentText = (state, agent) => twAgentText(state, (agent && agent.label) || (opts.agentLabel ? opts.agentLabel() : null));
@@ -1399,9 +1401,13 @@ function createTermWorkspace(root, opts = {}) {
   // use it only while the list also says attached, so a crashed page's
   // leftovers don't count.
   const chan = (() => { try { return new BroadcastChannel('vaultos-workbench'); } catch { return null; } })();
+  // Terminals another part of this page holds (Learn mode's notebook terminals): id -> 'learn'. They count as this
+  // page's in presence, and the rows show them as held there, never as detached.
+  const localHeld = () => { try { return (opts.localHeld && opts.localHeld()) || new Map(); } catch { return new Map(); } };
   function postPresence(ids) {
     if (!chan) return;
-    try { chan.postMessage({ presence: { from: PAGE_ID, host: HOST, ids: ids || W.sessions.map((s) => s.id) } }); } catch { /* closing */ }
+    const mine = ids || [...W.sessions.map((s) => s.id), ...localHeld().keys()];
+    try { chan.postMessage({ presence: { from: PAGE_ID, host: HOST, ids: mine } }); } catch { /* closing */ }
   }
   function presenceMap() {
     const out = new Map();
@@ -1409,6 +1415,7 @@ function createTermWorkspace(root, opts = {}) {
       const at = p.host === 'window' ? 'window' : HOST === 'dock' ? 'tab' : 'dock';
       for (const id of p.ids) out.set(id, at);
     }
+    for (const [id, at] of localHeld()) out.set(id, at);
     return out;
   }
   if (chan) {
@@ -1643,6 +1650,8 @@ function createTermWorkspace(root, opts = {}) {
     list: () => W.list,
     refreshList,
     onList: (cb) => { W.listCbs.push(cb); return () => { W.listCbs = W.listCbs.filter((x) => x !== cb); }; },
+    // opts.localHeld() changed (Learn took or let go of a terminal): tell other pages, redraw the rows.
+    localChanged: () => { postPresence(); notify(); },
     rows,
     spaces: () => spaces(),
     where,

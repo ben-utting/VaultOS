@@ -28,10 +28,11 @@ const createTermSide = (() => {
   function whereNote(where) {
     if (where === 'detached') return 'detached: running in the background';
     if (where === 'window' || where === 'dock') return `elsewhere: open in the ${where === 'window' ? 'Terminals window' : 'dock'}`;
+    if (where === 'learn') return 'elsewhere: open in Learn';
     return 'elsewhere: open in another window';
   }
 
-  return function createTermSide(el, ctx) {
+  const create = function createTermSide(el, ctx) {
     let mode = 'rail';
     let last = null;
     const cache = { head: null, list: null, agents: null, foot: null };
@@ -138,4 +139,7 @@ const createTermSide = (() => {
       setMode(m) { mode = m === 'side' ? 'side' : 'rail'; if (last) last = { ...last, mode }; render(); },
     };
   };
+  create.whereNote = whereNote;
+  return create;
 })();
+if (typeof module === 'object' && module.exports) module.exports = createTermSide;

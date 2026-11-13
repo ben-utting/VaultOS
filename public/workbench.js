@@ -1276,7 +1276,10 @@ const TW = createTermWorkspace($('term-area'), {
   host: 'dock',
   sideDefault: 'rail',
   // A terminal the Terminals window holds is shown there, not taken from it.
-  goElsewhere: (id) => TW.where(id) === 'window' && (() => { const w = openTermWindow(); if (w) handToWindow(w, [{ id }]); return !!w; })(),
+  // A Learn notebook's terminal is shown in Learn (switching to it), never pulled into the dock.
+  goElsewhere: (id) => (window.Learn && Learn.holds(id) ? (Learn.goTo(id), true)
+    : TW.where(id) === 'window' && (() => { const w = openTermWindow(); if (w) handToWindow(w, [{ id }]); return !!w; })()),
+  localHeld: () => (window.Learn ? Learn.heldMap() : new Map()),
   extraButtons:
     `<button id="term-pop" class="ghost" type="button" title="Move this space to its own window — you can open more there" aria-label="Pop out"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>`
     + `<button id="term-min" class="ghost" type="button" title="Minimise (the shells keep running) — Ctrl+\`" aria-label="Minimise terminals"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg></button>`
