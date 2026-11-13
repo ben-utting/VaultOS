@@ -115,16 +115,17 @@ function ws(url) {
 // agent: null | { profile, label, startCommand } }, where agent is null whenever the terminal is off.
 // Signed out: { authed: false, setup } (setup: the server wants the setup page). The UI offers only
 // what is on: no Today without Today, and no terminal or Start agent without the terminal.
-let ME = { authed: false, features: { today: false, terminal: false, morningRead: false }, agent: null, notes: { enabled: false } };
+let ME = { authed: false, features: { today: false, terminal: false, morningRead: false }, agent: null, notes: { enabled: false }, learn: { enabled: false } };
 const todayOn = () => !!ME.features.today;
 const termOn = () => !!ME.features.terminal;
 const notesOn = () => !!(ME.notes && ME.notes.enabled);   // Notes mode and capture (ME.notes: { enabled, dir, inbox, main, tags })
 const automationsOn = () => !!ME.features.automations;   // the Automations tab (live: setting on and TERMINAL allowed)
+const learnOn = () => !!(ME.learn && ME.learn.enabled);   // Learn mode (ME.learn: { enabled, dir })
 const homeMode = () => (todayOn() ? 'today' : 'board');   // the mode VaultOS opens on
 const agentLabel = () => (ME.agent ? ME.agent.label : null);   // null: no agent, or the terminal is off
 async function fetchMe() {
   const me = await fetch('/api/me').then((r) => r.json()).catch(() => ({ authed: false }));
-  return { ...me, features: me.features || { today: false, terminal: false, morningRead: false }, agent: me.agent || null, notes: me.notes || { enabled: false } };
+  return { ...me, features: me.features || { today: false, terminal: false, morningRead: false }, agent: me.agent || null, notes: me.notes || { enabled: false }, learn: me.learn || { enabled: false } };
 }
 function applyMe() {
   const today = todayOn();
@@ -138,6 +139,7 @@ function applyMe() {
     el.classList.toggle('hidden', !notesOn());
   }
   for (const el of [$('mode-automations'), document.querySelector('#mobile-nav [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
+  for (const el of [$('mode-learn'), document.querySelector('#mobile-nav [data-for="mode-learn"]')]) el.classList.toggle('hidden', !learnOn());
   if (window.Automations) Automations.featureChanged();
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
@@ -1217,6 +1219,7 @@ function setMode(mode) {
   if (mode === 'today' && !todayOn()) mode = 'board';   // Today is off: nothing to show (a Refresh's 'today' too)
   if (mode === 'notes' && !notesOn()) mode = homeMode();
   if (mode === 'automations' && !automationsOn()) mode = homeMode();
+  if (mode === 'learn' && !learnOn()) mode = homeMode();
   // Leaving Notes with an unsaved edit: ask first (Notes.confirmLeave), and stay if the answer is no.
   if (STATE.mode === 'notes' && mode !== 'notes' && window.Notes && !Notes.confirmLeave()) return;
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
@@ -1234,6 +1237,8 @@ function setMode(mode) {
   $('mode-files').classList.toggle('active', mode === 'files');
   $('mode-notes').classList.toggle('active', mode === 'notes');
   $('mode-automations').classList.toggle('active', mode === 'automations');
+  $('mode-learn').classList.toggle('active', mode === 'learn');
+  $('learn-view').classList.toggle('hidden', mode !== 'learn');
   $('automations-view').classList.toggle('hidden', mode !== 'automations');
   $('notes-view').classList.toggle('hidden', mode !== 'notes');
   $('today-view').classList.toggle('hidden', mode !== 'today');
@@ -1247,15 +1252,16 @@ function setMode(mode) {
   // Files covers the whole vault, so the workspace chip still shows where Board and KB are but reads as not
   // applying there. It stays clickable: picking one is how you choose where you land next. On Today it is
   // live: Next's Board fallback is that workspace's In Progress task.
-  const wsOff = mode === 'files' || mode === 'notes';
+  const wsOff = mode === 'files' || mode === 'notes' || mode === 'learn';
   $('ws-chip').classList.toggle('ws-chip-off', wsOff);
-  $('ws-chip').title = mode === 'files' ? 'Files covers the whole vault' : mode === 'notes' ? 'Notes has its own folder' : '';
+  $('ws-chip').title = mode === 'files' ? 'Files covers the whole vault' : mode === 'notes' ? 'Notes has its own folder' : mode === 'learn' ? 'Learn has its own folder' : '';
   closeWsMenu({ focus: false });
   closeSheet();   // its folder/column sections depend on the mode (see secAvailable)
   updateFilterBadge();
   if (mode === 'today') Today.show(); else Today.hide();   // Today.show() fills #count from its payload
   if (mode === 'notes') Notes.show(); else Notes.hide();   // Notes.show() fills #count
   if (window.Automations) { if (mode === 'automations') Automations.show(); else Automations.hide(); }   // show() fills #count
+  if (window.Learn) { if (mode === 'learn') Learn.show(); else Learn.hide(); }   // show() empties #count
   if (mode === 'kb') {
     $('count').textContent = `${STATE.kb.articles.length} article${STATE.kb.articles.length === 1 ? '' : 's'}`;
     if (!STATE.kb.loaded) loadKB();
@@ -1272,6 +1278,7 @@ $('mode-kb').addEventListener('click', () => setMode('kb'));
 $('mode-files').addEventListener('click', () => setMode('files'));
 $('mode-notes').addEventListener('click', () => setMode('notes'));
 $('mode-automations').addEventListener('click', () => setMode('automations'));
+$('mode-learn').addEventListener('click', () => setMode('learn'));
 
 // ---------- Mobile nav ----------
 // The phone's bottom tab bar. Each button clicks its header twin (so every
@@ -1295,7 +1302,7 @@ for (const b of MNAV) b.addEventListener('click', () => {
   $(b.dataset.for).click();
 });
 new MutationObserver(syncMobileNav).observe($('termbtn'), { attributes: true, attributeFilter: ['aria-pressed', 'data-n', 'data-alert'] });
-for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
+for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-learn', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
 
 // ---------- KB sidebar (collections/article list) ----------
 // Closed by default; opens as a hover panel over the reader rather than

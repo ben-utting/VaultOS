@@ -55,6 +55,8 @@
         <button id="mode-notes" class="mode hidden" data-mode="notes">Notes</button>
         <button id="mode-files" class="mode" data-mode="files">Files</button>
         <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
+        <!-- Learn (learn.js): shown while Settings → Features → Learn mode is on. -->
+        <button id="mode-learn" class="mode hidden" data-mode="learn">Learn</button>
         <!-- Automations (automations.js): shown while Settings → Features → Automations is on; the dot shows while a run is going. -->
         <button id="mode-automations" class="mode hidden" data-mode="automations">Automations<span class="mode-dot hidden" aria-hidden="true"></span></button>
       </nav>
@@ -368,6 +370,35 @@
         <section id="nt-pane" class="nt-pane" aria-live="polite"></section>
       </div>
     </div>
+    <!-- Learn mode (learn.js): notebooks on the left, the notebook's terminal and file tabs in the middle, Studio on the
+         right; one pane at a time on a phone (#ln-switch). Tabs and documents reuse the Files classes (.fx-tab, .fx-doc…). -->
+    <div id="learn-view" class="hidden">
+      <div id="ln-switch" class="seg ln-switch" role="tablist" aria-label="Learn pane">
+        <button type="button" role="tab" data-v="notebook" aria-selected="true">Notebook</button>
+        <button type="button" role="tab" data-v="study" aria-selected="false">Study</button>
+        <button type="button" role="tab" data-v="studio" aria-selected="false">Studio</button>
+      </div>
+      <div id="ln-layout" class="ln-layout ln-v-notebook">
+        <aside id="ln-side" class="ln-side" aria-labelledby="ln-side-h">
+          <div class="ln-head"><h2 id="ln-side-h">Notebooks</h2>
+            <button type="button" id="ln-side-fold" class="ghost ln-fold" aria-label="Hide the notebooks" title="Hide the notebooks"></button></div>
+          <div id="ln-list" class="ln-list" role="tree" aria-label="Notebooks and their files"></div>
+          <div id="ln-foot" class="ln-foot"></div>
+        </aside>
+        <button type="button" id="ln-side-rail" class="ghost ln-rail ln-rail-l hidden" aria-label="Show the notebooks" title="Show the notebooks"></button>
+        <section id="ln-main" class="ln-main" aria-label="Study">
+          <div id="ln-tabs" class="fx-tabs ln-tabs" role="tablist" aria-label="Open in this notebook"></div>
+          <div id="ln-term" class="ln-term"></div>
+          <div id="ln-doc" class="fx-view ln-doc hidden" aria-live="polite"></div>
+        </section>
+        <button type="button" id="ln-studio-rail" class="ghost ln-rail ln-rail-r hidden" aria-label="Show Studio" title="Show Studio"></button>
+        <aside id="ln-studio" class="ln-studio" aria-labelledby="ln-studio-h">
+          <div class="ln-head"><h2 id="ln-studio-h">Studio</h2>
+            <button type="button" id="ln-studio-fold" class="ghost ln-fold" aria-label="Hide Studio" title="Hide Studio"></button></div>
+          <div id="ln-studio-body" class="ln-studio-body"></div>
+        </aside>
+      </div>
+    </div>
     <!-- Automations mode (automations.js): the automations on the left, the runs (or one run) on the right; stacked on a phone. -->
     <div id="automations-view" class="hidden">
       <div class="au-layout">
@@ -409,6 +440,7 @@
       <button type="button" data-for="mode-notes" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg><span>Notes</span></button>
       <button type="button" data-for="mode-files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
       <button type="button" data-for="mode-kb"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>KB</span></button>
+      <button type="button" data-for="mode-learn" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.42 10.92a1 1 0 0 0-.02-1.84L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.83l8.57 3.91a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg><span>Learn</span></button>
       <button type="button" data-for="mode-automations" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M12 7v5l3 2"/></svg><span>Auto</span></button>
       <button type="button" data-for="termbtn" id="mnav-term"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span>Terminal</span></button>
     </nav>
@@ -630,6 +662,7 @@
   <script src="safe-html.js"></script>
   <script src="search-core.js"></script>
   <script src="notes-core.js"></script>
+  <script src="learn-core.js"></script>
   <script src="app.js"></script>
   <script src="today-next.js"></script>
   <script src="today.js"></script>
@@ -643,5 +676,6 @@
   <script src="notes.js"></script>
   <script src="capture.js"></script>
   <script src="automations.js"></script>
+  <script src="learn.js"></script>
 </body>
 </html>

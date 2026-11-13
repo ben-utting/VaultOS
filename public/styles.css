@@ -3860,6 +3860,65 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   .nt-row { padding: 10px; }
 }
 
+/* ---------- Learn (learn.js) ----------
+   Notebooks | the notebook's terminal and tabs | Studio. The tree, tabs and documents reuse the Files classes
+   (.fx-row, .fx-tab, .fx-doc, .fx-source, .fx-image); only the frame and Learn's own pieces are here. */
+.ln-switch { display: none; }
+.ln-layout {
+  display: flex; height: calc(100vh - var(--header-h)); height: calc(100dvh - var(--header-h)); overflow: hidden;
+}
+.ln-side, .ln-studio { flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+.ln-side { width: 260px; border-right: 1px solid var(--line); }
+.ln-studio { width: 300px; border-left: 1px solid var(--line); }
+.ln-layout.ln-side-off .ln-side, .ln-layout.ln-studio-off .ln-studio { display: none; }
+.ln-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
+.ln-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 8px 6px 14px; }
+.ln-head h2 { margin: 0; font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.ln-fold, .ln-rail { display: inline-flex; align-items: center; justify-content: center; color: var(--muted); }
+.ln-fold { width: 28px; height: 28px; padding: 0; border-radius: var(--radius-sm); }
+.ln-fold .icon, .ln-rail .icon { width: 16px; height: 16px; }
+.ln-rail { flex: none; width: 28px; padding: 0; border: 0; border-radius: 0; background: var(--panel); }
+.ln-rail-l { border-right: 1px solid var(--line); }
+.ln-rail-r { border-left: 1px solid var(--line); }
+.ln-rail:hover, .ln-fold:hover { color: var(--text); background: var(--panel-2); }
+.ln-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 12px; }
+.ln-nb .fx-name { font-weight: 600; }
+.ln-count { margin-left: auto; padding-left: 8px; color: var(--muted-2); font-size: var(--t-xs); }
+.ln-hint { padding: 3px 8px 6px calc(30px + var(--depth, 0) * 14px); color: var(--muted); font-size: var(--t-xs); }
+.ln-empty { margin: 8px; color: var(--muted); font-size: var(--t-sm); }
+.ln-new { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 4px 10px; }
+.ln-new .su-input { flex: 1 1 100%; }
+.ln-foot { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-top: 1px solid var(--line); }
+.ln-foot .icon { width: 14px; height: 14px; margin-right: 4px; }
+.ln-tabs { flex: none; background: var(--panel); border-bottom: 1px solid var(--line); }   /* .fx-tabs grows in Files' row */
+.ln-tabs.hidden { display: none; }
+.ln-term { position: relative; flex: 1; min-height: 0; }
+.ln-term.hidden, .ln-doc.hidden { display: none; }
+.ln-doc { flex: 1; min-height: 0; overflow-y: auto; }
+.ln-docbar {
+  position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 12px; padding: 6px 14px;
+  background: var(--bg); border-bottom: 1px solid var(--line); font-size: var(--t-sm);
+}
+.ln-docname { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ln-docbar #ln-edit { margin-left: auto; }
+.ln-first { max-width: 440px; margin: 12vh auto 0; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.ln-first h2 { margin: 0 0 6px; font-size: var(--t-lg); }
+.ln-first-row { display: flex; gap: 8px; margin-top: 14px; }
+.ln-first-row .su-input { flex: 1; }
+.ln-studio-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 20px; }
+.ln-later { margin-top: 22px; color: var(--muted); }
+.ln-later h3 { margin: 0 0 6px; font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.ln-later ul { margin: 0; padding-left: 18px; font-size: var(--t-sm); line-height: 1.7; }
+@media (max-width: 700px) {
+  .ln-switch { display: flex; margin: 8px 12px 0; }
+  .ln-switch button { flex: 1; }
+  .ln-layout { height: calc(100dvh - var(--header-h) - var(--mnav-h) - 46px); }
+  .ln-side, .ln-studio { width: auto; flex: 1; border: 0; }
+  .ln-fold, .ln-rail { display: none !important; }
+  .ln-layout .ln-side, .ln-layout .ln-main, .ln-layout .ln-studio { display: none; }
+  .ln-layout.ln-v-notebook .ln-side, .ln-layout.ln-v-study .ln-main, .ln-layout.ln-v-studio .ln-studio { display: flex; }
+}
+
 /* ---------- Automations (automations.js) ----------
    Two columns from 900px: the automations, then the runs (or one run's detail). Rows, runs and cards are
    panel-2 tiles on the column's panel, like the board's cards on a column. Dots and chips borrow the
