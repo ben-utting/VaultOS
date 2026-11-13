@@ -408,6 +408,126 @@ S.L11 = async () => {
     && fs.existsSync(disk(`${NB}/Sources/upload-sample.md`)));
 };
 
+async function startClaude(p) {
+  await pane(p, 'study');
+  await waitFor(p, () => !!document.querySelector('#ln-start:not(.hidden) [data-start="claude"]'), 8000);
+  await tap(p, '#ln-start [data-start="claude"]');
+  await waitFor(p, () => !!Learn.terminal(), 6000);
+  return ev(p, () => Learn.terminal().id);
+}
+
+S.L12 = async () => {
+  await reset('--empty');
+  let p = await page();
+  await toLearn(p);
+  await p.type('#ln-first-name', 'Half');
+  await sleep(6500);   // past a 5s poll
+  await p.keyboard.type('way');
+  check('L12 typing in the first-notebook box survives a poll', (await ev(p, () => document.getElementById('ln-first-name').value)) === 'Halfway', await ev(p, () => (document.getElementById('ln-first-name') || {}).value));
+  await p.close();
+  await reset();
+  p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  await tap(p, '#ln-new');
+  await p.type('#ln-new-name', 'Half');
+  await sleep(6500);
+  await p.keyboard.type('way');
+  check('L12 typing in the New notebook field survives a poll', (await ev(p, () => (document.getElementById('ln-new-name') || {}).value)) === 'Halfway', await ev(p, () => (document.getElementById('ln-new-name') || {}).value));
+};
+
+S.L13 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  const id = await startClaude(p);
+  await sleep(4000);
+  await p.reload({ waitUntil: 'networkidle2' });
+  await toLearn(p);
+  await waitFor(p, (i) => { const t = Learn.terminal(); return !!t && t.id === i; }, 8000, id);
+  execFileSync('docker', ['restart', 'learn-preview'], { stdio: 'ignore' });
+  for (let i = 0; i < 80; i++) { try { const r = await api('GET', '/api/me'); if (r.body && r.body.authed) break; } catch { /* starting */ } await sleep(250); }
+  let row = null;
+  for (let i = 0; i < 40 && !row; i++) { row = (await learnTerms()).find((x) => x.id === id) || null; if (!row) await sleep(500); }
+  check('L13 after a server restart the notebook terminal comes back in the notebook folder', !!row && row.cwd === NB, row);
+};
+
+S.L14 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await startClaude(p);
+  await sleep(1500);
+  await ev(p, () => Learn.terminal().handle.type('\x04'));   // ends the fake agent's cat
+  await sleep(800);
+  await ev(p, () => Learn.terminal().handle.type('exit\r'));
+  check('L14 after the shell exits the start screen comes back', await waitFor(p, () => !!document.querySelector('#ln-start:not(.hidden) [data-start="claude"]'), 8000));
+  await tap(p, '#ln-start [data-start="claude"]');
+  check('L14 and starting again opens a new terminal', await waitFor(p, () => !!Learn.terminal() && Learn.terminal().state !== 'closed', 6000));
+};
+
+S.L15 = async () => {
+  if (OPTS.phone) { console.log('SKIP L15 (desktop dock)'); return; }
+  await reset();
+  let p = await page();
+  await toLearn(p);
+  const id = await startClaude(p);
+  await sleep(3500);
+  await p.close();
+  p = await page();   // a fresh page that opens on Board, Learn never shown
+  await waitFor(p, (i) => TW.rows().some((r) => r.id === i), 8000, id);
+  check('L15 before Learn is opened, the dock still counts it as Learn\'s', await ev(p, (i) => Learn.holds(i), id));
+  await ev(p, (i) => TW.goTo(i), id);
+  check('L15 going to it switches to Learn and the dock does not take it', await waitFor(p, (i) => document.body.dataset.mode === 'learn' && !TW.session(i) && !!Learn.terminal() && Learn.terminal().id === i, 8000, id));
+};
+
+S.L16 = async () => {
+  await reset();
+  fs.rmSync(disk(`${NB}/Sources`), { recursive: true, force: true });
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  const tmp = path.join(SHOTS, '..', 'upload-sample.md');
+  fs.writeFileSync(tmp, '# Uploaded\n');
+  try {
+    const [chooser] = await Promise.all([p.waitForFileChooser({ timeout: 4000 }), p.click('#ln-up')]);
+    await chooser.accept([tmp]);
+  } catch (e) { check('L16 the file chooser opens', false, String(e.message).split('\n')[0]); }
+  check('L16 upload works with no Sources folder (it is made)', await waitFor(p, () => true, 10) && await (async () => { for (let i = 0; i < 40; i++) { if (fs.existsSync(disk(`${NB}/Sources/upload-sample.md`))) return true; await sleep(250); } return false; })());
+};
+
+S.L17 = async () => {
+  await reset();
+  await api('POST', '/api/learn/notebooks', { name: 'Other' });
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  if (!await ev(p, (n) => !!document.querySelector(`#ln-list .ln-nb.open[data-nb="${n}"]`), NB)) await tap(p, `#ln-list .ln-nb[data-nb="${NB}"]`);
+  await waitFor(p, (s) => !!document.querySelector(s), 6000, row(LOG));
+  check('L17 the study log opens', await openFile(p, LOG));
+  fs.rmSync(disk(`${NB}/Notes`), { recursive: true, force: true });
+  check('L17 a tab closes when its folder is deleted', await waitFor(p, (s) => !document.querySelector(s), 9000, tab(LOG)));
+  fs.rmSync(disk(NB), { recursive: true, force: true });
+  check('L17 a deleted notebook goes back to the list, not into another notebook', await waitFor(p, () => !document.querySelector(`#ln-list .ln-nb[data-nb="Learning/Sample notebook"]`), 9000)
+    && await waitFor(p, () => !document.querySelector('#ln-list .ln-nb.open') && /Pick a notebook/.test(document.getElementById('ln-doc').textContent), 3000),
+  await ev(p, () => ({ open: (document.querySelector('#ln-list .ln-nb.open') || {}).dataset?.nb || null, doc: document.getElementById('ln-doc').textContent.slice(0, 60) })));
+};
+
+S.L18 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  await tap(p, '#ln-yt');
+  await ytOpen(p);
+  await ytImport(p, 'https://www.youtube.com/playlist?list=PLslow00001');
+  await waitFor(p, () => /of 3/.test(document.getElementById('ln-yt-status').textContent), 6000);
+  await p.setOfflineMode(true);
+  await sleep(2500);   // a couple of status polls fail
+  await p.setOfflineMode(false);
+  check('L18 a failed status poll does not freeze the dialog', await waitFor(p, () => /Saved 3\b/.test(document.getElementById('ln-yt-status').textContent), 20000), await ytStatus(p));
+};
+
 (async () => {
   const names = NAMES.length ? NAMES : Object.keys(S);
   const unknown = names.filter((n) => !S[n]);

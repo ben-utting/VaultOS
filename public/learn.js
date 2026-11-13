@@ -63,8 +63,10 @@ const Learn = (() => {
       // The open notebook went away (renamed or deleted outside VaultOS): back to the list.
       if (L.picked) toast(`"${base(L.open)}" is gone`);
       letGo();
+      delete L.store[L.open];
+      saveTabs();
       L.open = null;
-      L.picked = false;
+      L.picked = true;   // back to the list: don't open another notebook in its place
       put(K.notebook, null);
     }
     if (!L.open && L.notebooks.length && !L.picked) {
@@ -77,7 +79,10 @@ const Learn = (() => {
     L.expanded.add(nb);
   }
   async function loadDir(dir) {
-    try { L.tree.set(dir, (await api(`/api/fs/tree?path=${encodeURIComponent(dir)}`)).items); } catch { L.tree.delete(dir); }
+    try { L.tree.set(dir, (await api(`/api/fs/tree?path=${encodeURIComponent(dir)}`)).items); } catch (err) {
+      // Gone (deleted or renamed): an empty folder, so tabs inside it close. Anything else: unknown, keep the tabs.
+      if (/^Not found$/.test(err.message)) L.tree.set(dir, []); else L.tree.delete(dir);
+    }
   }
   // The open notebook's tree: its own folder and every expanded folder inside it.
   async function loadTree() {
@@ -151,6 +156,8 @@ const Learn = (() => {
   function renderSide() {
     const el = $('ln-list');
     const keep = holdScroll(el);
+    const typing = $('ln-new-name');   // carry its text, focus and caret across the repaint (the poll repaints every 5s)
+    const draft = typing ? { value: typing.value, focused: document.activeElement === typing, a: typing.selectionStart, b: typing.selectionEnd } : null;
     const out = [];
     if (L.creating) {
       out.push(`<form id="ln-new-form" class="ln-new"><input id="ln-new-name" class="su-input" maxlength="60" placeholder="Notebook name" aria-label="Notebook name" autocomplete="off">`
@@ -166,10 +173,21 @@ const Learn = (() => {
     }
     el.innerHTML = out.join('');
     keep();
-    const off = L.open ? '' : ' disabled';
-    $('ln-foot').innerHTML = `<button type="button" id="ln-new" class="su-btn su-sm">${ICON.plus}New notebook</button>`
-      + `<button type="button" id="ln-yt" class="su-btn su-sm"${off}>${ICON.video}Add YouTube video</button>`
-      + `<button type="button" id="ln-up" class="su-btn su-sm"${off}>${ICON.upload}Upload</button>`;
+    const field = $('ln-new-name');
+    if (field && draft) {
+      field.value = draft.value;
+      if (draft.focused) { field.focus(); try { field.setSelectionRange(draft.a, draft.b); } catch { /* not a text field */ } }
+    }
+    // The footer is built once and only its disabled state follows the open notebook: rebuilding it on every repaint
+    // (each poll, each file an import saves) replaced the buttons under a click.
+    const foot = $('ln-foot');
+    if (!foot.firstChild) {
+      foot.innerHTML = `<button type="button" id="ln-new" class="su-btn su-sm">${ICON.plus}New notebook</button>`
+        + `<button type="button" id="ln-yt" class="su-btn su-sm">${ICON.video}Add YouTube video</button>`
+        + `<button type="button" id="ln-up" class="su-btn su-sm">${ICON.upload}Upload</button>`;
+    }
+    $('ln-yt').disabled = !L.open;
+    $('ln-up').disabled = !L.open;
   }
 
   function renderTabs() {
@@ -201,7 +219,8 @@ const Learn = (() => {
       term.classList.add('hidden');
       doc.classList.remove('hidden');
       doc.dataset.path = '';
-      doc.innerHTML = L.notebooks.length ? '<p class="fx-empty fx-pad">Pick a notebook on the left.</p>' : firstBox();
+      if (L.notebooks.length) doc.innerHTML = '<p class="fx-empty fx-pad">Pick a notebook on the left.</p>';
+      else if (!$('ln-first')) doc.innerHTML = firstBox();   // keep it (and what's typed) across polls
       // A phone shows one pane: with nothing to list yet, show the one holding the box (not remembered).
       if (!L.notebooks.length && phone() && L.view !== 'study') { L.view = 'study'; applyView(); }
       return;
@@ -267,7 +286,7 @@ const Learn = (() => {
   // One terminal per notebook, found in the server's list by the notebook's space id, so any device reattaches to it.
   // Learn holds at most one handle, the open notebook's; switching notebook lets go of it (it runs on, detached).
   // The start screen sits over the pane while no agent runs there: the default agent, then one other installed one.
-  const T = { id: null, nb: null, handle: null, state: null, agent: null, dismissed: false, sawAgent: false, agents: null, list: [], attaching: false };
+  const T = { id: null, nb: null, handle: null, state: null, agent: null, dismissed: false, sawAgent: false, agents: null, list: [], attaching: false, exited: null };
   const hasTW = () => typeof TW !== 'undefined';
   const rowById = (id) => T.list.find((x) => x.id === id) || null;
   const rowFor = (nb) => (nb ? T.list.find((x) => x.space === nb.space) || null : null);
@@ -302,13 +321,17 @@ const Learn = (() => {
     // createTerminal reports its first state before it returns; told() then runs the dock's list callbacks, which
     // come back to syncTerm while T.handle is still unset. The flag stops that attaching a second time.
     T.attaching = true;
+    // cwd always: if the server has lost the shell (a restart), the one it makes in its place starts in the notebook.
+    // A disposed handle's late callbacks are dropped (mine()), so they can't touch the next notebook's terminal.
+    const mine = () => T.id === id;
     try {
       T.handle = createTerminal($('ln-term-host'), {
-        id, space: nb.space, spaceName: `Learn · ${nb.name}`.slice(0, 40), ...opts,
-        onState: (st) => { T.state = st; told(); overlay(); },
-        onAgent: (ag) => { T.agent = ag; overlay(); },
+        id, cwd: nb.path, space: nb.space, spaceName: `Learn · ${nb.name}`.slice(0, 40), ...opts,
+        onState: (st) => { if (!mine()) return; T.state = st; told(); overlay(); },
+        onAgent: (ag) => { if (!mine()) return; T.agent = ag; overlay(); },
         onOpenPath: (rel) => { if (L.open && rel.startsWith(`${L.open}/`)) openFile(rel); else { setMode('files'); fxOpen(rel, { pin: true }); } },
-        onExit: () => overlay(),
+        // The shell ended (exit, Ctrl-D, closed from the dock): let go, so the start screen offers a new one.
+        onExit: () => { if (!mine()) return; T.exited = id; letGo(); overlay(); },
       });
     } finally { T.attaching = false; }
     T.handle.onNextInput((d) => { T.dismissed = true; overlay(); return d; });
@@ -322,7 +345,7 @@ const Learn = (() => {
     if (T.handle && (!nb || T.nb !== nb.path)) letGo();
     if (!nb || !termOn() || T.handle) return;
     const row = rowFor(nb);
-    if (row) attach(row.id, nb);
+    if (row && row.id !== T.exited) attach(row.id, nb);   // not the shell that just ended (the list lags up to 3s)
   }
 
   function agentRunning() {
@@ -389,9 +412,12 @@ const Learn = (() => {
   function holds(id) {
     if (T.id === id) return true;
     const row = rowById(id);
-    return !!row && typeof row.space === 'string' && row.space.startsWith('learn-') && L.notebooks.some((n) => n.space === row.space);
+    if (!row || typeof row.space !== 'string' || !row.space.startsWith('learn-')) return false;
+    // Before Learn has loaded its notebooks (it hasn't been opened since the page loaded), any learn- space is ours.
+    return L.loaded ? L.notebooks.some((n) => n.space === row.space) : (typeof learnOn !== 'function' || learnOn());
   }
   async function goTo(id) {
+    if (!L.loaded) await loadList();
     const row = rowById(id);
     const nb = row ? L.notebooks.find((n) => n.space === row.space) : (T.id === id ? current() : null);
     if (!nb) return;
@@ -459,7 +485,7 @@ const Learn = (() => {
   // ---------- Add YouTube video ----------
   // One import per notebook (the server's rule too). It carries on when the dialog closes or another notebook opens;
   // reopening the dialog for that notebook shows how it is going.
-  const Y = { nb: null, jobs: new Map(), last: new Map(), timer: null, pending: null };
+  const Y = { nb: null, jobs: new Map(), last: new Map(), timer: null, pending: null, busy: false };
   const ytShown = () => !$('ln-yt-dlg').classList.contains('hidden');
   function ytOpen() {
     if (!L.open) return;
@@ -506,10 +532,20 @@ const Learn = (() => {
   function ytPoll() {
     if (Y.timer) return;
     Y.timer = setInterval(async () => {
+      if (Y.busy) return;
       if (!Y.jobs.size) { clearInterval(Y.timer); Y.timer = null; return; }
+      Y.busy = true;
+      try { await ytTick(); } finally { Y.busy = false; }
+    }, 1000);
+  }
+  async function ytTick() {
+    {
       for (const [nb, id] of [...Y.jobs]) {
         let job;
-        try { job = await api(`/api/learn/youtube/${encodeURIComponent(id)}`); } catch { Y.jobs.delete(nb); continue; }
+        try { job = await api(`/api/learn/youtube/${encodeURIComponent(id)}`); } catch (err) {
+          if (/^No such import\.$/.test(err.message)) Y.jobs.delete(nb);   // gone (a restart): stop asking; else try again
+          continue;
+        }
         const before = Y.last.get(nb);
         Y.last.set(nb, job);
         if (Y.nb === nb && ytShown()) paintJob(job);
@@ -525,14 +561,14 @@ const Learn = (() => {
           else render();
         }
       }
-    }, 1000);
+    }
   }
 
   // ---------- Upload ----------
   async function upload(files) {
     if (!L.open || !files.length) return;
     const nb = L.open;
-    await fxUpload(`${nb}/Sources`, files.map((f) => ({ file: f, name: f.name })));
+    await fxUpload(nb, files.map((f) => ({ file: f, name: `Sources/${f.name}` })));   // the route makes Sources/ if missing
     if (L.open === nb) { await loadTree(); renderSide(); }
   }
   function pickUpload() {
