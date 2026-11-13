@@ -43,7 +43,7 @@ const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup')
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
-const { PROFILES, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, installCursorHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
+const { PROFILES, PROFILE_IDS, LEARN_KICKOFF, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, installCursorHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
 const { foreground, hookState, noteOutput, nextAgent } = require('./lib/agent-sweep');
 const { createReadStore, readingMinutes, readState, readAt, mergeImport, articleKey, inMorning, morningPick, SKIP_DAYS } = require('./lib/kb-reads');
 const settingsStore = createSettingsStore(VAULT_DIR);
@@ -1202,9 +1202,74 @@ function today() {
 }
 
 // ---------- Learn ----------
-// After a settings save: with Learn on, make sure its folder and instruction files exist (filled in by the Learn
-// service).
-async function learnAfterSave(saved) { void saved; }
+// Notebooks, YouTube transcripts and Studio images (lib/learn-service.js does the work; these routes only gate it).
+// Listing and reading a notebook's files use the Files routes (/api/fs/tree, /api/fs/file, /api/fs/raw).
+let LEARN_SVC = null;
+function learnSvc() {
+  const s = SETTINGS();
+  if (!s || !s.features.learn) return null;
+  if (!LEARN_SVC) {
+    const { createLearnService } = require('./lib/learn-service');
+    const { execFile } = require('child_process');
+    // yt-dlp as an argument list, never through a shell. timedOut: the call was killed for running too long.
+    const run = (bin, args, { timeoutMs }) => new Promise((resolve) => {
+      execFile(bin, args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
+        resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout, stderr, error: error || undefined, timedOut: !!(error && error.killed) });
+      });
+    });
+    LEARN_SVC = createLearnService({
+      vaultDir: VAULT_DIR, settings: () => SETTINGS(), home: process.env.HOME || os.homedir(), env: process.env,
+      run, fetch: (...a) => fetch(...a), tmpRoot: os.tmpdir(),
+      bin: process.env.YTDLP_BIN || 'yt-dlp', baseUrl: process.env.OPENROUTER_BASE_URL || undefined,
+      fallbackModel: process.env.LEARN_IMAGE_FALLBACK_MODEL || null,
+    });
+  }
+  return LEARN_SVC;
+}
+function learnRoute(fn) {
+  return async (req, res) => {
+    const svc = learnSvc();
+    if (!svc) return res.status(404).json({ error: 'Learn is off' });
+    try {
+      res.json(await fn(svc, req.body || {}, req));
+    } catch (err) {
+      if (err && Number.isInteger(err.status) && err.status >= 400 && err.status < 600 && err.status !== 500) return res.status(err.status).json({ error: err.message });
+      console.error('[learn]', err);
+      res.status(500).json({ error: 'Something went wrong.' });
+    }
+  };
+}
+// After a settings save: with Learn on, make sure its folder and instruction files exist. A failure here is logged,
+// not the save's: the settings are already written.
+async function learnAfterSave(saved) {
+  if (!saved || !saved.features.learn) return;
+  try { await learnSvc().ensureFolder(); } catch (err) { console.error('[learn] folder', err); }
+}
+// The start buttons: the default agent if it's installed, then the first other built-in that is (at most two),
+// each with its start command and Learn's kickoff. None while terminals are off.
+async function learnAgents() {
+  if (!terminalOn()) return { agents: [] };
+  const s = SETTINGS();
+  const def = profileFor(s);
+  const order = [...(def ? [def] : []), ...PROFILE_IDS.map((id) => PROFILES[id]).filter((p) => p && (!def || p.id !== def.id))];
+  const agents = [];
+  for (const p of order) {
+    if (agents.length === 2) break;
+    if (!(await isInstalled(p).catch(() => false))) continue;
+    agents.push({ id: p.id, label: p.label, short: p.short || p.label, command: startCommand(p, kickoffPrompt(p, process.env.HOME, LEARN_KICKOFF)) });
+  }
+  return { agents };
+}
+app.get('/api/learn/notebooks', learnRoute((svc) => svc.list()));
+app.post('/api/learn/notebooks', learnRoute((svc, b) => svc.create(b.name)));
+app.post('/api/learn/youtube', learnRoute((svc, b) => svc.youtubeStart(b.notebook, b.url, b.playlist)));
+app.get('/api/learn/youtube/:jobId', learnRoute((svc, b, req) => svc.youtubeStatus(req.params.jobId)));
+app.post('/api/learn/image', learnRoute((svc, b) => svc.image(b.notebook, b.from, b.focus)));
+app.get('/api/learn/key', learnRoute((svc) => svc.key.status()));
+app.put('/api/learn/key', learnRoute(async (svc, b) => { await svc.key.save(b.key); return svc.key.status(); }));
+app.delete('/api/learn/key', learnRoute(async (svc) => { await svc.key.remove(); return svc.key.status(); }));
+app.post('/api/learn/key/test', learnRoute((svc) => svc.key.test()));
+app.get('/api/learn/agents', learnRoute(() => learnAgents()));
 
 // ---------- Notes (capture, Inbox, Main Notes) ----------
 // lib/notes-service.js does the file work; these routes only gate it. Opening and saving a note use the Files

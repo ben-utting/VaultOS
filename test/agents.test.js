@@ -333,3 +333,13 @@ test('installCursorHook: a hooks.json it cannot safely extend is left alone, and
     assert.match(said[0], /hooks\.json/);
   }
 });
+
+test('kickoffPrompt takes another base prompt: Learn\'s, with the same /i-have-adhd rule', () => {
+  const home = tmpHome();
+  assert.equal(A.LEARN_KICKOFF, 'Tell me which sources this notebook has and where the newest study log in Notes/ stopped, in a few short lines. Then wait for my question.');
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home, A.LEARN_KICKOFF), A.LEARN_KICKOFF);
+  fs.mkdirSync(path.join(home, '.claude', 'skills', 'i-have-adhd'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'skills', 'i-have-adhd', 'SKILL.md'), '# skill\n');
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home, A.LEARN_KICKOFF), `/i-have-adhd ${A.LEARN_KICKOFF}`);
+  assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), `/i-have-adhd ${A.KICKOFF_PROMPT}`, 'the default base is unchanged');
+});
