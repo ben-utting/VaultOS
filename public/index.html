@@ -103,6 +103,7 @@
           <button type="button" data-sec="cols" id="ssn-cols">Columns<span id="cols-badge" class="n hidden"></span></button>
           <button type="button" data-sec="look">Appearance</button>
           <button type="button" data-sec="features">Features</button>
+          <button type="button" data-sec="learn" id="ssn-learn">Learn</button>
           <button type="button" data-sec="agent">Agent</button>
           <button type="button" data-sec="connectors" id="ssn-connectors">Connectors</button>
           <button type="button" data-sec="skills">Skills</button>
@@ -245,6 +246,11 @@
         <input type="checkbox" class="su-switch" id="ft-notes" role="switch" aria-describedby="ft-notes-d">
       </div>
       <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="ft-learn">Learn mode</label>
+          <p class="su-hint" id="ft-learn-d">Notebooks for studying: sources, an agent, and images.</p></div>
+        <input type="checkbox" class="su-switch" id="ft-learn" role="switch" aria-describedby="ft-learn-d">
+      </div>
+      <div class="su-row">
         <div class="su-row-t"><label class="su-label" for="ft-auto">Automations</label>
           <p class="su-hint" id="ft-auto-d">Scheduled agents that check in on your cards. Off by default.</p></div>
         <input type="checkbox" class="su-switch" id="ft-auto" role="switch" aria-describedby="ft-auto-d">
@@ -256,6 +262,21 @@
       </div>
       <p class="su-err" id="ft-err" aria-live="polite"></p>
       <div class="ss-actions"><button type="button" id="ft-save" class="su-btn primary">Save and reload</button></div>
+          </section>
+          <!-- Learn: the Learn folder and the OpenRouter key Studio uses (learn.js). The key never comes back from the
+               server: only whether one is saved, where from, and its last four characters. -->
+          <section class="ss-pane ss-form" data-sec="learn">
+      <div class="lr-block"><label class="su-label" for="lr-dir">Learn folder</label>
+        <p class="su-hint">A folder in your vault. Each folder inside it is a notebook.</p>
+        <div class="lr-row"><input id="lr-dir" class="su-input" autocomplete="off" spellcheck="false"><button type="button" id="lr-dir-save" class="su-btn">Save and reload</button></div>
+        <p class="su-err" id="lr-dir-msg" aria-live="polite"></p></div>
+      <div class="lr-block"><label class="su-label" for="lr-key">OpenRouter key</label>
+        <p class="su-hint" id="lr-key-status">No key</p>
+        <div class="lr-row"><input id="lr-key" class="su-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-…">
+          <button type="button" id="lr-key-save" class="su-btn primary">Save</button></div>
+        <div class="lr-row"><button type="button" id="lr-key-test" class="su-btn su-sm">Test</button><button type="button" id="lr-key-remove" class="su-btn su-sm">Remove</button></div>
+        <p class="su-hint" id="lr-key-msg" aria-live="polite"></p>
+        <p class="su-hint">Studio uses it to make images, and OpenRouter picks the model. Create a key at openrouter.ai/keys.</p></div>
           </section>
           <!-- Agent: the same agent picker as setup step 4 (AgentForm.mountPicker in agent-form.js).
                Install and Sign in open an ordinary VaultOS terminal. -->
@@ -386,6 +407,20 @@
           <div id="ln-foot" class="ln-foot"></div>
         </aside>
         <button type="button" id="ln-side-rail" class="ghost ln-rail ln-rail-l hidden" aria-label="Show the notebooks" title="Show the notebooks"></button>
+        <!-- Add YouTube video: a link in, a transcript into Sources/ (one import per notebook; it runs on if closed). -->
+        <div id="ln-yt-dlg" class="ln-dlg hidden" role="dialog" aria-modal="true" aria-labelledby="ln-yt-h">
+          <form id="ln-yt-form" class="ln-dlg-card">
+            <h2 id="ln-yt-h">Add YouTube video</h2>
+            <p class="su-hint">Paste a video or playlist link. The transcript is saved in this notebook's Sources.</p>
+            <div class="ln-first-row"><input id="ln-yt-url" class="su-input" autocomplete="off" spellcheck="false" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link">
+              <button type="submit" id="ln-yt-go" class="su-btn primary">Import</button></div>
+            <div id="ln-yt-ask" class="ln-yt-ask hidden"><p>This link is a video in a playlist. Import:</p>
+              <button type="button" id="ln-yt-video" class="su-btn su-sm">This video</button><button type="button" id="ln-yt-list" class="su-btn su-sm">Whole playlist</button></div>
+            <p id="ln-yt-msg" class="su-err" aria-live="polite"></p>
+            <p id="ln-yt-status" class="ln-yt-status" aria-live="polite"></p>
+            <div class="ln-dlg-acts"><button type="button" id="ln-yt-close" class="su-btn">Close</button></div>
+          </form>
+        </div>
         <section id="ln-main" class="ln-main" aria-label="Study">
           <div id="ln-tabs" class="fx-tabs ln-tabs" role="tablist" aria-label="Open in this notebook"></div>
           <div id="ln-term" class="ln-term"></div>

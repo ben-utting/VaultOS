@@ -278,6 +278,7 @@ const secAvailable = (sec) => {
   if (sec === 'cols') return STATE.mode === 'board';
   if (sec === 'agent') return termOn() && !ME.localRead;
   if (sec === 'features' || sec === 'password' || sec === 'connectors') return !ME.localRead;
+  if (sec === 'learn') return learnOn() && !ME.localRead;
   return true;
 };
 function showSection(sec) {
@@ -289,6 +290,7 @@ function showSection(sec) {
   else if (sec === 'folders') { FILTER_SEARCH = ''; $('filter-search').value = ''; renderFilterList(); }
   else if (sec === 'cols') { renderColsList(); renderSubtaskToggle(); }
   else if (sec === 'features') loadFeatures();
+  else if (sec === 'learn' && window.Learn) Learn.openSettings();
   else if (sec === 'agent') loadAgent();
   else if (sec === 'connectors') cxOpen();
   else if (sec === 'skills') loadSkills();
@@ -2514,6 +2516,7 @@ async function loadFeatures() {
     $('ft-today').checked = d.settings.features.today;
     $('ft-morning').checked = d.settings.features.morningRead;
     $('ft-notes').checked = !!d.settings.features.notes;
+    $('ft-learn').checked = !!d.settings.features.learn;
     $('ft-auto').checked = d.terminalAllowed && !!d.settings.features.automations;
     $('ft-auto').disabled = !d.terminalAllowed;
     $('ft-auto-d').textContent = d.terminalAllowed
@@ -2532,7 +2535,7 @@ $('ft-save').addEventListener('click', async () => {
   const timezone = $('ft-tz').value.trim();
   if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return $('ft-tz').focus(); }
   $('ft-err').textContent = '';
-  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked, automations: $('ft-auto').checked } : {}) };
+  const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, learn: $('ft-learn').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked, automations: $('ft-auto').checked } : {}) };
   $('ft-save').disabled = true;
   try {
     await api('/api/settings/features', { method: 'POST', body: JSON.stringify(body) });

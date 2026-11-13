@@ -3917,6 +3917,29 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .ln-first-row { display: flex; gap: 8px; margin-top: 14px; }
 .ln-first-row .su-input { flex: 1; }
 .ln-studio-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 20px; }
+.ln-make { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.ln-make .su-label { margin-top: 6px; }
+.ln-from { margin: 0; color: var(--muted); font-size: var(--t-sm); overflow-wrap: anywhere; }
+.ln-from b { color: var(--text); font-weight: 600; }
+.ln-make .su-hint, .ln-make .su-err { margin: 0; }
+.ln-make #ln-key-link { align-self: flex-start; }
+.ln-make #ln-key-link.hidden { display: none; }
+.ln-side.ln-drop { outline: 2px dashed var(--line); outline-offset: -6px; background: color-mix(in srgb, var(--panel-2) 60%, var(--panel)); }
+.ln-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px; background: color-mix(in srgb, var(--bg) 70%, transparent); }
+.ln-dlg.hidden { display: none; }
+.ln-dlg-card { width: 100%; max-width: 520px; padding: 20px 22px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.ln-dlg-card h2 { margin: 0 0 6px; font-size: var(--t-lg); }
+.ln-yt-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; font-size: var(--t-sm); }
+.ln-yt-ask.hidden { display: none; }
+.ln-yt-ask p { margin: 0; flex-basis: 100%; color: var(--muted); }
+.ln-yt-status { margin: 10px 0 0; font-size: var(--t-sm); color: var(--text); overflow-wrap: anywhere; }
+.ln-yt-status:empty { display: none; }
+.ln-dlg-acts { display: flex; justify-content: flex-end; margin-top: 14px; }
+.lr-block { display: flex; flex-direction: column; gap: 6px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.lr-block:last-child { border-bottom: 0; }
+.lr-block .su-hint, .lr-block .su-err { margin: 0; }
+.lr-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.lr-row .su-input { flex: 1 1 220px; }
 .ln-later { margin-top: 22px; color: var(--muted); }
 .ln-later h3 { margin: 0 0 6px; font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
 .ln-later ul { margin: 0; padding-left: 18px; font-size: var(--t-sm); line-height: 1.7; }

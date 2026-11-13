@@ -21,6 +21,8 @@ const Learn = (() => {
     right: svg('<polyline points="9 18 15 12 9 6"/>'),
     terminal: svg('<polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>'),
     plus: svg('<path d="M12 5v14"/><path d="M5 12h14"/>'),
+    video: svg('<path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.94a.5.5 0 0 0-.76-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/>'),
+    upload: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>'),
   };
 
   const L = {
@@ -164,7 +166,10 @@ const Learn = (() => {
     }
     el.innerHTML = out.join('');
     keep();
-    $('ln-foot').innerHTML = `<button type="button" id="ln-new" class="su-btn su-sm">${ICON.plus}New notebook</button>`;
+    const off = L.open ? '' : ' disabled';
+    $('ln-foot').innerHTML = `<button type="button" id="ln-new" class="su-btn su-sm">${ICON.plus}New notebook</button>`
+      + `<button type="button" id="ln-yt" class="su-btn su-sm"${off}>${ICON.video}Add YouTube video</button>`
+      + `<button type="button" id="ln-up" class="su-btn su-sm"${off}>${ICON.upload}Upload</button>`;
   }
 
   function renderTabs() {
@@ -399,12 +404,179 @@ const Learn = (() => {
     setTimeout(() => { if (T.handle) { T.handle.fit(); T.handle.focus(); } }, 50);
   }
 
+  // ---------- Studio ----------
+  // Make an image from the open text tab, else the newest study log, else the newest source (LearnCore.pickFrom).
+  const ST = { key: null, making: false, made: '', err: '' };
   function renderStudio() {
     const el = $('ln-studio-body');
-    if (el.dataset.ready) return;
-    el.dataset.ready = '1';
-    el.innerHTML = '<div class="ln-later"><h3>Coming later</h3><ul><li>Podcast (two voices)</li><li>Flashcards</li><li>Study guide</li><li>Slides</li></ul></div>';
+    if (!el.dataset.ready) {
+      el.dataset.ready = '1';
+      el.innerHTML = '<div class="ln-make"><button type="button" id="ln-make" class="su-btn primary">Make an image</button>'
+        + '<p id="ln-from" class="ln-from"></p>'
+        + '<label class="su-label" for="ln-focus">What should it show?</label>'
+        + '<input id="ln-focus" class="su-input" maxlength="300" autocomplete="off" placeholder="Leave blank for the main idea">'
+        + '<p id="ln-studio-note" class="su-hint"></p><button type="button" id="ln-key-link" class="su-btn su-sm hidden">Open Settings → Learn</button>'
+        + '<p id="ln-made" class="su-hint" aria-live="polite"></p><p id="ln-studio-err" class="su-err" aria-live="polite"></p></div>'
+        + '<div class="ln-later"><h3>Coming later</h3><ul><li>Podcast (two voices)</li><li>Flashcards</li><li>Study guide</li><li>Slides</li></ul></div>';
+    }
+    const nb = current();
+    const from = LearnCore.pickFrom(tabs().active, nb);
+    const keyed = !!(ST.key && ST.key.set);
+    const why = !nb ? 'Open a notebook first.' : !keyed ? 'Add an OpenRouter key in Settings → Learn.' : !from ? 'Add a source first.' : '';
+    $('ln-make').disabled = !!why || ST.making;
+    $('ln-make').textContent = ST.making ? 'Making…' : 'Make an image';
+    $('ln-from').innerHTML = from ? `From: <b>${esc(base(from))}</b>` : '';
+    $('ln-studio-note').textContent = ST.key === null && nb ? '' : why;
+    $('ln-key-link').classList.toggle('hidden', !nb || keyed || ST.key === null);
+    $('ln-made').textContent = ST.made;
+    $('ln-studio-err').textContent = ST.err;
   }
+  async function loadKey() {
+    try { ST.key = await api('/api/learn/key'); } catch { ST.key = { set: false }; }
+    renderStudio();
+  }
+  async function makeImage() {
+    const nb = current();
+    const from = LearnCore.pickFrom(tabs().active, nb);
+    if (!nb || ST.making) return;
+    ST.making = true;
+    ST.err = '';
+    ST.made = '';
+    renderStudio();
+    try {
+      const r = await api('/api/learn/image', { method: 'POST', body: JSON.stringify({ notebook: nb.path, from: from || '', focus: $('ln-focus').value }) });
+      ST.made = LearnCore.madeBy(r.model, r.cost);
+      await loadTree();
+      if (L.open === nb.path) openFile(r.path);
+    } catch (err) {
+      ST.err = err.message;
+    } finally {
+      ST.making = false;
+      renderStudio();
+    }
+  }
+
+  // ---------- Add YouTube video ----------
+  // One import per notebook (the server's rule too). It carries on when the dialog closes or another notebook opens;
+  // reopening the dialog for that notebook shows how it is going.
+  const Y = { nb: null, jobs: new Map(), last: new Map(), timer: null, pending: null };
+  const ytShown = () => !$('ln-yt-dlg').classList.contains('hidden');
+  function ytOpen() {
+    if (!L.open) return;
+    Y.nb = L.open;
+    Y.pending = null;
+    $('ln-yt-msg').textContent = '';
+    $('ln-yt-ask').classList.add('hidden');
+    $('ln-yt-url').value = '';
+    $('ln-yt-dlg').classList.remove('hidden');
+    paintJob(Y.last.get(Y.nb) || null);
+    $('ln-yt-url').focus();
+  }
+  function ytClose() { $('ln-yt-dlg').classList.add('hidden'); }
+  function paintJob(job) {
+    const el = $('ln-yt-status');
+    if (!job) { el.textContent = ''; return; }
+    const capped = job.listed > job.total && job.total ? `First ${job.total} of ${job.listed}. ` : '';
+    if (job.state === 'running') {
+      el.textContent = !job.total ? 'Starting…' : job.total > 1 ? `${capped}Importing ${job.done} of ${job.total}…` : 'Fetching the transcript…';
+      return;
+    }
+    if (job.state === 'failed') { el.textContent = ''; $('ln-yt-msg').textContent = job.error || 'Something went wrong.'; return; }
+    const n = job.failed.length;
+    const allCaptions = n && job.failed.every((f) => f.reason === 'This video has no captions.');
+    const why = !n ? '' : allCaptions ? `, ${n} had no captions` : `, ${n} couldn't be saved`;
+    el.textContent = `${capped}Saved ${job.saved.length}${why}.${n ? ` ${job.failed.map((f) => (allCaptions ? f.title : `${f.title} (${f.reason})`)).join('; ')}` : ''}`;
+  }
+  async function ytStart(url, playlist) {
+    const kind = LearnCore.youtubeKind(url);
+    if (playlist === undefined && kind === 'both') { Y.pending = url; $('ln-yt-ask').classList.remove('hidden'); return; }
+    $('ln-yt-ask').classList.add('hidden');
+    $('ln-yt-msg').textContent = '';
+    const nb = Y.nb;
+    try {
+      const r = await api('/api/learn/youtube', { method: 'POST', body: JSON.stringify({ notebook: nb, url, playlist: playlist === true }) });
+      Y.jobs.set(nb, r.jobId);
+      Y.last.set(nb, { state: 'running', done: 0, total: 0, listed: 0, saved: [], failed: [] });
+      if (Y.nb === nb && ytShown()) paintJob(Y.last.get(nb));
+      ytPoll();
+    } catch (err) {
+      $('ln-yt-msg').textContent = err.message;
+    }
+  }
+  function ytPoll() {
+    if (Y.timer) return;
+    Y.timer = setInterval(async () => {
+      if (!Y.jobs.size) { clearInterval(Y.timer); Y.timer = null; return; }
+      for (const [nb, id] of [...Y.jobs]) {
+        let job;
+        try { job = await api(`/api/learn/youtube/${encodeURIComponent(id)}`); } catch { Y.jobs.delete(nb); continue; }
+        const before = Y.last.get(nb);
+        Y.last.set(nb, job);
+        if (Y.nb === nb && ytShown()) paintJob(job);
+        if (job.state === 'running') { if (L.open === nb && (!before || before.saved.length !== job.saved.length)) { await loadTree(); renderSide(); } continue; }
+        Y.jobs.delete(nb);
+        const one = job.state === 'done' && job.total === 1 && job.saved.length === 1;
+        // One video in: close the dialog so its new tab shows. A playlist keeps it open with the summary.
+        if (one && Y.nb === nb && ytShown()) { ytClose(); Y.last.delete(nb); }
+        if (L.open === nb) {
+          await loadList();
+          await loadTree();
+          if (one) openFile(job.saved[0]);
+          else render();
+        }
+      }
+    }, 1000);
+  }
+
+  // ---------- Upload ----------
+  async function upload(files) {
+    if (!L.open || !files.length) return;
+    const nb = L.open;
+    await fxUpload(`${nb}/Sources`, files.map((f) => ({ file: f, name: f.name })));
+    if (L.open === nb) { await loadTree(); renderSide(); }
+  }
+  function pickUpload() {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.multiple = true;
+    inp.addEventListener('change', () => upload([...inp.files]));
+    inp.click();
+  }
+
+  // ---------- Settings → Learn ----------
+  const keyLine = (k) => (!k || !k.set ? 'No key' : k.source === 'env' ? 'Using OPENROUTER_API_KEY from the server' : `Key saved, ends …${k.last4}`);
+  async function openSettings() {
+    $('lr-dir').value = (ME.learn && ME.learn.dir) || 'Learning';
+    $('lr-dir-msg').textContent = '';
+    $('lr-key-msg').textContent = '';
+    $('lr-key').value = '';
+    await loadKey();
+    $('lr-key-status').textContent = keyLine(ST.key);
+  }
+  async function keyAction(fn) {
+    $('lr-key-msg').textContent = '';
+    try { await fn(); } catch (err) { $('lr-key-msg').textContent = err.message; }
+    $('lr-key-status').textContent = keyLine(ST.key);
+    renderStudio();
+  }
+  $('lr-key-save').addEventListener('click', () => keyAction(async () => {
+    ST.key = await api('/api/learn/key', { method: 'PUT', body: JSON.stringify({ key: $('lr-key').value }) });
+    $('lr-key').value = '';
+  }));
+  $('lr-key').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('lr-key-save').click(); } });
+  $('lr-key-remove').addEventListener('click', () => keyAction(async () => { ST.key = await api('/api/learn/key', { method: 'DELETE' }); }));
+  $('lr-key-test').addEventListener('click', () => keyAction(async () => {
+    $('lr-key-msg').textContent = 'Testing…';
+    const r = await api('/api/learn/key/test', { method: 'POST' });
+    $('lr-key-msg').textContent = `Key works${typeof r.credit === 'number' ? ` · $${r.credit.toFixed(2)} credit left` : ''}`;
+  }));
+  $('lr-dir-save').addEventListener('click', async () => {
+    $('lr-dir-msg').textContent = '';
+    try {
+      await api('/api/settings/learn', { method: 'POST', body: JSON.stringify({ dir: $('lr-dir').value }) });
+      location.reload();
+    } catch (err) { $('lr-dir-msg').textContent = err.message; }
+  });
 
   function applyPanes() {
     const lay = $('ln-layout');
@@ -544,7 +716,7 @@ const Learn = (() => {
 
   // ---------- Events ----------
   $('ln-list').addEventListener('click', (e) => {
-    if (e.target.closest('#ln-settings')) { openSheet('features'); return; }
+    if (e.target.closest('#ln-settings')) { openSheet('learn'); return; }
     if (e.target.closest('#ln-new-cancel')) { L.creating = false; renderSide(); return; }
     const r = e.target.closest('.fx-row');
     if (!r || r.classList.contains('fx-loading')) return;
@@ -571,7 +743,26 @@ const Learn = (() => {
       L.creating = true;
       renderSide();
       $('ln-new-name').focus();
-    }
+    } else if (e.target.closest('#ln-yt')) ytOpen();
+    else if (e.target.closest('#ln-up')) pickUpload();
+  });
+  $('ln-yt-form').addEventListener('submit', (e) => { e.preventDefault(); ytStart($('ln-yt-url').value.trim()); });
+  $('ln-yt-video').addEventListener('click', () => { if (Y.pending) ytStart(Y.pending, false); });
+  $('ln-yt-list').addEventListener('click', () => { if (Y.pending) ytStart(Y.pending, true); });
+  $('ln-yt-close').addEventListener('click', ytClose);
+  $('ln-yt-dlg').addEventListener('click', (e) => { if (e.target.id === 'ln-yt-dlg') ytClose(); });
+  $('ln-yt-dlg').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); ytClose(); } });
+  $('ln-studio-body').addEventListener('click', (e) => {
+    if (e.target.closest('#ln-make')) makeImage();
+    else if (e.target.closest('#ln-key-link')) openSheet('learn');
+  });
+  $('ln-side').addEventListener('dragover', (e) => { if (L.open && e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); $('ln-side').classList.add('ln-drop'); } });
+  $('ln-side').addEventListener('dragleave', (e) => { if (!$('ln-side').contains(e.relatedTarget)) $('ln-side').classList.remove('ln-drop'); });
+  $('ln-side').addEventListener('drop', (e) => {
+    $('ln-side').classList.remove('ln-drop');
+    if (!L.open || !e.dataTransfer || !e.dataTransfer.files.length) return;
+    e.preventDefault();
+    upload([...e.dataTransfer.files]);
   });
   $('ln-tabs').addEventListener('click', (e) => {
     const x = e.target.closest('.fx-tab-x');
@@ -605,6 +796,7 @@ const Learn = (() => {
     L.on = true;
     $('count').textContent = '';
     if (!T.agents) loadAgents();
+    if (!ST.key) loadKey();
     render();
     await refresh();
     clearInterval(L.timer);
@@ -625,7 +817,7 @@ const Learn = (() => {
   if (hasTW()) TW.onList((list) => { T.list = list || []; if (L.on) { syncTerm(); overlay(); } });
 
   return {
-    show, hide, open, openFile,
+    show, hide, open, openFile, openSettings,
     holds,
     heldMap: () => (held() ? new Map([[T.id, 'learn']]) : new Map()),
     goTo,

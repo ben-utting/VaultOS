@@ -304,6 +304,110 @@ S.L7 = async () => {
   check('L7 a detached notebook terminal also goes to Learn', await waitFor(p, (i) => !TW.session(i) && !!Learn.terminal() && Learn.terminal().id === i, 6000, id));
 };
 
+const ytOpen = (p) => waitFor(p, () => !!document.querySelector('#ln-yt-dlg:not(.hidden)'), 4000);
+async function ytImport(p, url) {
+  await p.$eval('#ln-yt-url', (e) => { e.value = ''; });
+  await p.type('#ln-yt-url', url);
+  await tap(p, '#ln-yt-go');
+}
+const ytStatus = (p) => ev(p, () => (document.getElementById('ln-yt-status') || {}).textContent || '');
+const sourcesOnDisk = (nb = NB) => (fs.existsSync(disk(`${nb}/Sources`)) ? fs.readdirSync(disk(`${nb}/Sources`)).filter((n) => !n.startsWith('.')).sort() : []);
+
+S.L4 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  await tap(p, '#ln-yt');
+  check('L4 the YouTube dialog opens', await ytOpen(p));
+  await ytImport(p, 'https://example.com/watch?v=abcdefghijk');
+  check('L4 a link that is not YouTube says so', await waitFor(p, () => /That isn't a YouTube link\./.test(document.getElementById('ln-yt-msg').textContent), 4000));
+  await ytImport(p, 'https://youtu.be/vidaaaaaaa1');
+  const one = `${NB}/Sources/Rivers part 1 Where they start.txt`;
+  check('L4 one video is saved and opens as a tab', await waitFor(p, (r) => (document.querySelector('#ln-tabs .fx-tab.active') || {}).dataset?.path === r, 10000, one), await ytStatus(p));
+  check('L4 the file is on disk', sourcesOnDisk().includes('Rivers part 1 Where they start.txt'), sourcesOnDisk());
+  check('L4 one video in: the dialog closes so the tab shows', await waitFor(p, () => !!document.querySelector('#ln-yt-dlg.hidden'), 3000));
+  await shot(p, 'L4-video');
+  await pane(p, 'notebook');
+  await tap(p, '#ln-yt');
+  await ytOpen(p);
+  await ytImport(p, 'https://www.youtube.com/playlist?list=PLfake00001');
+  check('L4 a playlist reports saved and failed', await waitFor(p, () => /Saved 2, 1 had no captions/.test(document.getElementById('ln-yt-status').textContent), 15000), await ytStatus(p));
+  check('L4 and names the one without captions', /Rivers part 3: Silent film/.test(await ytStatus(p)), await ytStatus(p));
+  check('L4 two more transcripts on disk', sourcesOnDisk().length === 5, sourcesOnDisk());
+  await shot(p, 'L4-playlist');
+  await ytImport(p, 'https://www.youtube.com/watch?v=vidaaaaaaa2&list=PLfake00001');
+  check('L4 a watch link with a list asks which', await waitFor(p, () => !!document.querySelector('#ln-yt-ask:not(.hidden)'), 4000));
+  await tap(p, '#ln-yt-video');
+  check('L4 "This video" imports just the one, and the dialog closes', await waitFor(p, () => !!document.querySelector('#ln-yt-dlg.hidden'), 10000) && sourcesOnDisk().length === 6, sourcesOnDisk());
+  // Review Focus 5: a playlist still importing when the dialog closes and another notebook opens.
+  await api('POST', '/api/learn/notebooks', { name: 'Other' });
+  await pane(p, 'notebook');
+  await tap(p, '#ln-yt');
+  await ytOpen(p);
+  await ytImport(p, 'https://www.youtube.com/playlist?list=PLslow00001');
+  await waitFor(p, () => /of 3/.test(document.getElementById('ln-yt-status').textContent), 6000);
+  await tap(p, '#ln-yt-close');
+  await waitFor(p, () => !!document.querySelector('#ln-list .ln-nb[data-nb="Learning/Other"]'), 8000);
+  await tap(p, '#ln-list .ln-nb[data-nb="Learning/Other"]');
+  await sleep(1200);
+  await tap(p, `#ln-list .ln-nb[data-nb="${NB}"]`);
+  await tap(p, '#ln-yt');
+  await ytOpen(p);
+  check('L4 reopening shows the running import', /of 3|Saved 3/.test(await ytStatus(p)), await ytStatus(p));
+  check('L4 it finishes', await waitFor(p, () => /Saved 3\b/.test(document.getElementById('ln-yt-status').textContent), 20000), await ytStatus(p));
+  check('L4 the files landed in the first notebook only', sourcesOnDisk().filter((n) => n.startsWith('Slow lesson')).length === 3 && sourcesOnDisk('Learning/Other').length === 0, { first: sourcesOnDisk(), other: sourcesOnDisk('Learning/Other') });
+};
+
+S.L10 = async () => {
+  await reset();
+  execFileSync('docker', ['exec', '-d', '-u', '1000', 'learn-preview', 'node', '/app/scripts/learn-fake-openrouter.js']);
+  await sleep(800);
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'studio');
+  check('L10 without a key the button is off and says why', await ev(p, () => document.getElementById('ln-make').disabled)
+    && /Add an OpenRouter key in Settings → Learn/.test(await ev(p, () => document.getElementById('ln-studio-note').textContent)));
+  check('L10 the coming-later list shows', /Podcast \(two voices\)[\s\S]*Flashcards[\s\S]*Study guide[\s\S]*Slides/.test(await ev(p, () => document.querySelector('.ln-later').textContent)));
+  await shot(p, 'L10-nokey');
+  await tap(p, '#ln-key-link');
+  check('L10 the link opens Settings → Learn', await waitFor(p, () => !!document.querySelector('.ss-pane[data-sec="learn"].active'), 4000));
+  await p.type('#lr-key', 'sk-or-v1-previewkey9876');
+  await tap(p, '#lr-key-save');
+  check('L10 the saved key shows only its last four', await waitFor(p, () => /ends …9876/.test(document.getElementById('lr-key-status').textContent), 4000), await ev(p, () => document.getElementById('lr-key-status').textContent));
+  check('L10 the field is cleared', (await ev(p, () => document.getElementById('lr-key').value)) === '');
+  await tap(p, '#lr-key-test');
+  check('L10 Test says the key works, with the credit left', await waitFor(p, () => /Key works · \$4\.20 credit left/.test(document.getElementById('lr-key-msg').textContent), 6000), await ev(p, () => document.getElementById('lr-key-msg').textContent));
+  await shot(p, 'L10-settings');
+  await tap(p, '#ss-close');
+  await pane(p, 'studio');
+  check('L10 the button is on once there is a key', await waitFor(p, () => !document.getElementById('ln-make').disabled, 6000));
+  check('L10 From: names the newest study log', /2026-11-12 study\.md/.test(await ev(p, () => document.getElementById('ln-from').textContent)), await ev(p, () => document.getElementById('ln-from').textContent));
+  await p.type('#ln-focus', 'how rivers start');
+  await tap(p, '#ln-make');
+  check('L10 the image opens as a tab', await waitFor(p, () => /\/Studio\/\d{4}-\d{2}-\d{2} \d{4} Rivers in three steps\.png$/.test((document.querySelector('#ln-tabs .fx-tab.active') || {}).dataset?.path || ''), 15000));
+  await pane(p, 'studio');
+  check('L10 Made by names the model and the cost', (await ev(p, () => document.getElementById('ln-made').textContent)) === 'Made by fake/auto-picked · $0.03', await ev(p, () => document.getElementById('ln-made').textContent));
+  check('L10 the image is on disk', fs.readdirSync(disk(`${NB}/Studio`)).some((n) => /Rivers in three steps\.png$/.test(n)));
+  await pane(p, 'study');
+  await shot(p, 'L10-image');
+};
+
+S.L11 = async () => {
+  await reset();
+  const p = await page();
+  await toLearn(p);
+  await pane(p, 'notebook');
+  const tmp = path.join(SHOTS, '..', 'upload-sample.md');
+  fs.writeFileSync(tmp, '# Uploaded\n\nA note to study from.\n');
+  try {
+    const [chooser] = await Promise.all([p.waitForFileChooser({ timeout: 4000 }), p.click('#ln-up')]);
+    await chooser.accept([tmp]);
+  } catch (e) { check('L11 the file chooser opens', false, String(e.message).split('\n')[0]); }
+  check('L11 an uploaded file lands in Sources', await waitFor(p, (r) => !!document.querySelector(`#ln-list [data-path="${r}"]`), 10000, `${NB}/Sources/upload-sample.md`)
+    && fs.existsSync(disk(`${NB}/Sources/upload-sample.md`)));
+};
+
 (async () => {
   const names = NAMES.length ? NAMES : Object.keys(S);
   const unknown = names.filter((n) => !S[n]);
