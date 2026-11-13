@@ -101,3 +101,9 @@ test('transcriptText leaves out a channel or length it does not know', () => {
   const text = transcriptText({ title: 'T', url: 'https://youtu.be/x', fetched: '2026-11-13' }, [{ start: 5, text: 'Hi.' }]);
   assert.equal(text, 'Title: T\nLink: https://youtu.be/x\nFetched: 2026-11-13\n\n[0:05] Hi.\n');
 });
+
+test('parseVtt keeps going past a character code that does not exist', () => {
+  const cues = parseVtt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nbad &#99999999; and &#x41; ok\n');
+  assert.equal(cues.length, 1);
+  assert.match(cues[0].text, /^bad .* and .* ok$/);
+});

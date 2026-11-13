@@ -38,8 +38,11 @@ test('safeTitle never returns an illegal or empty name (Review Focus 2)', () => 
   assert.equal(safeTitle('???', { max: 100, fallback: 'dQw4w9WgXcQ' }), 'dQw4w9WgXcQ');
   assert.equal(safeTitle('', { max: 100, fallback: 'vid' }), 'vid');
   assert.equal(safeTitle('🎉🎉', { max: 100, fallback: 'vid' }), '🎉🎉');
-  assert.equal(safeTitle('CON', { max: 100, fallback: 'vid' }), 'CON video');
-  assert.equal(safeTitle('aux.part', { max: 100, fallback: 'vid' }), 'aux.part video');
+  assert.equal(safeTitle('CON', { max: 100, fallback: 'vid' }), 'Video CON');
+  assert.equal(safeTitle('aux.part', { max: 100, fallback: 'vid' }), 'Video aux.part');
+  assert.equal(safeTitle('Aux. inputs explained', { max: 100, fallback: 'vid' }), 'Video Aux. inputs explained', 'Windows reads the name up to the first dot');
+  assert.equal(safeTitle('Nul .notes', { max: 100, fallback: 'vid' }), 'Video Nul .notes');
+  assert.equal(safeTitle('Console basics', { max: 100, fallback: 'vid' }), 'Console basics');
   assert.equal(safeTitle('...', { max: 100, fallback: 'vid' }), 'vid');
   assert.equal(safeTitle('.hidden title', { max: 100, fallback: 'vid' }), 'hidden title');
   assert.ok(!/[. ]$/.test(safeTitle('ends with dot.', { max: 100, fallback: 'v' })));
@@ -66,4 +69,11 @@ test('uniqueName adds (2), (3) case-insensitively', async (t) => {
 test('stamp uses the time zone', () => {
   assert.deepEqual(stamp(new Date('2026-11-13T23:30:00Z'), 'Asia/Tokyo'), { day: '2026-11-14', time: '0830' });
   assert.deepEqual(stamp(new Date('2026-11-13T00:05:00Z'), 'UTC'), { day: '2026-11-13', time: '0005' });
+});
+
+test('safeTitle can cap by bytes, so a long non-Latin title fits a 255-byte file name', () => {
+  const t = safeTitle('漢'.repeat(120), { max: 100, maxBytes: 180, fallback: 'v' });
+  assert.ok(Buffer.byteLength(t) <= 180, String(Buffer.byteLength(t)));
+  assert.ok(t.length > 0 && !/[\uD800-\uDBFF]$/.test(t));
+  assert.equal(safeTitle('plain title', { max: 100, maxBytes: 180, fallback: 'v' }), 'plain title');
 });

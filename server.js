@@ -1210,13 +1210,7 @@ function learnSvc() {
   if (!s || !s.features.learn) return null;
   if (!LEARN_SVC) {
     const { createLearnService } = require('./lib/learn-service');
-    const { execFile } = require('child_process');
-    // yt-dlp as an argument list, never through a shell. timedOut: the call was killed for running too long.
-    const run = (bin, args, { timeoutMs }) => new Promise((resolve) => {
-      execFile(bin, args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'utf8' }, (error, stdout, stderr) => {
-        resolve({ code: error ? (typeof error.code === 'number' ? error.code : null) : 0, stdout, stderr, error: error || undefined, timedOut: !!(error && error.killed) });
-      });
-    });
+    const { execRun: run } = require('./lib/learn-youtube');   // yt-dlp: argument list, small environment
     LEARN_SVC = createLearnService({
       vaultDir: VAULT_DIR, settings: () => SETTINGS(), home: process.env.HOME || os.homedir(), env: process.env,
       run, fetch: (...a) => fetch(...a), tmpRoot: os.tmpdir(),

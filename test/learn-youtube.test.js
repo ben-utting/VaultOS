@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { parseYoutubeUrl, pickCaption, createImporter } = require('../lib/learn-youtube');
+const { parseYoutubeUrl, pickCaption, createImporter, ytdlpEnv, execRun } = require('../lib/learn-youtube');
 const { LearnError } = require('../lib/learn-names');
 
 const VTT = fs.readFileSync(path.join(__dirname, 'fixtures', 'learn', 'manual.vtt'), 'utf8');
@@ -244,4 +244,59 @@ test('status of an unknown job is null', (t) => {
   const s = setup(t);
   const imp = createImporter({ run: fakeRun(t).run, tmpRoot: s.tmpRoot, today: () => '2026-11-13' });
   assert.equal(imp.status('nope'), null);
+});
+
+test('one video that breaks in an unexpected way is a failed entry, not the end of the playlist', async (t) => {
+  const s = setup(t);
+  const base = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: Object.fromEntries([1, 2, 3].map((n) => [ID(n), { title: `T${n}`, subs: caps }])) });
+  const run = async (bin, args, opts) => { if (args.includes(`https://www.youtube.com/watch?v=${ID(2)}`)) throw new Error('spawn exploded'); return base.run(bin, args, opts); };
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
+  assert.equal(job.state, 'done');
+  assert.deepEqual(job.saved, ['Learning/A/Sources/T1.txt', 'Learning/A/Sources/T3.txt']);
+  assert.deepEqual(job.failed, [{ title: `Title ${ID(2)}`, reason: 'Something went wrong with this video.' }]);
+});
+
+test('a long non-Latin title and an odd character code still import', async (t) => {
+  const s = setup(t);
+  const { run } = fakeRun(t, { videos: { [ID(1)]: { title: '漢'.repeat(120), subs: caps, vtt: 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi &#99999999; there.\n' } } });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
+  assert.equal(job.state, 'done', job.error);
+  assert.ok(Buffer.byteLength(path.basename(job.saved[0])) <= 255);
+});
+
+test('a notebook deleted mid-import stops the job and is not brought back', async (t) => {
+  const s = setup(t);
+  const { run } = fakeRun(t, { delayMs: 30, lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: Object.fromEntries([1, 2, 3].map((n) => [ID(n), { title: `T${n}`, subs: caps }])) });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 30 });
+  const id = imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' });
+  await sleep(40);
+  fs.rmSync(s.nb('A').abs, { recursive: true, force: true });
+  const job = await finished(imp, id, 5000);
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error, 'That notebook is gone.');
+  assert.equal(fs.existsSync(s.nb('A').abs), false, 'the notebook folder was not recreated');
+});
+
+test('YouTube refusing the server stops a playlist instead of trying every video', async (t) => {
+  const s = setup(t);
+  const { run, calls } = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: { [ID(1)]: { stderr: 'ERROR: [youtube] x: Sign in to confirm you’re not a bot.' }, [ID(2)]: { title: 'T2', subs: caps }, [ID(3)]: { title: 'T3', subs: caps } } });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
+  assert.equal(job.state, 'failed');
+  assert.equal(job.error, 'YouTube refused the request from this server. Try again later.');
+  assert.equal(calls.filter((c) => c.args.includes(`https://www.youtube.com/watch?v=${ID(2)}`)).length, 0, 'no more videos were tried');
+});
+
+test('yt-dlp gets a small environment: no keys or secrets from the server', async () => {
+  const env = ytdlpEnv({ PATH: '/usr/bin', HOME: '/home/x', OPENROUTER_API_KEY: 'sk-or-secret', SESSION_SECRET: 's', LANG: 'en_GB.UTF-8' });
+  assert.deepEqual(Object.keys(env).sort(), ['HOME', 'LANG', 'PATH']);
+  process.env.OPENROUTER_API_KEY = 'sk-or-should-not-leak';
+  try {
+    const r = await execRun('/usr/bin/env', [], { timeoutMs: 5000 });
+    assert.equal(r.code, 0);
+    assert.ok(!r.stdout.includes('OPENROUTER_API_KEY'));
+    assert.match(r.stdout, /^PATH=/m);
+  } finally { delete process.env.OPENROUTER_API_KEY; }
 });
