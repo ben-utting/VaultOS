@@ -121,6 +121,9 @@ test('list: notebooks only, with counts, a stable space id, newest first', async
   assert.equal((await s.svc.list()).notebooks[0].space, nb.space);
   assert.notEqual(r.notebooks[1].space, nb.space);
   assert.equal(typeof nb.updated, 'number');
+  assert.deepEqual(nb.latest, { notes: 'Learning/New/Notes/2026-11-13 study.md', sources: nb.latest.sources });
+  assert.match(nb.latest.sources, /^Learning\/New\/Sources\/[ab]\.txt$/);
+  assert.deepEqual(r.notebooks[1].latest, { notes: null, sources: 'Learning/Old/Sources/a.txt' });
 });
 
 test('list with no Learn folder yet says it is missing', async (t) => {
@@ -174,9 +177,9 @@ test('image refuses a file outside the notebook, a missing source, no key, and a
   await assert.rejects(s.svc.image('Learning/A', 'Learning/B/Notes/x.md', ''), err(400));
   await assert.rejects(s.svc.image('Learning/A', 'Learning/A/../B/Notes/x.md', ''), err(400));
   await assert.rejects(s.svc.image('Learning/Empty', '', ''), err(400, /^Add a source first\.$/));
-  const first = s.svc.image('Learning/A', '', '');
-  await new Promise((r) => setImmediate(r));
+  const first = s.svc.image('Learning/A', '', '');   // a double click: the second comes before the first has awaited anything
   await assert.rejects(s.svc.image('Learning/A', '', ''), err(409, /^An image is already being made in this notebook\.$/));
+  while (!release) await new Promise((r) => setImmediate(r));
   release();
   assert.match((await first).path, /^Learning\/A\/Studio\/2026-11-13 1430 t\.png$/);
   const nokey = setup(t, { key: false, files: { 'Learning/A/Notes/n.md': 'n' } });
