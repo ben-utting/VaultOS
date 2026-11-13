@@ -55,6 +55,10 @@ Optional: the habits you choose to track, with streaks, a focus timer and a shor
   <img alt="Today mode: habit tracker, focus timer and the day's tasks" src="docs/images/today-dark.png">
 </picture>
 
+### Learn
+
+Optional: one notebook per topic, laid out like a study desk. Paste a YouTube video or playlist and its transcript is saved as a source. Study it with your coding agent in the notebook's own terminal, and each answer is written into a dated study log you can read back. Studio makes an explainer image of what you are studying through your OpenRouter key, and OpenRouter picks the model. Turn it on in Settings.
+
 ## Install on Windows
 
 You need [Docker Desktop](https://www.docker.com/products/docker-desktop/) and [Git for Windows](https://git-scm.com/download/win), both installed and Docker Desktop running. Then, in PowerShell:
