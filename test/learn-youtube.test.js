@@ -102,13 +102,13 @@ async function finished(imp, id, ms = 3000) {
 test('one video: saved as Sources/<title>.txt with the transcript layout, no temp files left', async (t) => {
   const s = setup(t);
   const { run, calls } = fakeRun(t, { videos: { [ID(1)]: { title: 'Part 3: Lights / lamps?', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const id = imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` });
   const job = await finished(imp, id);
   assert.equal(job.state, 'done');
   assert.deepEqual(job.saved, ['Learning/A/Sources/Part 3 Lights lamps.txt']);
   const text = fs.readFileSync(path.join(s.nb('A').abs, 'Sources', 'Part 3 Lights lamps.txt'), 'utf8');
-  assert.match(text, /^Title: Part 3: Lights \/ lamps\?\nChannel: A channel\nLink: https:\/\/www\.youtube\.com\/watch\?v=vid00000001\nLength: 9:53\nFetched: 2026-11-13\n\n\[0:02\] So, has everyone/);
+  assert.match(text, /^Title: Part 3: Lights \/ lamps\?\nChannel: A channel\nLink: https:\/\/www\.youtube\.com\/watch\?v=vid00000001\nLength: 9:53\nFetched: 2026-11-13 10:16\n\n\[0:02\] So, has everyone/);
   assert.deepEqual(fs.readdirSync(path.join(s.nb('A').abs, 'Sources')), ['Part 3 Lights lamps.txt']);
   assert.deepEqual(fs.readdirSync(s.tmpRoot), []);
   for (const c of calls) {
@@ -118,13 +118,58 @@ test('one video: saved as Sources/<title>.txt with the transcript layout, no tem
   }
 });
 
-test('a second import of the same title gets (2)', async (t) => {
+test('another video with the same title gets (2)', async (t) => {
   const s = setup(t);
-  const { run } = fakeRun(t, { videos: { [ID(1)]: { title: 'Same', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const { run } = fakeRun(t, { videos: { [ID(1)]: { title: 'Same', subs: caps }, [ID(2)]: { title: 'Same', subs: caps } } });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
-  const j = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
+  const j = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(2)}` }));
   assert.deepEqual(j.saved, ['Learning/A/Sources/Same (2).txt']);
+});
+
+test('a video already in Sources is not fetched again', async (t) => {
+  const s = setup(t);
+  const { run, calls } = fakeRun(t, { videos: { [ID(1)]: { title: 'Once', subs: caps } } });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
+  await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
+  const before = calls.length;
+  const j = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://www.youtube.com/watch?v=${ID(1)}&t=5s` }));
+  assert.equal(j.state, 'failed');
+  assert.equal(j.error, 'That video is already in Sources.');
+  assert.equal(calls.length, before, 'no yt-dlp call');
+  assert.deepEqual(fs.readdirSync(path.join(s.nb('A').abs, 'Sources')), ['Once.txt']);
+});
+
+test('a playlist skips videos already in Sources and saves the rest in playlist order', async (t) => {
+  const s = setup(t);
+  const ids = [ID(1), ID(2), ID(3), ID(2)];   // a playlist can hold a video twice
+  const videos = { [ID(1)]: { title: 'Day 0', subs: caps }, [ID(2)]: { title: 'Day 1', subs: caps }, [ID(3)]: { title: 'Day 2', subs: caps } };
+  const { run } = fakeRun(t, { lists: { PL0123456789: ids }, videos });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
+  const sources = path.join(s.nb('A').abs, 'Sources');
+  await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
+  // A file of your own that only mentions the link in its text is not an import of it.
+  fs.writeFileSync(path.join(sources, 'my notes.txt'), `Notes\n\nLink: https://www.youtube.com/watch?v=${ID(3)}\n`);
+  const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
+  assert.equal(job.state, 'done');
+  assert.equal(job.listed, 4);
+  assert.equal(job.skipped, 2);
+  assert.equal(job.total, 2);
+  assert.deepEqual(job.saved, ['Learning/A/Sources/Day 1.txt', 'Learning/A/Sources/Day 2.txt']);
+});
+
+test('the playlist cap counts new videos only, so adding the playlist again brings the rest', async (t) => {
+  const s = setup(t);
+  const ids = Array.from({ length: 60 }, (_, i) => ID(i + 1));
+  const videos = Object.fromEntries(ids.map((v) => [v, { title: v, subs: caps }]));
+  const { run } = fakeRun(t, { lists: { PL0123456789: ids }, videos });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
+  const url = 'https://www.youtube.com/playlist?list=PL0123456789';
+  const first = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url }), 10000);
+  assert.deepEqual([first.listed, first.skipped, first.total, first.saved.length], [60, 0, 50, 50]);
+  const second = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url }), 10000);
+  assert.deepEqual([second.listed, second.skipped, second.total], [60, 50, 10]);
+  assert.deepEqual(second.saved, ids.slice(50).map((v) => `Learning/A/Sources/${v}.txt`));
 });
 
 test('failures are one plain line and leave no file', async (t) => {
@@ -142,7 +187,7 @@ test('failures are one plain line and leave no file', async (t) => {
   for (const [opts, message] of cases) {
     const s = setup(t);
     const { run } = fakeRun(t, opts);
-    const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+    const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
     const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
     assert.equal(job.state, 'failed', message);
     assert.equal(job.error, message);
@@ -156,7 +201,7 @@ test('failures are one plain line and leave no file', async (t) => {
 test('a link that is not YouTube is 400 before anything runs', (t) => {
   const s = setup(t);
   const { run, calls } = fakeRun(t);
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13' });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16' });
   assert.throws(() => imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://example.com/v' }),
     (e) => e instanceof LearnError && e.status === 400 && e.message === 'That isn\'t a YouTube link.');
   assert.throws(() => imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}`, playlist: true }),
@@ -170,7 +215,7 @@ test('a playlist: one video without captions does not stop the rest', async (t) 
     lists: { PL0123456789: [ID(1), ID(2), ID(3)] },
     videos: { [ID(1)]: { title: 'One', subs: caps }, [ID(2)]: { title: 'Two', subs: {} }, [ID(3)]: { title: 'Three', subs: caps } },
   });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
   assert.equal(job.state, 'done');
   assert.equal(job.done, 3);
@@ -183,7 +228,7 @@ test('a playlist: one video without captions does not stop the rest', async (t) 
 test('a watch link with a list imports the list only when asked', async (t) => {
   const s = setup(t);
   const { run } = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2)] }, videos: { [ID(1)]: { title: 'One', subs: caps }, [ID(2)]: { title: 'Two', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const url = `https://www.youtube.com/watch?v=${ID(1)}&list=PL0123456789`;
   assert.equal((await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url }))).saved.length, 1);
   assert.equal((await finished(imp, imp.start(s.nb('B').abs, s.nb('B').rel, { url, playlist: true }))).saved.length, 2);
@@ -194,7 +239,7 @@ test('a playlist longer than 50 imports the first 50 and says how many there wer
   const ids = Array.from({ length: 60 }, (_, i) => ID(i + 1));
   const videos = Object.fromEntries(ids.map((v) => [v, { title: v, subs: caps }]));
   const { run } = fakeRun(t, { lists: { PL0123456789: ids }, videos });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }), 10000);
   assert.equal(job.total, 50);
   assert.equal(job.listed, 60);
@@ -204,7 +249,7 @@ test('a playlist longer than 50 imports the first 50 and says how many there wer
 test('the pause between playlist videos is honoured', async (t) => {
   const s = setup(t);
   const { run, calls } = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2)] }, videos: { [ID(1)]: { title: 'One', subs: caps }, [ID(2)]: { title: 'Two', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 150 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 150 });
   const started = Date.now();
   await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
   assert.ok(Date.now() - started >= 150);
@@ -214,7 +259,7 @@ test('the pause between playlist videos is honoured', async (t) => {
 test('one import per notebook at a time: a second is 409', async (t) => {
   const s = setup(t);
   const { run } = fakeRun(t, { delayMs: 50, videos: { [ID(1)]: { title: 'One', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const id = imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` });
   assert.equal(imp.busy('Learning/A'), id);
   assert.throws(() => imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }),
@@ -230,7 +275,7 @@ test('an import carries on unwatched, and lands in its own notebook while anothe
     lists: { PL0123456789: [ID(1), ID(2), ID(3)], PLabcdefghij: [ID(4)] },
     videos: Object.fromEntries([1, 2, 3, 4].map((n) => [ID(n), { title: `T${n}`, subs: caps }])),
   });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 5 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 5 });
   const a = imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' });
   const b = imp.start(s.nb('B').abs, s.nb('B').rel, { url: 'https://www.youtube.com/playlist?list=PLabcdefghij' });
   await sleep(400);   // nobody asks for status meanwhile
@@ -242,7 +287,7 @@ test('an import carries on unwatched, and lands in its own notebook while anothe
 
 test('status of an unknown job is null', (t) => {
   const s = setup(t);
-  const imp = createImporter({ run: fakeRun(t).run, tmpRoot: s.tmpRoot, today: () => '2026-11-13' });
+  const imp = createImporter({ run: fakeRun(t).run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16' });
   assert.equal(imp.status('nope'), null);
 });
 
@@ -250,7 +295,7 @@ test('one video that breaks in an unexpected way is a failed entry, not the end 
   const s = setup(t);
   const base = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: Object.fromEntries([1, 2, 3].map((n) => [ID(n), { title: `T${n}`, subs: caps }])) });
   const run = async (bin, args, opts) => { if (args.includes(`https://www.youtube.com/watch?v=${ID(2)}`)) throw new Error('spawn exploded'); return base.run(bin, args, opts); };
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
   assert.equal(job.state, 'done');
   assert.deepEqual(job.saved, ['Learning/A/Sources/T1.txt', 'Learning/A/Sources/T3.txt']);
@@ -260,7 +305,7 @@ test('one video that breaks in an unexpected way is a failed entry, not the end 
 test('a long non-Latin title and an odd character code still import', async (t) => {
   const s = setup(t);
   const { run } = fakeRun(t, { videos: { [ID(1)]: { title: '漢'.repeat(120), subs: caps, vtt: 'WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi &#99999999; there.\n' } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: `https://youtu.be/${ID(1)}` }));
   assert.equal(job.state, 'done', job.error);
   assert.ok(Buffer.byteLength(path.basename(job.saved[0])) <= 255);
@@ -269,7 +314,7 @@ test('a long non-Latin title and an odd character code still import', async (t) 
 test('a notebook deleted mid-import stops the job and is not brought back', async (t) => {
   const s = setup(t);
   const { run } = fakeRun(t, { delayMs: 30, lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: Object.fromEntries([1, 2, 3].map((n) => [ID(n), { title: `T${n}`, subs: caps }])) });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 30 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 30 });
   const id = imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' });
   await sleep(40);
   fs.rmSync(s.nb('A').abs, { recursive: true, force: true });
@@ -282,7 +327,7 @@ test('a notebook deleted mid-import stops the job and is not brought back', asyn
 test('YouTube refusing the server stops a playlist instead of trying every video', async (t) => {
   const s = setup(t);
   const { run, calls } = fakeRun(t, { lists: { PL0123456789: [ID(1), ID(2), ID(3)] }, videos: { [ID(1)]: { stderr: 'ERROR: [youtube] x: Sign in to confirm you’re not a bot.' }, [ID(2)]: { title: 'T2', subs: caps }, [ID(3)]: { title: 'T3', subs: caps } } });
-  const imp = createImporter({ run, tmpRoot: s.tmpRoot, today: () => '2026-11-13', pauseMs: 0 });
+  const imp = createImporter({ run, tmpRoot: s.tmpRoot, fetchedAt: () => '2026-11-13 10:16', pauseMs: 0 });
   const job = await finished(imp, imp.start(s.nb('A').abs, s.nb('A').rel, { url: 'https://www.youtube.com/playlist?list=PL0123456789' }));
   assert.equal(job.state, 'failed');
   assert.equal(job.error, 'YouTube refused the request from this server. Try again later.');

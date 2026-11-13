@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { LearnError, checkNotebookName, safeTitle, uniqueName, stamp } = require('../lib/learn-names');
+const { LearnError, checkNotebookName, safeTitle, uniqueName, stamp, fetchedStamp } = require('../lib/learn-names');
 
 const is400 = (e) => e instanceof LearnError && e.status === 400;
 
@@ -76,4 +76,9 @@ test('safeTitle can cap by bytes, so a long non-Latin title fits a 255-byte file
   assert.ok(Buffer.byteLength(t) <= 180, String(Buffer.byteLength(t)));
   assert.ok(t.length > 0 && !/[\uD800-\uDBFF]$/.test(t));
   assert.equal(safeTitle('plain title', { max: 100, maxBytes: 180, fallback: 'v' }), 'plain title');
+});
+
+test('fetchedStamp: date and time for a transcript\'s Fetched line, in the time zone', () => {
+  assert.equal(fetchedStamp(new Date('2026-11-13T10:16:00Z'), 'Europe/London'), '2026-11-13 10:16');
+  assert.equal(fetchedStamp(new Date('2026-11-13T23:30:00Z'), 'Asia/Tokyo'), '2026-11-14 08:30');
 });

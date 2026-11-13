@@ -2,7 +2,7 @@
 
 // ========================================================================
 // LearnCore — Learn mode's pure logic (window.LearnCore). No DOM.
-//   treeOrder(folder, items) -> items            Sources A–Z, Notes/Studio newest first (names start with a date)
+//   treeOrder(folder, items) -> items            Sources oldest first (by mtime), Notes/Studio newest first (names start with a date)
 //   pickFrom(activeTab, notebook) -> path|null   the file Studio reads: open text tab, newest log, newest source
 //   tabsFor(store, nb) -> { tabs, active }       per-notebook tabs; 'terminal' is the fixed first tab
 //   withTab / withoutTab / withActive(store, nb, path) -> store   (pure)
@@ -19,9 +19,19 @@
   const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
   const dirsFirst = (a, b) => (b.dir ? 1 : 0) - (a.dir ? 1 : 0);
 
+  // Sources stay in the order they came in (a playlist's day 1 above day 2), by the mtime the tree gives with
+  // ?times=1; A–Z when two share a time or there are no times.
   function treeOrder(folder, items) {
     const newest = folder === 'Notes' || folder === 'Studio';
-    return items.slice().sort((a, b) => dirsFirst(a, b) || (newest && !a.dir && !b.dir ? coll.compare(b.name, a.name) : coll.compare(a.name, b.name)));
+    const arrived = folder === 'Sources';
+    const byName = (a, b) => coll.compare(a.name, b.name);
+    return items.slice().sort((a, b) => {
+      const d = dirsFirst(a, b);
+      if (d || a.dir || b.dir) return d || byName(a, b);
+      if (newest) return coll.compare(b.name, a.name);
+      if (arrived && Number.isFinite(a.mtime) && Number.isFinite(b.mtime) && a.mtime !== b.mtime) return a.mtime - b.mtime;
+      return byName(a, b);
+    });
   }
 
   const isText = (p) => /\.(md|txt)$/i.test(p || '');

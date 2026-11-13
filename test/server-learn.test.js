@@ -122,3 +122,21 @@ test('start buttons: none when terminals are off; only installed agents otherwis
   const one = await learnServer(t, { env: { TERMINAL: '1' }, bins: ['agent'], agent: 'claude' });
   assert.deepEqual((await one.req('GET', '/api/learn/agents')).body.agents.map((a) => a.id), ['cursor']);
 });
+
+test('the Files tree gives each file its modified time when Learn asks (?times=1)', async (t) => {
+  const s = await learnServer(t);
+  fs.mkdirSync(s.disk('Learning/A/Sources'), { recursive: true });
+  fs.writeFileSync(s.disk('Learning/A/Sources/b.txt'), 'b');
+  fs.writeFileSync(s.disk('Learning/A/Sources/a.txt'), 'a');
+  const when = new Date('2026-11-13T10:16:00Z');
+  fs.utimesSync(s.disk('Learning/A/Sources/b.txt'), when, when);
+  fs.mkdirSync(s.disk('Learning/A/Sources/sub'));
+  const timed = await s.req('GET', '/api/fs/tree?path=Learning%2FA%2FSources&times=1');
+  assert.equal(timed.status, 200);
+  const b = timed.body.items.find((i) => i.name === 'b.txt');
+  assert.equal(b.mtime, when.getTime());
+  assert.equal(typeof timed.body.items.find((i) => i.name === 'a.txt').mtime, 'number');
+  assert.equal(timed.body.items.find((i) => i.name === 'sub').mtime, undefined, 'folders carry no time');
+  const plain = await s.req('GET', '/api/fs/tree?path=Learning%2FA%2FSources');
+  assert.ok(plain.body.items.every((i) => i.mtime === undefined), 'Files mode is unchanged');
+});

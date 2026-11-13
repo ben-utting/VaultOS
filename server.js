@@ -2402,13 +2402,20 @@ function fsKind(name) {
 app.get('/api/fs/tree', async (req, res) => {
   try {
     const full = await safeVaultPath(req.query.path);
+    const times = req.query.times === '1';   // Learn sorts Sources by when they came in; Files skips the extra stat
     const entries = await fsp.readdir(full, { withFileTypes: true });
     const items = [];
     for (const e of entries) {
       if (e.name.startsWith('.') || FS_SKIP.has(e.name)) continue;
       const rel = relOf(path.join(full, e.name));
       if (e.isDirectory()) items.push({ name: e.name, path: rel, dir: true });
-      else if (e.isFile()) items.push({ name: e.name, path: rel, kind: fsKind(e.name) });
+      else if (e.isFile()) {
+        const item = { name: e.name, path: rel, kind: fsKind(e.name) };
+        if (times) {
+          try { item.mtime = (await fsp.stat(path.join(full, e.name))).mtimeMs; } catch (err) { if (err.code === 'ENOENT') continue; throw err; }
+        }
+        items.push(item);
+      }
     }
     const coll = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     items.sort((a, b) => (b.dir ? 1 : 0) - (a.dir ? 1 : 0) || coll.compare(a.name, b.name));

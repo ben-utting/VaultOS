@@ -79,7 +79,7 @@ const Learn = (() => {
     L.expanded.add(nb);
   }
   async function loadDir(dir) {
-    try { L.tree.set(dir, (await api(`/api/fs/tree?path=${encodeURIComponent(dir)}`)).items); } catch (err) {
+    try { L.tree.set(dir, (await api(`/api/fs/tree?path=${encodeURIComponent(dir)}&times=1`)).items); } catch (err) {
       // Gone (deleted or renamed): an empty folder, so tabs inside it close. Anything else: unknown, keep the tabs.
       if (/^Not found$/.test(err.message)) L.tree.set(dir, []); else L.tree.delete(dir);
     }
@@ -502,7 +502,8 @@ const Learn = (() => {
   function paintJob(job) {
     const el = $('ln-yt-status');
     if (!job) { el.textContent = ''; return; }
-    const capped = job.listed > job.total && job.total ? `First ${job.total} of ${job.listed}. ` : '';
+    const fresh = job.listed - (job.skipped || 0);   // what wasn't in Sources yet; the cap applies to these
+    const capped = fresh > job.total && job.total ? `First ${job.total} of ${fresh}${job.skipped ? ' new' : ''}. ` : '';
     if (job.state === 'running') {
       el.textContent = !job.total ? 'Starting…' : job.total > 1 ? `${capped}Importing ${job.done} of ${job.total}…` : 'Fetching the transcript…';
       return;
@@ -511,7 +512,9 @@ const Learn = (() => {
     const n = job.failed.length;
     const allCaptions = n && job.failed.every((f) => f.reason === 'This video has no captions.');
     const why = !n ? '' : allCaptions ? `, ${n} had no captions` : `, ${n} couldn't be saved`;
-    el.textContent = `${capped}Saved ${job.saved.length}${why}.${n ? ` ${job.failed.map((f) => (allCaptions ? f.title : `${f.title} (${f.reason})`)).join('; ')}` : ''}`;
+    const had = job.skipped ? ` ${job.skipped} ${job.skipped === 1 ? 'was' : 'were'} already in Sources.` : '';
+    const rest = capped ? ' Add the playlist again for the rest.' : '';
+    el.textContent = `${capped}Saved ${job.saved.length}${why}.${had}${rest}${n ? ` ${job.failed.map((f) => (allCaptions ? f.title : `${f.title} (${f.reason})`)).join('; ')}` : ''}`;
   }
   async function ytStart(url, playlist) {
     const kind = LearnCore.youtubeKind(url);

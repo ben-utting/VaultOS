@@ -5,9 +5,13 @@ const LC = require('../public/learn-core');
 
 const NB = { path: 'Learning/A', latest: { notes: 'Learning/A/Notes/2026-11-13 study.md', sources: 'Learning/A/Sources/v.txt' } };
 
-test('treeOrder: Sources A to Z (numbers in order), Notes and Studio newest first, folders first', () => {
+test('treeOrder: Sources in the order they came in (oldest first), Notes and Studio newest first, folders first', () => {
   const items = (names) => names.map((n) => (n.endsWith('/') ? { name: n.slice(0, -1), dir: true } : { name: n }));
-  assert.deepEqual(LC.treeOrder('Sources', items(['video 10.txt', 'video 2.txt', 'b.md', 'sub/'])).map((i) => i.name), ['sub', 'b.md', 'video 2.txt', 'video 10.txt']);
+  const timed = (pairs) => pairs.map(([name, mtime]) => (name.endsWith('/') ? { name: name.slice(0, -1), dir: true } : { name, mtime }));
+  assert.deepEqual(LC.treeOrder('Sources', timed([['Day 1 Docker.txt', 300], ['FREE course (Day 0 40).txt', 100], ['If you are preparing.txt', 200], ['sub/']])).map((i) => i.name),
+    ['sub', 'FREE course (Day 0 40).txt', 'If you are preparing.txt', 'Day 1 Docker.txt']);
+  assert.deepEqual(LC.treeOrder('Sources', timed([['b.txt', 100], ['a.txt', 100]])).map((i) => i.name), ['a.txt', 'b.txt'], 'same time: A to Z');
+  assert.deepEqual(LC.treeOrder('Sources', items(['video 10.txt', 'video 2.txt', 'b.md', 'sub/'])).map((i) => i.name), ['sub', 'b.md', 'video 2.txt', 'video 10.txt'], 'no times: A to Z, numbers in order');
   assert.deepEqual(LC.treeOrder('Notes', items(['2026-11-12 study.md', '2026-11-13 study.md', 'old/'])).map((i) => i.name), ['old', '2026-11-13 study.md', '2026-11-12 study.md']);
   assert.deepEqual(LC.treeOrder('Studio', items(['2026-11-01 0900 a.png', '2026-11-13 1430 b.png'])).map((i) => i.name), ['2026-11-13 1430 b.png', '2026-11-01 0900 a.png']);
   assert.deepEqual(LC.treeOrder('Other', items(['b', 'A', 'c'])).map((i) => i.name), ['A', 'b', 'c']);
