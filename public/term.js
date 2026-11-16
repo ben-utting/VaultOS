@@ -244,6 +244,22 @@ function legacyCopy(text) {
   return ok;
 }
 
+// A program wiping the scrollback (CSI 3 J: `clear`, and Cursor's agent a moment after every resize, which then
+// prints the whole chat again) threw the view to the top of the chat whenever it was scrolled up at all, even by
+// a line. xterm leaves a scrolled-up view where it is while lines arrive, and the wipe moves that view to line 0,
+// so the reprint piled up below it. The lines being read are gone either way: follow the bottom again first, then
+// let xterm's own handler do the clearing.
+function followAfterScrollbackClear(term) {
+  return term.parser.registerCsiHandler({ final: 'J' }, (params) => {
+    if (params[0] !== 3) return false;
+    term.scrollToBottom();
+    // scrollToBottom leaves xterm's "scrolled up" flag set when the view already sits on the last line (a resize
+    // can leave it there), and that flag is what keeps the reprint from being followed.
+    try { term._core._bufferService.isUserScrolling = false; } catch { /* private API moved: scrollToBottom covers the usual case */ }
+    return false;   // not handled here: xterm's CSI J still runs
+  });
+}
+
 // createTerminal(container, opts) → handle
 //   opts.id        stable id: reconnecting with the same id reattaches to the same shell
 //   opts.cwd       vault-relative folder to start in (only used when the shell is new)
@@ -325,6 +341,7 @@ function createTerminal(container, opts = {}) {
   const uni = new Unicode11Addon.Unicode11Addon();
   term.loadAddon(uni);
   term.unicode.activeVersion = '11';
+  followAfterScrollbackClear(term);
   term.open(container);
   const live = { term, fit };
   LIVE_TERMS.add(live);
