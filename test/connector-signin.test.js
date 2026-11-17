@@ -143,3 +143,42 @@ test('vantage token: refused, then accepted, and never shown', async (t) => {
   assert.doesNotMatch(JSON.stringify(await svc.view()), /vt-key/);
   assert.doesNotMatch(fs.readFileSync(path.join(home, '.cursor/mcp.json'), 'utf8'), /vt-key/);
 });
+
+// ----- Vantage's read-only default, through the service's relay target -----
+async function relayVantage(svc, body) {
+  const { createRelay } = require('../lib/connector-relay');
+  const http = require('node:http');
+  const handler = createRelay({ getKey: () => 'k', target: (id) => svc.relayTarget(id) });
+  const server = http.createServer(handler);
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
+  try {
+    const r = await fetch(`http://127.0.0.1:${server.address().port}/mcp/vantage`, { method: 'POST', body: JSON.stringify(body),
+      headers: { 'x-vaultos-key': 'k', 'content-type': 'application/json', accept: 'application/json, text/event-stream' } });
+    return await r.text();
+  } finally { server.closeAllConnections(); await new Promise((ok) => server.close(ok)); }
+}
+const toolsIn = (text) => {
+  const data = text.split('\n\n').filter(Boolean).map((e) => e.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n'));
+  const msg = data.map((d) => JSON.parse(d)).find((m) => m.result && m.result.tools);
+  return msg.result.tools.map((x) => x.name);
+};
+
+test('Allow changes applies on the next request, both ways', async (t) => {
+  const { svc, vt } = await setup(t);
+  await svc.saveToken('vantage', { token: 'vt-key' });
+  assert.ok(!toolsIn(await relayVantage(svc, { jsonrpc: '2.0', id: 1, method: 'tools/list' })).includes('create-budget'));
+  await svc.vantageSettings({ allowChanges: true });
+  assert.ok(toolsIn(await relayVantage(svc, { jsonrpc: '2.0', id: 2, method: 'tools/list' })).includes('create-budget'));
+  await relayVantage(svc, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'create-budget', arguments: {} } });
+  assert.deepEqual(vt.state.calls.filter((n) => n === 'create-budget'), ['create-budget']);
+  await svc.vantageSettings({ allowChanges: false });
+  assert.ok(!toolsIn(await relayVantage(svc, { jsonrpc: '2.0', id: 4, method: 'tools/list' })).includes('create-budget'));
+});
+
+test('Test counts only the tools agents can see', async (t) => {
+  const { svc } = await setup(t);
+  await svc.saveToken('vantage', { token: 'vt-key' });
+  assert.equal((await row(svc, 'vantage')).lastTest.tools, 3);
+  await svc.vantageSettings({ allowChanges: true });
+  assert.equal((await svc.test('vantage')).tools, 6);
+});

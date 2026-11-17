@@ -439,3 +439,72 @@ test("mcpProbe with '' lists the tools of a noAuth fake", async (t) => {
   assert.ok(p.tools.includes('get_me'));
   for (const s of fake.state.seen) assert.equal(s.headers.authorization, undefined);
 });
+
+// ----- the read-only tool filter (Vantage) -----
+const Tools = require('../lib/connector-tools');
+async function vantageRelay(t, over = {}) {
+  const vt = await startFake({ shape: 'vantage' }); t.after(() => vt.stop());
+  const target = stubTarget(vt, { url: vt.base + '/mcp', authorization: async () => 'Bearer vt-key', tools: Tools.vantageReadOnly, ...over });
+  return { vt, relay: await startRelay(t, { target }) };
+}
+const dataOf = (text) => text.split('\n\n').filter(Boolean).map((e) => e.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n'))
+  .map((d) => JSON.parse(d));
+
+test('tools/list through the relay is filtered and ordered, SSE kept', async (t) => {
+  const { relay } = await vantageRelay(t);
+  const r = await relay.call('POST', msg('tools/list', 1));
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /text\/event-stream/);
+  const msgs = dataOf(await r.text());
+  assert.equal(msgs[0].method, 'notifications/progress');
+  assert.deepEqual(msgs[1].result.tools.map((x) => x.name), ['query-costs', 'list-budgets', 'get-myself']);
+});
+
+test('a hidden tools/call never reaches upstream', async (t) => {
+  const { vt, relay } = await vantageRelay(t);
+  const before = vt.state.seen.length;
+  const r = await relay.call('POST', JSON.stringify({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'delete-folder', arguments: {} } }));
+  const body = await r.json();
+  assert.equal(body.id, 4);
+  assert.equal(body.result.isError, true);
+  assert.match(body.result.content[0].text, /^VaultOS lets agents read Vantage only\. Turn on Allow changes in Settings → Connectors to use delete-folder\.$/);
+  assert.equal(vt.state.seen.length, before);
+  assert.deepEqual(vt.state.calls, []);
+});
+
+test('an allowed tools/call passes', async (t) => {
+  const { vt, relay } = await vantageRelay(t);
+  const r = await relay.call('POST', JSON.stringify({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'query-costs', arguments: {} } }));
+  assert.match(JSON.stringify(await r.json()), /12\.34/);
+  assert.deepEqual(vt.state.calls, ['query-costs']);
+});
+
+test('a batch with a hidden call is answered locally', async (t) => {
+  const { vt, relay } = await vantageRelay(t);
+  const r = await relay.call('POST', JSON.stringify([
+    { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'create-budget' } },
+    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'query-costs' } },
+    { jsonrpc: '2.0', method: 'notifications/initialized' },
+  ]));
+  const body = await r.json();
+  assert.equal(body.length, 2);
+  assert.equal(body[0].result.isError, true);
+  assert.deepEqual(body[1], { jsonrpc: '2.0', id: 2, error: { code: -32600, message: 'Send this request on its own.' } });
+  assert.deepEqual(vt.state.calls, []);
+});
+
+test('without a filter everything is listed', async (t) => {
+  const { relay } = await vantageRelay(t, { tools: undefined });
+  const msgs = dataOf(await (await relay.call('POST', msg('tools/list', 1))).text());
+  assert.ok(msgs[1].result.tools.some((x) => x.name === 'create-budget'));
+});
+
+test('an over-cap tools/list gets 502 and nothing unfiltered', async (t) => {
+  const big = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'create-budget', description: 'x'.repeat(3 * 1024 * 1024) }] } });
+  const fetchBig = async () => new Response(big, { status: 200, headers: { 'content-type': 'application/json' } });
+  const target = stubTarget({ base: 'http://127.0.0.1:9' }, { url: 'http://127.0.0.1:9/mcp', tools: Tools.vantageReadOnly });
+  const relay = await startRelay(t, { target, fetch: fetchBig });
+  const r = await relay.call('POST', msg('tools/list', 1));
+  assert.equal(r.status, 502);
+  assert.doesNotMatch(await r.text(), /create-budget/);
+});
