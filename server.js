@@ -41,6 +41,7 @@ const { zonedDate } = require('./lib/today-note');
 const { legacySettings } = require('./lib/migrate');
 const { setupStage, stepsFor, folderCheck, windowOpen } = require('./lib/setup');
 const { createConnectorService, ConnectorError } = require('./lib/connector-service');
+const { CONNECTORS } = require('./lib/connectors');
 const { createRelay } = require('./lib/connector-relay');
 const { runCapture } = require('./lib/connector-azure');
 const { PROFILES, PROFILE_IDS, LEARN_KICKOFF, kickoffPrompt, profileFor, startCommand, plainStartCommand, isInstalled, installClaudeHook, installCursorHook, agentProfiles, detectAgent, terminalTask } = require('./lib/agents');
@@ -1600,27 +1601,6 @@ app.get('/api/connectors', settingsGuard, connectorRoute('read the connectors', 
 })));
 app.post('/api/connectors/:id/test', settingsGuard, connectorRoute('test the connector', (req) => connectors.test(req.params.id)));
 app.post('/api/connectors/:id/disconnect', settingsGuard, connectorRoute('disconnect the connector', (req) => connectors.disconnect(req.params.id)));
-app.post('/api/connectors/atlassian/start', settingsGuard, connectorRoute('start the Atlassian sign-in', (req) =>
-  connectors.atlassianStart({ origin: `${req.protocol}://${req.get('host')}`, nonce: cxNonce(req) })));
-app.post('/api/connectors/atlassian/cancel', settingsGuard, connectorRoute('cancel the Atlassian sign-in', (req) =>
-  connectors.atlassianCancel({ nonce: cxNonce(req) })));
-// The page Atlassian sends the person back to. The server sets no Content-Security-Policy on HTML, so the one
-// inline line (tell the Settings tab over a same-origin BroadcastChannel; it also polls) needs no nonce. Nothing on the page names a token.
-app.get('/api/connectors/atlassian/callback', (req, res, next) => (sessionAuthed(req) ? next() : cxSignInPage(res)), async (req, res) => {
-  let text = 'Atlassian is connected, you can close this tab.';
-  let ok = true;
-  try {
-    await connectors.atlassianCallback({
-      code: String(req.query.code || ''), state: String(req.query.state || ''), nonce: req.session.cxNonce || '',
-    });
-  } catch (err) {
-    ok = false;
-    if (err instanceof ConnectorError) text = err.message;
-    else { console.error('Atlassian callback failed:', err && err.message); text = 'Something went wrong. Start again from VaultOS.'; }
-  }
-  res.set('Cache-Control', 'no-store').type('html').send(cxPage(text,
-    ok ? `<script>try{var c=new BroadcastChannel('vaultos-connectors');c.postMessage('done');c.close()}catch(e){}</script>` : ''));
-});
 app.post('/api/connectors/:id/token', settingsGuard, connectorRoute('save the sign-in', (req) =>
   connectors.saveToken(req.params.id, req.body || {})));
 app.post('/api/connectors/:id/enable', settingsGuard, connectorRoute('turn the connector on', (req) =>
@@ -1644,6 +1624,34 @@ app.post('/api/connectors/transcripts/start', settingsGuard, connectorRoute('sta
 }));
 app.get('/api/connectors/transcripts/status', settingsGuard, connectorRoute('read the Teams transcripts sign-in', () => connectors.msappStatus('transcripts')));
 app.post('/api/connectors/transcripts/cancel', settingsGuard, connectorRoute('cancel the Teams transcripts sign-in', () => connectors.msappCancel('transcripts')));
+// Browser sign-in for any connector that offers one (Atlassian, Vantage). After the azure and transcripts routes, so
+// their own /start and /cancel win. The callback is the page the service sends the person back to. The server sets no
+// Content-Security-Policy on HTML, so the one inline line (tell the Settings tab over a same-origin BroadcastChannel;
+// it also polls) needs no nonce. Nothing on the page names a token.
+app.post('/api/connectors/:id/start', settingsGuard, connectorRoute('start the sign-in', (req) =>
+  connectors.signInStart(req.params.id, { origin: `${req.protocol}://${req.get('host')}`, nonce: cxNonce(req) })));
+app.post('/api/connectors/:id/cancel', settingsGuard, connectorRoute('cancel the sign-in', (req) =>
+  connectors.signInCancel(req.params.id, { nonce: cxNonce(req) })));
+app.get('/api/connectors/:id/callback', (req, res, next) => (sessionAuthed(req) ? next() : cxSignInPage(res)), async (req, res) => {
+  const id = req.params.id;
+  let text = '';
+  let ok = true;
+  try {
+    await connectors.signInCallback(id, {
+      code: String(req.query.code || ''), state: String(req.query.state || ''),
+      iss: req.query.iss === undefined ? undefined : String(req.query.iss), nonce: req.session.cxNonce || '',
+    });
+    text = `${CONNECTORS[id].label} is connected, you can close this tab.`;
+  } catch (err) {
+    ok = false;
+    if (err instanceof ConnectorError) text = err.message;
+    else { console.error('Connector sign-in callback failed:', err && err.message); text = 'Something went wrong. Start again from VaultOS.'; }
+  }
+  res.set('Cache-Control', 'no-store').type('html').send(cxPage(text,
+    ok ? `<script>try{var c=new BroadcastChannel('vaultos-connectors');c.postMessage('done');c.close()}catch(e){}</script>` : ''));
+});
+app.post('/api/connectors/vantage/settings', settingsGuard, connectorRoute('save the Vantage settings', (req) =>
+  connectors.vantageSettings(req.body || {})));
 app.post('/api/connectors/azure/settings', settingsGuard, connectorRoute('save the Azure settings', (req) => {
   const { allowChanges, subscription } = req.body || {};
   return connectors.azureSettings({ allowChanges, subscription });

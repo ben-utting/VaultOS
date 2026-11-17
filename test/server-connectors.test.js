@@ -251,3 +251,58 @@ test('Teams transcripts sign-in routes need a session (401)', async (t) => {
   assert.match(bad.body.error, /Directory \(tenant\) ID/);
   assert.deepEqual((await call(s.base, 'GET', '/api/connectors/transcripts/status', { cookie: s.cookie })).body, { status: 'idle' });
 });
+
+// ----- browser sign-in for any connector, and Vantage's switch -----
+async function readyVantage(t) {
+  const vt = await startFake({ shape: 'vantage' }); t.after(() => vt.stop());
+  const s = await ready(t, { env: { CONNECTOR_UPSTREAM_VANTAGE: vt.base } });
+  return { ...s, vt };
+}
+const vantageRow = async (s) => (await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie })).body.connectors.find((c) => c.id === 'vantage');
+
+test("vantage start answers a sign-in URL on the fake's /authorize; github start is refused", async (t) => {
+  const s = await readyVantage(t);
+  const st = await call(s.base, 'POST', '/api/connectors/vantage/start', { cookie: s.cookie });
+  assert.equal(st.status, 200);
+  const u = new URL(st.body.url);
+  assert.equal(u.origin + u.pathname, s.vt.base + '/authorize');
+  assert.equal(u.searchParams.get('redirect_uri'), `${s.base}/api/connectors/vantage/callback`);
+  const gh = await call(s.base, 'POST', '/api/connectors/github/start', { cookie: s.cookie });
+  assert.equal(gh.status, 400);
+  assert.equal(gh.body.error, "GitHub doesn't sign in with a browser.");
+});
+
+test('the vantage callback page names Vantage, and the row is connected', async (t) => {
+  const s = await readyVantage(t);
+  const st = await call(s.base, 'POST', '/api/connectors/vantage/start', { cookie: s.cookie });
+  s.cookie = mergeCookie(s.cookie, st);
+  const loc = new URL((await fetch(st.body.url, { redirect: 'manual' })).headers.get('location'));
+  assert.equal(loc.pathname, '/api/connectors/vantage/callback');
+  assert.equal(loc.searchParams.get('iss'), s.vt.base);
+  const page = await call(s.base, 'GET', loc.pathname + loc.search, { cookie: s.cookie });
+  assert.equal(page.status, 200);
+  assert.match(page.text, /Vantage is connected, you can close this tab\./);
+  assert.equal((await vantageRow(s)).state, 'connected');
+});
+
+test('azure and transcripts keep their own start routes', async (t) => {
+  const s = await ready(t);
+  const tr = await call(s.base, 'POST', '/api/connectors/transcripts/start', { cookie: s.cookie, body: {} });
+  assert.notEqual(tr.body && tr.body.error, "Teams transcripts doesn't sign in with a browser.");
+});
+
+test('vantage settings stores allowChanges', async (t) => {
+  const s = await readyVantage(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/vantage/token', { cookie: s.cookie, body: { token: 'vt-key' } })).status, 200);
+  assert.equal((await vantageRow(s)).allowChanges, false);
+  const r = await call(s.base, 'POST', '/api/connectors/vantage/settings', { cookie: s.cookie, body: { allowChanges: true } });
+  assert.equal(r.status, 200);
+  assert.equal((await vantageRow(s)).allowChanges, true);
+});
+
+test('vantage settings without a sign-in is refused', async (t) => {
+  const s = await readyVantage(t);
+  const r = await call(s.base, 'POST', '/api/connectors/vantage/settings', { cookie: s.cookie, body: { allowChanges: true } });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, "Vantage isn't connected yet.");
+});
