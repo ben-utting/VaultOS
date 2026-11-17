@@ -9,8 +9,17 @@ const form = (o) => new URLSearchParams(o).toString();
 const FORM = { 'content-type': 'application/x-www-form-urlencoded' };
 const REDIR = 'http://localhost:7695/api/connectors/atlassian/callback';
 
-async function signIn(fake) {
-  const meta = await (await fetch(fake.base + '/.well-known/oauth-authorization-server')).json();
+// v2 discovery: the MCP server's resource metadata names its authorization server (RFC 9728), whose own metadata
+// sits at the RFC 8414 address for its issuer.
+async function discover(fake) {
+  const prm = await (await fetch(fake.base + '/.well-known/oauth-protected-resource/v2/mcp')).json();
+  const as = new URL(prm.authorization_servers[0]);
+  const meta = await (await fetch(as.origin + '/.well-known/oauth-authorization-server' + as.pathname)).json();
+  return { prm, meta };
+}
+
+async function signIn(fake, scope) {
+  const { meta } = await discover(fake);
   const reg = await (await fetch(meta.registration_endpoint, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ redirect_uris: [REDIR], client_name: 'VaultOS' }),
@@ -19,7 +28,7 @@ async function signIn(fake) {
   const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
   const u = new URL(meta.authorization_endpoint);
   Object.entries({ response_type: 'code', client_id: reg.client_id, redirect_uri: REDIR, state: 's1',
-    code_challenge: challenge, code_challenge_method: 'S256' }).forEach(([k, v]) => u.searchParams.set(k, v));
+    code_challenge: challenge, code_challenge_method: 'S256', ...(scope ? { scope } : {}) }).forEach(([k, v]) => u.searchParams.set(k, v));
   const r = await fetch(u, { redirect: 'manual' });
   assert.equal(r.status, 302);
   const loc = new URL(r.headers.get('location'));
@@ -33,7 +42,7 @@ const exchange = (meta, reg, code, verifier) => fetch(meta.token_endpoint, {
   body: form({ grant_type: 'authorization_code', code, code_verifier: verifier, client_id: reg.client_id, redirect_uri: REDIR }),
 });
 
-const rpc = (fake, token, body, extra = {}) => fetch(fake.base + '/v1/mcp', {
+const rpc = (fake, token, body, extra = {}) => fetch(fake.base + '/v2/mcp', {
   method: 'POST',
   headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream',
     ...(token ? { authorization: 'Bearer ' + token } : {}), ...extra },
@@ -46,9 +55,14 @@ const sseEvents = (t) => t.split('\n\n').map((e) => e.split('\n').filter((l) => 
 test('the full code flow yields a token that tools/list accepts', async (t) => {
   const fake = await startFake();
   t.after(() => fake.stop());
-  const meta = await (await fetch(fake.base + '/.well-known/oauth-authorization-server')).json();
-  for (const k of ['issuer', 'authorization_endpoint', 'token_endpoint', 'registration_endpoint', 'revocation_endpoint'])
-    assert.ok(meta[k].startsWith(fake.base), k);
+  const { prm, meta } = await discover(fake);
+  assert.equal(prm.resource, fake.base + '/v2/mcp');
+  assert.deepEqual(prm.authorization_servers, [fake.base + '/as']);
+  assert.deepEqual(prm.scopes_supported, fake.scopes);
+  assert.ok(fake.scopes.includes('offline_access'));
+  assert.equal(meta.issuer, fake.base + '/as');
+  for (const k of ['authorization_endpoint', 'token_endpoint', 'registration_endpoint', 'revocation_endpoint'])
+    assert.ok(meta[k].startsWith(fake.base + '/as/'), k);
   const { reg, verifier, code, meta: m } = await signIn(fake);
   assert.match(reg.client_id, /^fake-\d+$/);
   const tr = await exchange(m, reg, code, verifier);
@@ -66,7 +80,7 @@ test('the full code flow yields a token that tools/list accepts', async (t) => {
   assert.deepEqual(ev[0].result.tools.map((x) => x.name), ['atlassianUserInfo', 'getAccessibleAtlassianResources']);
   const last = fake.state.seen[fake.state.seen.length - 1];
   assert.equal(last.method, 'POST');
-  assert.equal(last.path, '/v1/mcp');
+  assert.equal(last.path, '/v2/mcp');
   assert.equal(last.headers['x-vaultos-key'], 'k');
 
   const call = await (await rpc(fake, tok.access_token, { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'atlassianUserInfo' } })).json();
@@ -135,14 +149,14 @@ test('refuse-refresh, revoke, basic and service keys, refused redirects, slow-ss
   assert.deepEqual(fake.state.revoked, [tok.refresh_token]);
 
   fake.state.refuseRedirect = 'evil.example';
-  const bad = await fetch(fake.base + '/v1/register', { method: 'POST', headers: { 'content-type': 'application/json' },
+  const bad = await fetch(meta.registration_endpoint, { method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ redirect_uris: ['http://evil.example/cb'] }) });
   assert.equal(bad.status, 400);
   assert.equal((await bad.json()).error, 'invalid_redirect_uri');
 
   fake.setMode('slow-sse');
   const start = Date.now();
-  const sl = await rpc(fake, 'svc-key', { jsonrpc: '2.0', id: 4, method: 'tools/list' });
+  const sl = await rpc(fake, tok.access_token, { jsonrpc: '2.0', id: 4, method: 'tools/list' });
   const ev = sseEvents(await sl.text());
   assert.equal(ev.length, 2);
   assert.ok(Date.now() - start >= 250);
@@ -202,5 +216,33 @@ test('get_me returns alex-example', async (t) => {
 
 test('the MCP endpoint answers at /mcp/ and /api/mcp', async (t) => {
   const fake = await startFake({ noAuth: true }); t.after(() => fake.stop());
-  for (const p of ['/mcp/', '/api/mcp', '/v1/mcp']) assert.equal((await mcpPost(fake.base + p, 'tools/list')).status, 200, p);
+  for (const p of ['/mcp/', '/api/mcp', '/v1/mcp', '/v2/mcp']) assert.equal((await mcpPost(fake.base + p, 'tools/list')).status, 200, p);
+});
+
+test('v2 takes only OAuth tokens and v1 only API tokens, like Atlassian', async (t) => {
+  const fake = await startFake(); t.after(() => fake.stop());
+  const { reg, verifier, code, meta } = await signIn(fake);
+  const tok = await (await exchange(meta, reg, code, verifier)).json();
+  const basic = 'Basic ' + Buffer.from('alex@example.com:tok').toString('base64');
+  const list = (p, auth) => mcpPost(fake.base + p, 'tools/list', undefined, { authorization: auth });
+  assert.equal((await list('/v2/mcp', 'Bearer ' + tok.access_token)).status, 200);
+  assert.equal((await list('/v1/mcp', 'Bearer ' + tok.access_token)).status, 401);
+  assert.equal((await list('/v1/mcp', basic)).status, 200);
+  assert.equal((await list('/v1/mcp', 'Bearer svc-key')).status, 200);
+  const refused = await list('/v2/mcp', basic);
+  assert.equal(refused.status, 401);
+  assert.equal(refused.headers.get('www-authenticate'), `Bearer resource_metadata="${fake.base}/.well-known/oauth-protected-resource/v2/mcp"`);
+  assert.equal((await list('/v2/mcp', 'Bearer svc-key')).status, 401);
+});
+
+test('there is no authorization-server metadata at the root: only v2 discovery finds it', async (t) => {
+  const fake = await startFake(); t.after(() => fake.stop());
+  assert.equal((await fetch(fake.base + '/.well-known/oauth-authorization-server')).status, 404);
+});
+
+test('authorize records the scope it was asked for', async (t) => {
+  const fake = await startFake(); t.after(() => fake.stop());
+  await signIn(fake, 'read:me offline_access');
+  await signIn(fake);
+  assert.deepEqual(fake.state.scopes, ['read:me offline_access', null]);
 });

@@ -50,8 +50,10 @@ async function setupFake(t) {
   return fake;
 }
 
+// An OAuth sign-in against the fake's v2 server; its tokens work on /v2/mcp only (see oauthUrl).
+const oauthUrl = (fake) => fake.base + '/v2/mcp';
 async function liveTokens(fake) {
-  const meta = await o.discover(fake.base);
+  const meta = await o.discover(oauthUrl(fake));
   const reg = await o.registerClient(meta, REDIR);
   const { verifier, challenge } = o.pkcePair();
   const r = await fetch(o.authorizeUrl(meta, { clientId: reg.client_id, redirectUri: REDIR, state: 's', challenge }), { redirect: 'manual' });
@@ -274,7 +276,7 @@ test('two calls during expiry make one refresh', async (t) => {
     fake.setMode('normal'); // the fresh token is good
     return 'Bearer ' + tokens.access_token;
   });
-  const target = stubTarget(fake, { authorization: async () => 'Bearer ' + tokens.access_token, renew: refresh });
+  const target = stubTarget(fake, { url: oauthUrl(fake), authorization: async () => 'Bearer ' + tokens.access_token, renew: refresh });
   const relay = await startRelay(t, { target });
   fake.setMode('expire'); // the current access token is now dead
   const rs = await Promise.all([relay.call('POST', msg('tools/list', 1)), relay.call('POST', msg('tools/list', 2))]);
@@ -351,6 +353,7 @@ test('a 401 that arrives after another request\'s refresh does not refresh again
   });
   // Both requests were issued with the old credential; renew(rejected) only refreshes if it is still current.
   const target = stubTarget(fake, {
+    url: oauthUrl(fake),
     authorization: async () => stale,
     renew: async (rejected) => (stored !== rejected ? stored : refresh()),
   });

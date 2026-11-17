@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
-// A fake Atlassian: OAuth 2.1 (dynamic client registration + PKCE) and a
-// streamable-HTTP MCP endpoint. node:http only, so it runs inside the image.
+// A fake Atlassian laid out like its v2 MCP server: /v2/mcp takes OAuth tokens from a separate authorization server
+// (found through the resource metadata, RFC 9728, at /as), /v1/mcp takes only API tokens (Basic, or the svc-key
+// Bearer). OAuth 2.1 with dynamic client registration + PKCE; streamable-HTTP MCP. node:http only, so it runs inside
+// the image.
 const http = require('node:http');
 const crypto = require('node:crypto');
 
@@ -11,10 +13,11 @@ const TOOLS = [
 ];
 // Listed only when standing in for a connector with no OAuth (noAuth), so the Atlassian tool list stays at two.
 const GET_ME = { name: 'get_me', description: 'The signed-in login', inputSchema: { type: 'object', properties: {} } };
+const SCOPES = ['read:me', 'offline_access', 'read:jira:agent-interface', 'write:jira:agent-interface'];
 
 function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = false } = {}) {
   const state = {
-    seen: [], resources: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
+    seen: [], resources: [], scopes: [], refreshes: 0, revoked: [], refuseRedirect: null, mode: 'normal',
     clients: {}, codes: {}, access: new Set(), refresh: {}, current: null,
   };
   let n = 0;
@@ -36,9 +39,11 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
     return { access_token: access, refresh_token: refresh, token_type: 'Bearer', expires_in: 3600 };
   }
 
-  // Returns the signed-in email, or null for an unauthorised caller.
-  function who(req) {
+  // Returns the signed-in email, or null for an unauthorised caller. `takes` limits it to 'oauth' or 'token' credentials.
+  function who(req, takes) {
     const h = req.headers.authorization || '';
+    const isToken = h === 'Bearer svc-key' || h.startsWith('Basic ');
+    if (takes && takes !== (isToken ? 'token' : 'oauth')) return null;
     if (h === 'Bearer svc-key') return 'alex@example.com';
     if (h.startsWith('Basic ')) {
       const [email, tok] = (() => {
@@ -85,10 +90,14 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
     return send(res, 400, { error: 'unsupported_grant_type' });
   }
 
-  async function mcp(req, res) {
-    const email = who(req);
+  const PRM_PATH = '/.well-known/oauth-protected-resource/v2/mcp';
+
+  async function mcp(req, res, takes) {
+    const email = who(req, takes);
     const raw = await readBody(req);
-    if (!email && !noAuth) return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
+    if (!email && !noAuth) {
+      return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': takes === 'oauth' ? `Bearer resource_metadata="${base}${PRM_PATH}"` : 'Bearer' });
+    }
     let msg; try { msg = JSON.parse(raw); } catch { return send(res, 400, { error: 'bad json' }); }
     const hdr = {};
     if (req.headers['mcp-session-id']) hdr['mcp-session-id'] = req.headers['mcp-session-id'];
@@ -125,16 +134,19 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
     state.seen.push({ method: req.method, path: url.pathname, headers: { ...req.headers } });
     try {
       const k = `${req.method} ${url.pathname}`;
-      if (k === 'GET /.well-known/oauth-authorization-server') {
+      if (k === `GET ${PRM_PATH}`) {
+        return send(res, 200, { resource: base + '/v2/mcp', authorization_servers: [base + '/as'], bearer_methods_supported: ['header'], scopes_supported: SCOPES });
+      }
+      if (k === 'GET /.well-known/oauth-authorization-server/as') { // RFC 8414: the issuer's path goes after the well-known part
         return send(res, 200, {
-          issuer: base, authorization_endpoint: base + '/v1/authorize', token_endpoint: base + '/v1/token',
-          registration_endpoint: base + '/v1/register', response_types_supported: ['code'],
-          response_modes_supported: ['query'], grant_types_supported: ['authorization_code', 'refresh_token'],
-          token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
-          revocation_endpoint: base + '/v1/token', code_challenge_methods_supported: ['plain', 'S256'],
+          issuer: base + '/as', authorization_endpoint: base + '/as/authorize', token_endpoint: base + '/as/token',
+          registration_endpoint: base + '/as/register', response_types_supported: ['code'],
+          grant_types_supported: ['authorization_code', 'refresh_token'],
+          token_endpoint_auth_methods_supported: ['none', 'client_secret_post', 'client_secret_basic'],
+          revocation_endpoint: base + '/as/token', code_challenge_methods_supported: ['S256'],
         });
       }
-      if (k === 'POST /v1/register') {
+      if (k === 'POST /as/register') {
         let b = {}; try { b = JSON.parse(await readBody(req)); } catch { /* empty */ }
         const uris = Array.isArray(b.redirect_uris) ? b.redirect_uris : [];
         if (state.refuseRedirect && uris.some((u) => String(u).includes(state.refuseRedirect))) {
@@ -144,7 +156,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
         state.clients[client_id] = uris;
         return send(res, 201, { client_id, redirect_uris: uris });
       }
-      if (k === 'GET /v1/authorize') {
+      if (k === 'GET /as/authorize') {
         const q = url.searchParams;
         const uri = q.get('redirect_uri');
         const reg = state.clients[q.get('client_id')];
@@ -152,14 +164,17 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
         if (!uri || !reg.includes(uri)) return send(res, 400, { error: 'invalid_redirect_uri' });
         if (q.get('code_challenge_method') !== 'S256' || !q.get('code_challenge')) return send(res, 400, { error: 'invalid_request' });
         state.resources.push({ at: 'authorize', resource: q.get('resource') });
+        state.scopes.push(q.get('scope'));
         const code = rand('code');
         state.codes[code] = { challenge: q.get('code_challenge'), clientId: q.get('client_id'), redirectUri: uri };
         const to = new URL(uri); to.searchParams.set('code', code);
         if (q.get('state') !== null) to.searchParams.set('state', q.get('state'));
         res.writeHead(302, { location: to.toString() }); return res.end();
       }
-      if (k === 'POST /v1/token') return await token(req, res);
-      if (k === 'POST /v1/mcp' || k === 'POST /mcp/' || k === 'POST /api/mcp') return await mcp(req, res);
+      if (k === 'POST /as/token') return await token(req, res);
+      if (k === 'POST /v2/mcp') return await mcp(req, res, 'oauth');
+      if (k === 'POST /v1/mcp') return await mcp(req, res, 'token');
+      if (k === 'POST /mcp/' || k === 'POST /api/mcp') return await mcp(req, res);
       return send(res, 404, { error: 'not_found' });
     } catch (e) {
       if (!res.headersSent) send(res, 500, { error: String(e.message) }); else res.end();
@@ -171,7 +186,7 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
     server.listen(port, host, () => {
       base = publicBase || `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${server.address().port}`;
       ok({
-        base, state,
+        base, state, scopes: SCOPES,
         setMode: (m) => { state.mode = m; },
         stop: () => new Promise((done) => { server.close(() => done()); server.closeAllConnections(); }),
       });

@@ -45,9 +45,13 @@ function fakeSpawn() {
   return spawn;
 }
 
-async function setup(t, { agents = ['cursor'], clock } = {}) {
+async function setup(t, { agents = ['cursor'], clock, seed } = {}) {
   const fake = await startFake();
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-svc-'));
+  if (seed) { // a connectors.json left by an older VaultOS
+    fs.mkdirSync(path.join(home, '.vaultos'), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(home, '.vaultos/connectors.json'), JSON.stringify(seed(fake)), { mode: 0o600 });
+  }
   const spawn = fakeSpawn();
   const run = fakeRun();
   const time = { t: 1000000 };
@@ -90,6 +94,85 @@ test('full OAuth: start, follow the fake\'s redirect, callback; view says connec
   assert.strictEqual(svc.needsAttention(), false);
 });
 
+// ----- Atlassian v2: OAuth on /v2/mcp, API tokens stay on /v1/mcp -----
+const mcpPosts = (fake, p) => fake.state.seen.filter((x) => x.method === 'POST' && x.path === p).length;
+
+test('an OAuth sign-in asks v2 for every scope it offers, and Test and the relay use /v2/mcp', async (t) => {
+  const { svc, fake, home } = await setup(t);
+  await signIn(svc);
+  assert.deepStrictEqual(fake.state.scopes, [fake.scopes.join(' ')]);
+  assert.strictEqual((await row(svc, 'atlassian')).lastTest.ok, true);
+  assert.ok(mcpPosts(fake, '/v2/mcp') > 0);
+  assert.strictEqual(mcpPosts(fake, '/v1/mcp'), 0);
+  assert.strictEqual(svc.relayTarget('atlassian').url, fake.base + '/v2/mcp');
+  assert.strictEqual(store(home).connectors.atlassian.resource, fake.base + '/v2/mcp');
+});
+
+test('an API token is checked, tested and relayed on /v1/mcp', async (t) => {
+  const { svc, fake } = await setup(t);
+  await svc.saveToken('atlassian', { key: 'svc-key' });
+  const a = await row(svc, 'atlassian');
+  assert.strictEqual(a.state, 'connected');
+  assert.strictEqual(a.method, 'token');
+  assert.strictEqual((await svc.test('atlassian')).ok, true);
+  assert.strictEqual(svc.relayTarget('atlassian').url, fake.base + '/v1/mcp');
+  assert.strictEqual(mcpPosts(fake, '/v2/mcp'), 0);
+});
+
+// What every OAuth record written before v2 looks like: tokens from v1's authorization server, no resource.
+const v1Record = (fake) => ({ version: 1, relayKey: 'k', written: {}, connectors: { atlassian: {
+  method: 'oauth', account: 'alex@example.com',
+  tokens: { access_token: 'v1-at', refresh_token: 'v1-rt', expires_at: 1000000 + 3600 * 1000 },
+  client: { client_id: 'fake-v1', redirect_uri: `${ORIGIN}/api/connectors/atlassian/callback` },
+} } });
+
+test('an OAuth sign-in made before v2 asks to sign in again at once', async (t) => {
+  const { svc } = await setup(t, { seed: v1Record });
+  assert.strictEqual((await row(svc, 'atlassian')).state, 'needs-sign-in');
+  assert.strictEqual(svc.needsAttention(), true);
+});
+
+test('an OAuth sign-in made before v2 is never sent upstream and never refreshed', async (t) => {
+  const { svc, fake, time } = await setup(t, { seed: v1Record });
+  const target = svc.relayTarget('atlassian');
+  assert.strictEqual(await target.authorization(), null);
+  assert.strictEqual(target.missing(), 'expired');
+  time.t += 2 * 3600 * 1000; // past its expiry: still no refresh against v2's server
+  assert.strictEqual(await target.authorization(), null);
+  assert.strictEqual(await target.renew('Bearer v1-at'), null);
+  assert.strictEqual((await svc.test('atlassian')).ok, false);
+  assert.strictEqual(fake.state.seen.filter((x) => x.path === '/as/token').length, 0);
+  assert.strictEqual(mcpPosts(fake, '/v2/mcp') + mcpPosts(fake, '/v1/mcp'), 0);
+});
+
+test('signing in again moves a pre-v2 sign-in to v2', async (t) => {
+  const { svc, fake, home } = await setup(t, { seed: v1Record });
+  await signIn(svc);
+  const a = await row(svc, 'atlassian');
+  assert.strictEqual(a.state, 'connected');
+  assert.strictEqual(svc.needsAttention(), false);
+  assert.strictEqual(store(home).connectors.atlassian.resource, fake.base + '/v2/mcp');
+});
+
+test('a client registered before v2 is not reused, even under an API-token sign-in', async (t) => {
+  const { svc, fake } = await setup(t, { seed: () => ({ version: 1, relayKey: 'k', written: {}, connectors: { atlassian: {
+    method: 'token', key: 'svc-key', client: { client_id: 'fake-v1', redirect_uri: `${ORIGIN}/api/connectors/atlassian/callback` },
+  } } }) });
+  await signIn(svc);
+  assert.strictEqual((await row(svc, 'atlassian')).method, 'oauth');
+  assert.strictEqual(fake.state.seen.filter((x) => x.path === '/as/register').length, 1);
+});
+
+test('signing out of a pre-v2 sign-in does not send its v1 token to v2\'s server', async (t) => {
+  const { svc, fake, home } = await setup(t, { seed: v1Record });
+  await svc.disconnect('atlassian');
+  assert.strictEqual(fake.state.seen.filter((x) => x.path === '/as/token').length, 0);
+  assert.strictEqual(store(home).connectors.atlassian, undefined);
+  const a = await row(svc, 'atlassian');
+  assert.strictEqual(a.state, 'not-connected');
+  assert.strictEqual(a.error, undefined);
+});
+
 test('cursor gets the atlassian entry with the relay URL and key after connect', async (t) => {
   const { svc, home } = await setup(t);
   await signIn(svc);
@@ -115,7 +198,7 @@ test('state from another nonce is refused with the expired-link sentence', async
 
 test('a new origin re-registers the client', async (t) => {
   const { svc, fake, home } = await setup(t);
-  const regs = () => fake.state.seen.filter((s) => s.path === '/v1/register').length;
+  const regs = () => fake.state.seen.filter((s) => s.path === '/as/register').length;
   await svc.atlassianStart({ origin: ORIGIN, nonce: 'a' });
   await svc.atlassianStart({ origin: ORIGIN, nonce: 'b' });
   assert.strictEqual(regs(), 1);
@@ -294,7 +377,7 @@ test('a failed revoke note shows only while not connected and clears on sign-in'
   const { svc } = await setup(t);
   await signIn(svc);
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (u, init) => { if (init && init.method === 'POST' && String(u).endsWith('/v1/token')) throw new Error('down'); return realFetch(u, init); };
+  globalThis.fetch = async (u, init) => { if (init && init.method === 'POST' && String(u).endsWith('/as/token')) throw new Error('down'); return realFetch(u, init); };
   try { await svc.disconnect('atlassian'); } finally { globalThis.fetch = realFetch; }
   const gone = await row(svc, 'atlassian');
   assert.strictEqual(gone.state, 'not-connected');
@@ -351,7 +434,7 @@ test('a refresh that finishes after a token switch is dropped', async (t) => {
   const realFetch = globalThis.fetch;
   let release;
   const gate = new Promise((r) => { release = r; });
-  globalThis.fetch = async (u, init) => { if (String(u).endsWith('/v1/token')) await gate; return realFetch(u, init); };
+  globalThis.fetch = async (u, init) => { if (String(u).endsWith('/as/token')) await gate; return realFetch(u, init); };
   let late;
   try {
     late = svc.relayTarget('atlassian').authorization(); // in flight, will be refused

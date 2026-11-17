@@ -23,6 +23,11 @@ test('baseFor uses CONNECTOR_UPSTREAM_ATLASSIAN only for atlassian', () => {
   assert.equal(baseFor('azure', { CONNECTOR_UPSTREAM_ATLASSIAN: 'http://127.0.0.1:9' }), undefined);
 });
 
+test('Atlassian: OAuth on v2, API tokens on v1 (Atlassian documents tokens for v1 only)', () => {
+  assert.equal(CONNECTORS.atlassian.mcpPath, '/v2/mcp');
+  assert.equal(CONNECTORS.atlassian.tokenMcpPath, '/v1/mcp');
+});
+
 test('entryFor atlassian points at the loopback relay with the key', () => {
   assert.deepEqual(entryFor('atlassian', { port: 8080, key: 'k' }), {
     kind: 'http', url: 'http://127.0.0.1:8080/mcp/atlassian', headers: { 'X-VaultOS-Key': 'k' },

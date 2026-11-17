@@ -50,13 +50,20 @@ test('every OAuth request has a deadline, and a timeout is a network failure', a
   ]) await assert.rejects(call(), (e) => e instanceof o.OAuthError, name);
 });
 
-test('discover wants https endpoints unless the base itself is http', async () => {
-  const meta = (u) => ({ registration_endpoint: u + '/r', authorization_endpoint: u + '/a', token_endpoint: u + '/t', code_challenge_methods_supported: ['S256'] });
-  const serve = (u) => async () => ({ ok: true, status: 200, json: async () => meta(u) });
-  await assert.rejects(o.discover('https://mcp.example.com', { fetch: serve('http://mcp.example.com') }), (e) => e.code === 'discovery');
-  await assert.rejects(o.discover('https://mcp.example.com', { fetch: async () => ({ ok: true, status: 200, json: async () => ({ ...meta('https://mcp.example.com'), revocation_endpoint: 'http://x/rev' }) }) }), (e) => e.code === 'discovery');
-  assert.ok(await o.discover('https://mcp.example.com', { fetch: serve('https://mcp.example.com') }));
-  assert.ok(await o.discover('http://127.0.0.1:5555', { fetch: serve('http://127.0.0.1:5555') }));
+test('discover wants https endpoints unless the resource itself is http', async () => {
+  // Both v2 documents for a resource at `res`, with the authorization server at `as` and its endpoints under `ep`.
+  const serve = (res, as, ep, extra = {}) => async (u) => {
+    const prm = { resource: res + '/v2/mcp', authorization_servers: [as] };
+    const meta = { issuer: as, registration_endpoint: ep + '/r', authorization_endpoint: ep + '/a', token_endpoint: ep + '/t', code_challenge_methods_supported: ['S256'], ...extra };
+    const body = String(u).includes('oauth-protected-resource') ? prm : meta;
+    return { ok: true, status: 200, json: async () => body };
+  };
+  const R = 'https://mcp.example.com';
+  await assert.rejects(o.discover(R + '/v2/mcp', { fetch: serve(R, R + '/as', 'http://mcp.example.com') }), (e) => e.code === 'discovery');
+  await assert.rejects(o.discover(R + '/v2/mcp', { fetch: serve(R, R + '/as', R, { revocation_endpoint: 'http://x/rev' }) }), (e) => e.code === 'discovery');
+  assert.ok(await o.discover(R + '/v2/mcp', { fetch: serve(R, R + '/as', R) }));
+  const L = 'http://127.0.0.1:5555';
+  assert.ok(await o.discover(L + '/v2/mcp', { fetch: serve(L, L + '/as', L) }));
 });
 
 test('a token response without expires_in lasts an hour; without a refresh token there is none to send later', async () => {
@@ -68,8 +75,8 @@ test('a token response without expires_in lasts an hour; without a refresh token
 
 test('authorize, exchange and refresh carry the resource (RFC 8707)', async (t) => {
   const fake = await startFake(); t.after(() => fake.stop());
-  const meta = await o.discover(fake.base);
-  const resource = fake.base + '/v1/mcp';
+  const meta = await o.discover(fake.base + '/v2/mcp');
+  const resource = fake.base + '/v2/mcp';
   const redir = 'http://localhost:7695/api/connectors/atlassian/callback';
   const reg = await o.registerClient(meta, redir);
   const { verifier, challenge } = o.pkcePair();
@@ -163,7 +170,7 @@ test('a revoke that fails is noted, and the connector is gone anyway', async (t)
 test('sign-in sends the MCP server as the resource on authorize, exchange', async (t) => {
   const { svc, fake } = await setup(t);
   await signIn(svc);
-  const resource = fake.base + '/v1/mcp';
+  const resource = fake.base + '/v2/mcp';
   assert.deepEqual(fake.state.resources, [{ at: 'authorize', resource }, { at: 'authorization_code', resource }]);
 });
 
