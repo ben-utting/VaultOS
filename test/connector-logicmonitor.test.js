@@ -37,6 +37,20 @@ test('everything else is refused', () => {
   refused('/alert/alerts?filter=x&debug=1');
 });
 
+test('the config guard holds against encoding, path parameters and case', () => {
+  const inst = '/device/devices/1/devicedatasources/2/instances/3';
+  for (const p of [`${inst}/conf%69g`, `${inst}/%63onfig`, `${inst}/config;x=1`, '/device/devices/..;/..;/setting/admins/apitokens',
+    `${inst}/Config`, `${inst}/config.json`, '/device/devices/1/.../x', '/device/devices/1/a%20b']) refused(p);
+  assert.doesNotThrow(() => url('/device/devices/12/properties/system.hostname'));
+});
+
+test('format is only for data paths, where there are no properties to mask', () => {
+  refused('/device/devices', { format: 'csv' });
+  refused('/device/devices?format=csv');
+  assert.doesNotThrow(() => url('/device/devices/12/devicedatasources/3/instances/4/data', { format: 'csv' }));
+  assert.doesNotThrow(() => url('/device/devicedatasourceinstances/4/graphs/9/data?format=json'));
+});
+
 test('a query in the path is checked like query, and query wins on a clash', () => {
   assert.equal(url('/alert/alerts?filter=a:1&size=5', { size: 9 }), `${B}/alert/alerts?filter=a%3A1&size=9`);
 });

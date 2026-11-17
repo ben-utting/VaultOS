@@ -94,6 +94,15 @@ test('a 200 that is not JSON comes back as text', async (t) => {
   assert.match(textOf(r), /<html/);
 });
 
+test('probe does not take a web page for the API (a proxy or sign-in page)', async (t) => {
+  const { fake, lm } = await setup(t);
+  fake.setMode('html');
+  const p = await lm.probe();
+  assert.equal(p.ok, false);
+  assert.equal(p.status, undefined);
+  assert.equal(p.error, `${new URL(fake.origin).host} answered with a web page, not LogicMonitor's API. A proxy or sign-in page may be in the way.`);
+});
+
 test('a big reply is cut at 100 KB with the hint', async (t) => {
   const { fake, lm } = await setup(t);
   fake.setMode('big');

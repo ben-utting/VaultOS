@@ -54,6 +54,21 @@ test('a bad portal or a missing credential is refused', async (t) => {
   assert.equal(fake.state.seen.length, 0);
 });
 
+test('a web page in place of the API is refused at save and nothing is stored', async (t) => {
+  const { svc, fake, home } = await setup(t);
+  fake.setMode('html');
+  await assert.rejects(svc.saveToken('logicmonitor', { portal: 'acme', token: 'totally-wrong' }), /answered with a web page, not LogicMonitor's API/);
+  assert.equal((await row(svc)).state, 'not-connected');
+  assert.equal(fs.existsSync(path.join(home, '.vaultos/connectors.json')) ? stored(home) : undefined, undefined);
+});
+
+test('a token with a hidden character is refused before anything is sent', async (t) => {
+  const { svc, fake } = await setup(t);
+  await assert.rejects(svc.saveToken('logicmonitor', { portal: 'acme', token: 'lmb-good\u200b' }), { message: 'That token has a hidden character in it. Copy it again from LogicMonitor.' });
+  await assert.rejects(svc.saveToken('logicmonitor', { portal: 'acme', accessId: 'lm-id', accessKey: 'lm-kéy' }), { message: 'That token has a hidden character in it. Copy it again from LogicMonitor.' });
+  assert.equal(fake.state.seen.length, 0);
+});
+
 test('a refused token changes nothing', async (t) => {
   const { svc, home } = await setup(t);
   await assert.rejects(svc.saveToken('logicmonitor', { portal: 'acme', token: 'nope' }), { message: "LogicMonitor didn't accept this token: Authentication failed" });

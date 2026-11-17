@@ -50,13 +50,14 @@ function startFakeLm({ port = 0, host = '127.0.0.1' } = {}) {
     state.seen.push({ method: req.method, path: u.pathname, query: Object.fromEntries(u.searchParams), headers: { ...req.headers } });
     if (!u.pathname.startsWith(`${REST}/`)) return send(res, 404, { errorMessage: 'not found', errorCode: 1404 });
     const resource = u.pathname.slice(REST.length);
+    // A proxy's or sign-in page answers before LogicMonitor sees the request, whatever the token.
+    if (state.mode === 'html') return send(res, 200, '<html><body>Sign in to the proxy</body></html>', 'text/html');
     if (req.headers['x-version'] !== '3') return send(res, 400, { errorMessage: 'X-Version 3 required', errorCode: 1400 });
     if (!authorised(req, resource)) return send(res, 401, { errorMessage: 'Authentication failed', errorCode: 1401 });
     if (state.mode === '403') return send(res, 403, { errorMessage: 'Permission denied', errorCode: 1403 });
     if (state.mode === '429') return send(res, 429, { errorMessage: 'Too many requests', errorCode: 1429 });
     if (state.mode === '500') return send(res, 500, { errorMessage: 'Internal error', errorCode: 1500 });
     if (state.mode === 'redirect') { res.writeHead(302, { location: '/elsewhere' }); return res.end(); }
-    if (state.mode === 'html') return send(res, 200, '<html><body>Sign in to the proxy</body></html>', 'text/html');
     if (state.mode === 'big' && resource === '/device/devices') {
       return send(res, 200, list(Array.from({ length: 1500 }, (_, i) => ({ ...DEVICE, id: i + 1, description: 'x'.repeat(100) }))));
     }
