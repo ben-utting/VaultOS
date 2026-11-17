@@ -79,6 +79,50 @@ test('discover refuses authorization-server metadata for another issuer', async 
   await assert.rejects(o.discover(RES, { fetch: route({ [PRM_URL]: goodPrm(), [ASM_URL]: asm }) }), refusedDiscovery);
 });
 
+// Vantage's layout: the path-specific resource metadata is unusable (a challenge page), the root one names the origin.
+const V_PATH = 'https://mcp.example/.well-known/oauth-protected-resource/mcp';
+const V_ROOT = 'https://mcp.example/.well-known/oauth-protected-resource';
+const V_ASM = 'https://mcp.example/.well-known/oauth-authorization-server';
+const vAsm = () => ({ issuer: 'https://mcp.example', authorization_endpoint: 'https://mcp.example/authorize', token_endpoint: 'https://mcp.example/token',
+  registration_endpoint: 'https://mcp.example/register', revocation_endpoint: 'https://mcp.example/token', code_challenge_methods_supported: ['S256'] });
+
+test('discover falls back to the root metadata when the path one is unusable', async () => {
+  const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  const meta = await o.discover('https://mcp.example/mcp', { fetch: f });
+  assert.equal(meta.resource, 'https://mcp.example');
+  assert.deepEqual(meta.scopes, []);
+  assert.deepEqual(f.asked, [V_PATH, V_ROOT, V_ASM]);
+  const page = async (u) => (String(u) === V_PATH
+    ? { ok: true, status: 200, json: async () => { throw new Error('not json'); }, text: async () => '<html>Attention Required</html>' } : f(u));
+  assert.equal((await o.discover('https://mcp.example/mcp', { fetch: page })).resource, 'https://mcp.example');
+});
+
+test('the root metadata must name the origin', async () => {
+  const f = route({ [V_ROOT]: { resource: 'https://other.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f }), refusedDiscovery);
+});
+
+test('a path metadata for another resource is refused, not skipped', async () => {
+  const f = route({ [V_PATH]: { resource: 'https://mcp.example/other', authorization_servers: ['https://mcp.example'] },
+    [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f }), refusedDiscovery);
+  assert.deepEqual(f.asked, [V_PATH]);
+});
+
+test('issOk accepts no iss or the issuer, and refuses another', () => {
+  const meta = { issuer: 'https://a.example' };
+  for (const iss of [undefined, null, '', 'https://a.example', 'https://a.example/']) assert.equal(o.issOk(meta, iss), true, String(iss));
+  assert.equal(o.issOk(meta, 'https://b.example'), false);
+});
+
+test('authorizeUrl sends no scope when none is offered', async () => {
+  const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  const meta = await o.discover('https://mcp.example/mcp', { fetch: f });
+  const u = new URL(o.authorizeUrl(meta, { clientId: 'c', redirectUri: REDIR, state: 's', challenge: 'ch', resource: meta.resource }));
+  assert.equal(u.searchParams.has('scope'), false);
+  assert.equal(u.searchParams.get('resource'), 'https://mcp.example');
+});
+
 test('discover rejects metadata without registration or S256', async () => {
   const noReg = { ...goodAsm() }; delete noReg.registration_endpoint;
   await assert.rejects(o.discover(RES, { fetch: route({ [PRM_URL]: goodPrm(), [ASM_URL]: noReg }) }), refusedDiscovery);

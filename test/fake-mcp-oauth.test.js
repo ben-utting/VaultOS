@@ -246,3 +246,61 @@ test('authorize records the scope it was asked for', async (t) => {
   await signIn(fake);
   assert.deepEqual(fake.state.scopes, ['read:me offline_access', null]);
 });
+
+// ----- the Vantage shape -----
+async function vantageSignIn(fake) {
+  const asm = await (await fetch(fake.base + '/.well-known/oauth-authorization-server')).json();
+  const reg = await (await fetch(asm.registration_endpoint, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ redirect_uris: [REDIR], client_name: 'VaultOS' }) })).json();
+  const verifier = b64url(crypto.randomBytes(32));
+  const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
+  const u = new URL(asm.authorization_endpoint);
+  Object.entries({ response_type: 'code', client_id: reg.client_id, redirect_uri: REDIR, state: 's1', code_challenge: challenge, code_challenge_method: 'S256' })
+    .forEach(([k, v]) => u.searchParams.set(k, v));
+  const loc = new URL((await fetch(u, { redirect: 'manual' })).headers.get('location'));
+  const tok = await (await exchange(asm, reg, loc.searchParams.get('code'), verifier)).json();
+  return { asm, loc, tok };
+}
+
+test('the vantage shape hides the path metadata behind an HTML 403 and serves the root documents', async (t) => {
+  const fake = await startFake({ shape: 'vantage' }); t.after(() => fake.stop());
+  const blocked = await fetch(fake.base + '/.well-known/oauth-protected-resource/mcp');
+  assert.equal(blocked.status, 403);
+  assert.match(blocked.headers.get('content-type'), /text\/html/);
+  assert.match(await blocked.text(), /Cloudflare/);
+  assert.deepEqual(await (await fetch(fake.base + '/.well-known/oauth-protected-resource')).json(),
+    { resource: fake.base, authorization_servers: [fake.base], bearer_methods_supported: ['header'] });
+  const asm = await (await fetch(fake.base + '/.well-known/oauth-authorization-server')).json();
+  assert.equal(asm.issuer, fake.base);
+  assert.equal(asm.registration_endpoint, fake.base + '/register');
+  assert.equal(asm.scopes_supported, undefined);
+  const { loc } = await vantageSignIn(fake);
+  assert.equal(loc.searchParams.get('iss'), fake.base);
+  const anon = await fetch(fake.base + '/mcp', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.equal(anon.status, 401);
+  assert.match(anon.headers.get('www-authenticate'), /resource_metadata="[^"]+\/\.well-known\/oauth-protected-resource\/mcp"/);
+});
+
+test('vantage tools/list is SSE with a notification first and the result split over two data lines', async (t) => {
+  const fake = await startFake({ shape: 'vantage' }); t.after(() => fake.stop());
+  const { tok } = await vantageSignIn(fake);
+  const r = await mcpPost(fake.base + '/mcp', 'tools/list', undefined, { authorization: 'Bearer ' + tok.access_token });
+  assert.match(r.headers.get('content-type'), /text\/event-stream/);
+  const events = (await r.text()).split('\n\n').filter(Boolean);
+  assert.equal(events.length, 2);
+  assert.match(events[0], /notifications\/progress/);
+  const lines = events[1].split('\n');
+  assert.ok(lines.includes('id: 1'));
+  const data = lines.filter((l) => l.startsWith('data: ')).map((l) => l.slice(6));
+  assert.equal(data.length, 2);
+  const names = JSON.parse(data.join('\n')).result.tools.map((x) => x.name);
+  assert.deepEqual(names, ['query-costs', 'list-budgets', 'get-myself', 'list-ingest-tokens', 'create-budget', 'delete-folder']);
+});
+
+test('vantage /mcp takes Bearer vt-key', async (t) => {
+  const fake = await startFake({ shape: 'vantage' }); t.after(() => fake.stop());
+  const r = await mcpPost(fake.base + '/mcp', 'tools/call', { name: 'get-myself', arguments: {} }, { authorization: 'Bearer vt-key' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(JSON.parse((await r.json()).result.content[0].text), { email: 'alex@example.com', workspace: 'Main' });
+  assert.equal((await mcpPost(fake.base + '/mcp', 'tools/list', undefined, { authorization: 'Bearer nope' })).status, 401);
+});
