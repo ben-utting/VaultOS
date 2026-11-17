@@ -34,6 +34,11 @@ test('entryFor atlassian points at the loopback relay with the key', () => {
   });
 });
 
+test('only Vantage reads the root resource metadata when its own is unusable', () => {
+  assert.equal(CONNECTORS.vantage.rootMetadata, true);
+  assert.equal(CONNECTORS.atlassian.rootMetadata, undefined);
+});
+
 test('entryFor logicmonitor points at the loopback relay with the key', () => {
   assert.deepEqual(entryFor('logicmonitor', { port: 8080, key: 'k' }), {
     kind: 'http', url: 'http://127.0.0.1:8080/mcp/logicmonitor', headers: { 'X-VaultOS-Key': 'k' },

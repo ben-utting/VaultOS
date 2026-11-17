@@ -508,3 +508,21 @@ test('an over-cap tools/list gets 502 and nothing unfiltered', async (t) => {
   assert.equal(r.status, 502);
   assert.doesNotMatch(await r.text(), /create-budget/);
 });
+
+test('under the filter, a body the relay cannot read is answered here and nothing goes upstream', async (t) => {
+  const { vt, relay } = await vantageRelay(t);
+  const before = vt.state.seen.length;
+  const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'delete-folder' } }))]);
+  const r = await relay.call('POST', bom);
+  assert.deepEqual(await r.json(), { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+  assert.equal(vt.state.seen.length, before);
+  assert.deepEqual(vt.state.calls, []);
+});
+
+test('under the filter, what goes upstream is the JSON the relay read, as plain JSON', async (t) => {
+  const { vt, relay } = await vantageRelay(t);
+  await relay.call('POST', JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'query-costs', arguments: {} } }),
+    { 'content-type': 'application/json; charset=iso-8859-1' });
+  assert.deepEqual(vt.state.calls, ['query-costs']);
+  assert.equal(vt.state.seen.at(-1).headers['content-type'], 'application/json');
+});

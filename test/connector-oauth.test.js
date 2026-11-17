@@ -88,25 +88,39 @@ const vAsm = () => ({ issuer: 'https://mcp.example', authorization_endpoint: 'ht
 
 test('discover falls back to the root metadata when the path one is unusable', async () => {
   const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
-  const meta = await o.discover('https://mcp.example/mcp', { fetch: f });
+  const meta = await o.discover('https://mcp.example/mcp', { fetch: f, rootFallback: true });
   assert.equal(meta.resource, 'https://mcp.example');
   assert.deepEqual(meta.scopes, []);
   assert.deepEqual(f.asked, [V_PATH, V_ROOT, V_ASM]);
   const page = async (u) => (String(u) === V_PATH
     ? { ok: true, status: 200, json: async () => { throw new Error('not json'); }, text: async () => '<html>Attention Required</html>' } : f(u));
-  assert.equal((await o.discover('https://mcp.example/mcp', { fetch: page })).resource, 'https://mcp.example');
+  assert.equal((await o.discover('https://mcp.example/mcp', { fetch: page, rootFallback: true })).resource, 'https://mcp.example');
 });
 
 test('the root metadata must name the origin', async () => {
   const f = route({ [V_ROOT]: { resource: 'https://other.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
-  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f }), refusedDiscovery);
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f, rootFallback: true }), refusedDiscovery);
 });
 
 test('a path metadata for another resource is refused, not skipped', async () => {
   const f = route({ [V_PATH]: { resource: 'https://mcp.example/other', authorization_servers: ['https://mcp.example'] },
     [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f, rootFallback: true }), refusedDiscovery);
+  assert.deepEqual(f.asked, [V_PATH]);
+});
+
+test('the root fallback is off unless the connector asks for it', async () => {
+  const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
   await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: f }), refusedDiscovery);
   assert.deepEqual(f.asked, [V_PATH]);
+});
+
+test('a network failure or a 5xx at the path metadata never falls back, even when asked', async () => {
+  const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
+  const down = async (u) => { if (String(u) === V_PATH) throw new Error('ECONNRESET'); return f(u); };
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: down, rootFallback: true }), refusedDiscovery);
+  const busy = async (u) => (String(u) === V_PATH ? { ok: false, status: 503, json: async () => null, text: async () => '' } : f(u));
+  await assert.rejects(o.discover('https://mcp.example/mcp', { fetch: busy, rootFallback: true }), refusedDiscovery);
 });
 
 test('issOk accepts no iss or the issuer, and refuses another', () => {
@@ -117,7 +131,7 @@ test('issOk accepts no iss or the issuer, and refuses another', () => {
 
 test('authorizeUrl sends no scope when none is offered', async () => {
   const f = route({ [V_ROOT]: { resource: 'https://mcp.example', authorization_servers: ['https://mcp.example'] }, [V_ASM]: vAsm() });
-  const meta = await o.discover('https://mcp.example/mcp', { fetch: f });
+  const meta = await o.discover('https://mcp.example/mcp', { fetch: f, rootFallback: true });
   const u = new URL(o.authorizeUrl(meta, { clientId: 'c', redirectUri: REDIR, state: 's', challenge: 'ch', resource: meta.resource }));
   assert.equal(u.searchParams.has('scope'), false);
   assert.equal(u.searchParams.get('resource'), 'https://mcp.example');

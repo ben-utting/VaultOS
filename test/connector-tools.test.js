@@ -35,6 +35,15 @@ test('an SSE tools/list keeps its notification and id lines and handles a two-li
   assert.deepEqual(names(JSON.parse(lines[2].slice(6))), ['query-costs', 'list-budgets']);
 });
 
+test('an SSE event with empty data (a priming event) passes through unchanged', () => {
+  const result = JSON.stringify(listMsg(['create-budget', 'list-budgets']));
+  const text = `id: prime-1\ndata: \n\nid: prime-2\ndata:\n\nevent: message\nid: 1\ndata: ${result}\n\n`;
+  const events = T.rewriteToolsList(text, 'text/event-stream', V).split('\n\n').filter(Boolean);
+  assert.equal(events[0], 'id: prime-1\ndata: ');
+  assert.equal(events[1], 'id: prime-2\ndata:');
+  assert.deepEqual(names(JSON.parse(events[2].split('\n').find((l) => l.startsWith('data: ')).slice(6))), ['list-budgets']);
+});
+
 test('a JSON tools/list is filtered', () => {
   const out = T.rewriteToolsList(JSON.stringify(listMsg(['delete-folder', 'list-budgets'])), 'application/json', V);
   assert.deepEqual(names(JSON.parse(out)), ['list-budgets']);
