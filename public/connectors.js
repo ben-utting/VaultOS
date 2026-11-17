@@ -71,7 +71,7 @@
   // The form and the pasted token are cleared only on the way INTO a connected state (or a changed method), never on every
   // connected view: a focus refresh must not wipe a token being pasted. While this pane's sign-in runs the wait goes on until
   // the connection is a different method than before (a switch) or connected at all (a first sign-in).
-  function atlassianStep(st, prev, atl) {
+  function signInStep(st, prev, atl) {
     const connected = atl.state === 'connected';
     const into = connected && !(prev && prev.state === 'connected' && prev.method === atl.method);
     let waiting = !!st.waiting, dismissed = !!st.dismissed;
@@ -127,13 +127,20 @@
       + '</div>';
   }
 
+  const atlassianStep = signInStep; // its first name, for older callers
+
+  // The panel shown while this pane waits for a browser sign-in to finish.
+  const waitPanelHtml = (text, st) => '<div class="cx-wait" aria-live="polite"><div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
+    + `<span>${esc(text)}</span></div>`
+    + `<div class="ap-btns">${btn('reopen', 'Open the tab again')}${btn('cancel', 'Cancel')}</div>${errP(st, 'oauth')}</div>`;
+  // Which connector a waiting pane waits for: one browser sign-in at a time, Atlassian when the state predates the field.
+  const waitsFor = (st, id) => !!st.waiting && (st.waitingFor || 'atlassian') === id;
+
   function atlassianBody(c, st, now) {
     const connectedLike = c.state === 'connected' || c.state === 'error';
-    if (st.waiting) {
+    if (waitsFor(st, 'atlassian')) {
       return '<ul class="ap-facts"><li>Jira and Confluence, through Atlassian\'s own hosted server</li></ul>'
-        + '<div class="cx-wait" aria-live="polite"><div class="cx-row"><span class="cx-dots" aria-hidden="true"><span></span><span></span><span></span></span>'
-        + '<span>Waiting for you to approve in the Atlassian tab…</span></div>'
-        + `<div class="ap-btns">${btn('reopen', 'Open the tab again')}${btn('cancel', 'Cancel')}</div>${errP(st, 'oauth')}</div>`;
+        + waitPanelHtml('Waiting for you to approve in the Atlassian tab…', st);
     }
     if (connectedLike && !st.options.atlassian) {
       const via = c.method === 'token'
@@ -224,7 +231,47 @@
     },
   };
 
+  KEYED.vantage = {
+    id: 'vantage', name: 'Vantage', field: 'vtKey', input: 'cx-vt-key', err: 'vtkey', act: 'vt', what: 'API token',
+    intro: 'Cloud costs, reports and budgets from your Vantage account',
+    title: 'Paste a Vantage API token', fieldLabel: 'API token', placeholder: 'Paste the token', create: 'Get a token',
+    blurb: "VaultOS checks it with Vantage before saving it. A token with only the Read scope keeps agents read-only on Vantage's side too.",
+    dead: 'Vantage no longer accepts your token. Paste a new one.', signedIn: 'Signed in with an API token',
+    save: 'Save token', replace: 'Replace token', keep: 'Keep my current sign-in',
+    note: "Signing out here doesn't delete the token in Vantage.",
+  };
+
   const keyedInput = (elId) => Object.values(KEYED).find((k) => k.input === elId) || null;
+
+  // Vantage: Sign in like Atlassian, or a pasted API token; read-only for agents unless "Allow changes" is on.
+  const VT_FACTS = 'Cloud costs, cost reports, budgets and anomalies from your Vantage account. Read-only unless you allow changes.';
+  const VT_ALLOW_NOTE = "Agents can only read Vantage unless you allow changes. With changes on they can create, change and delete reports, budgets and folders, and some deletes can't be undone. Applies to agents' next requests.";
+
+  function vantageBody(c, st, now) {
+    const facts = (extra = '') => `<ul class="ap-facts"><li>${esc(VT_FACTS)}</li>${extra}</ul>`;
+    if (waitsFor(st, 'vantage')) return facts() + waitPanelHtml('Finish signing in to Vantage in the tab that opened.', st);
+    const connectedLike = c.state === 'connected' || c.state === 'error';
+    if (connectedLike && !st.options.vantage) {
+      const via = c.account ? `Signed in as ${c.account}` : (c.method === 'token' ? 'Signed in with an API token' : 'Signed in through Vantage');
+      const tested = testedLine(c, now, c.label);
+      const note = c.method === 'token' ? "Signing out here doesn't delete the token in Vantage." : "Signing out here revokes VaultOS's sign-in at Vantage.";
+      return facts(`<li>${esc(via)}</li>${tested ? `<li>${esc(tested)}</li>` : ''}`)
+        + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+        + '<div class="su-row cx-switchrow"><div class="su-row-t"><label for="cx-vt-allow" class="su-label">Allow changes</label>'
+        + `<span class="su-hint">${esc(VT_ALLOW_NOTE)}</span></div>`
+        + `<input type="checkbox" id="cx-vt-allow" class="su-switch"${c.allowChanges ? ' checked' : ''} role="switch"></div>`
+        + agentRowsHtml(c)
+        + `<div class="ap-btns">${btn('test', 'Test again')}${c.method === 'token' ? btn('oauth', 'Sign in instead') : btn('vt-switch', 'Use an API token instead')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}`
+        + `<p class="cx-muted">${esc(note)}</p>`;
+    }
+    const replacing = !!st.options.vantage && connectedLike;
+    const lead = c.state === 'needs-sign-in' ? `<p class="su-err cx-err" role="alert">${esc('Your Vantage sign-in has run out. Sign in again.')}</p>` : '';
+    const note = c.state !== 'needs-sign-in' && c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
+    return facts() + lead + note
+      + `<div class="ap-btns">${btn('oauth', 'Sign in', ' primary')}${st.options.vtToken ? '' : btn('vt-switch', 'Use an API token instead')}</div>${errP(st, 'oauth')}`
+      + (st.options.vtToken ? keyCard(c, st, replacing) : (replacing ? `<div class="ap-btns">${btn('vt-keep', 'Keep my current sign-in')}</div>` : ''))
+      + (c.state === 'needs-sign-in' ? agentRowsHtml(c) + `<div class="ap-btns">${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}` : '');
+  }
 
   // One card for a key. `replacing` shows it over a connected panel.
   function keyCard(c, st, replacing) {
@@ -416,10 +463,10 @@
       + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${trErr}${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -443,10 +490,11 @@
 
   // ---- the mounted pane ---------------------------------------------------------
   const STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+  const SIGN_IN = ['atlassian', 'vantage']; // connectors with a browser sign-in
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
@@ -476,14 +524,21 @@
       if (ui.onView) ui.onView(v);
       const list = v.connectors || [];
       if (!st.picked || !list.some((c) => c.id === st.picked)) st.picked = list[0] && list[0].id;
-      const atl = list.find((c) => c.id === 'atlassian');
+      // One browser sign-in at a time: the one this pane waits for, else one some other session started, else Atlassian.
+      const sid = st.waitingFor || (list.find((c) => SIGN_IN.includes(c.id) && c.state === 'connecting') || {}).id || 'atlassian';
+      const atl = list.find((c) => c.id === sid);
       const az = list.find((c) => c.id === 'azure');
       if (atl) {
-        const step = atlassianStep(st, st.prevAtl, atl);
-        st.prevAtl = { state: atl.state, method: atl.method };
+        st.prevSign = st.prevSign || {};
+        const step = signInStep(st, st.prevSign[sid], atl);
+        st.prevSign[sid] = { state: atl.state, method: atl.method };
         st.waiting = step.waiting; st.dismissed = step.dismissed;
+        st.waitingFor = step.waiting ? sid : undefined;
         if (!step.waiting) st.waitFrom = null;
-        if (step.clear) { delete st.options.atlassian; st.err.oauth = ''; st.err.token = ''; st.token = ''; }
+        if (step.clear) {
+          delete st.options[sid]; st.err.oauth = '';
+          if (sid === 'atlassian') { st.err.token = ''; st.token = ''; } else delete st.options.vtToken;
+        }
         if (step.poll && !atlTimer) startAtlPoll();
         if (!step.poll) stopAtlPoll();
       }
@@ -602,8 +657,9 @@
       return ok;
     }
 
-    async function startAtlassian(reuse) {
-      const cur = st.view && st.view.connectors.find((x) => x.id === 'atlassian');
+    async function startSignIn(id, reuse) {
+      const cur = st.view && st.view.connectors.find((x) => x.id === id);
+      const name = (cur && cur.label) || 'Atlassian';
       if (!reuse) st.waitFrom = cur && (cur.state === 'connected' || cur.state === 'error') ? cur.method : null;
       // The tab opens inside the click, before the wait for the server, so the browser does not block it.
       const w = reuse ? ui.openTab(reuse) : ui.openTab('about:blank');
@@ -612,9 +668,9 @@
         return;
       }
       try {
-        const r = await call('POST', '/api/connectors/atlassian/start');
+        const r = await call('POST', `/api/connectors/${id}/start`);
         const href = signInUrl(r.url);
-        if (!href) throw new Error('Atlassian sent a sign-in address VaultOS does not trust. Try again, or use an API token.');
+        if (!href) throw new Error(`${name} sent a sign-in address VaultOS does not trust. Try again, or use an API token.`);
         st.url = href;
         if (!w) throw new Error('Your browser blocked the new tab. Allow pop-ups for VaultOS, then try again.');
         w.location.href = href;
@@ -622,18 +678,24 @@
         if (w && w.close) try { w.close(); } catch { /* gone */ }
         throw e;
       }
-      st.waiting = true; st.dismissed = false;
+      st.waiting = true; st.dismissed = false; st.waitingFor = id;
       startAtlPoll();
     }
 
     async function onAct(act, b) {
       const id = st.picked;
-      if (act === 'oauth') return run('oauth', () => startAtlassian());
-      if (act === 'reopen') return run('oauth', () => (st.url ? startAtlassian(st.url) : startAtlassian()));
+      if (act === 'oauth') return run('oauth', () => startSignIn(SIGN_IN.includes(id) ? id : 'atlassian'));
+      if (act === 'reopen') {
+        const wid = st.waitingFor || 'atlassian';
+        return run('oauth', () => (st.url ? startSignIn(wid, st.url) : startSignIn(wid)));
+      }
+      if (act === 'vt-switch') { st.options.vantage = true; st.options.vtToken = true; st.err.vtkey = ''; render(); return; }
+      if (act === 'vt-keep') { delete st.options.vantage; delete st.options.vtToken; st.err.vtkey = ''; st.vtKey = ''; render(); return; }
       if (act === 'cancel') {
+        const wid = st.waitingFor || 'atlassian';
         return run('oauth', async () => {
-          st.waiting = false; st.waitFrom = null; stopAtlPoll();
-          await call('POST', '/api/connectors/atlassian/cancel');
+          st.waiting = false; st.waitFrom = null; st.waitingFor = undefined; stopAtlPoll();
+          await call('POST', `/api/connectors/${wid}/cancel`);
           st.dismissed = false;
           await refresh();
         });
@@ -760,6 +822,10 @@
         const on = e.target.checked;
         run('actions', async () => { await call('POST', '/api/connectors/azure/settings', { allowChanges: on }); await refresh(); })
           .then((ok) => { if (!ok) { render(true); } });
+      } else if (e.target.id === 'cx-vt-allow') {
+        const on = e.target.checked;
+        run('actions', async () => { await call('POST', '/api/connectors/vantage/settings', { allowChanges: on }); await refresh(); })
+          .then((ok) => { if (!ok) { render(true); } });
       } else if (e.target.id === 'cx-ado-allow') {
         const on = e.target.checked;
         run('actions', async () => { await call('POST', '/api/connectors/azuredevops/settings', { allowChanges: on }); await refresh(); })
@@ -794,5 +860,5 @@
     return { refresh, stop };
   }
 
-  return { esc, stateChip, agentChip, minutesLeft, hostPath, signInUrl, atlassianStep, paneHtml, mountConnectors };
+  return { esc, stateChip, agentChip, minutesLeft, hostPath, signInUrl, atlassianStep, signInStep, paneHtml, mountConnectors };
 });

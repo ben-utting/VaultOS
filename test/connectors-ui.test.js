@@ -661,3 +661,114 @@ test('markup in the LogicMonitor portal or account is escaped', () => {
   assert.match(shown, /Connected to &lt;b&gt;x&lt;\/b&gt;\.logicmonitor\.com/);
   assert.match(replacing, /id="cx-lm-portal"[^>]*value="&quot;&gt;&lt;i&gt;p"/);
 });
+
+// ----- Vantage -----
+const VTROW = { id: 'vantage', label: 'Vantage', by: 'Cloud costs · reports · budgets', state: 'not-connected', tokenHelp: 'https://docs.vantage.sh/api/authentication', allowChanges: false, agents: [] };
+const ATLROW = { id: 'atlassian', label: 'Atlassian', by: 'Jira', state: 'not-connected', agents: [] };
+const withVt = (over) => ({ connectors: [ATLROW, { ...VTROW, ...over }], planned: [] });
+const VT_FACTS = 'Cloud costs, cost reports, budgets and anomalies from your Vantage account. Read-only unless you allow changes.';
+const VT_NOTE = "Agents can only read Vantage unless you allow changes. With changes on they can create, change and delete reports, budgets and folders, and some deletes can't be undone. Applies to agents' next requests.";
+const VT_BLURB = "VaultOS checks it with Vantage before saving it. A token with only the Read scope keeps agents read-only on Vantage's side too.";
+const plain = (html) => html.replace(/&#39;/g, "'");
+
+function mountVt(viewFn, extra = {}) {
+  const calls = [];
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const tab = { location: {}, close() {} };
+  const ui = { api: async (m, u, b) => { calls.push([m, u, b]); return m === 'GET' ? viewFn() : (u.endsWith('/start') ? { url: 'https://mcp.vantage.sh/authorize?x=1' } : {}); },
+    openTerm() {}, openTab: () => tab, ...extra };
+  const pane = C.mountConnectors(el, ui);
+  const click = async (act) => { els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act } } : null) } }); await new Promise((r) => setTimeout(r, 20)); };
+  const pick = () => els.click({ target: { closest: (s) => (s === '.cx-ready .ap-tile' ? { dataset: { id: 'vantage' } } : null) } });
+  const posts = () => calls.filter((c) => c[0] === 'POST');
+  return { pane, el, els, click, pick, posts, tab };
+}
+
+test('vantage not connected shows the facts, Sign in and the token option', async () => {
+  const html = plain(C.paneHtml({ view: withVt({}), picked: 'vantage' }));
+  assert.ok(html.includes(VT_FACTS));
+  assert.match(html, /data-act="oauth"[^>]*>Sign in</);
+  assert.match(html, /data-act="vt-switch"/);
+  assert.doesNotMatch(html, /cx-vt-key/);
+  const m = mountVt(() => withVt({}));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('vt-switch');
+  assert.match(m.el.innerHTML, /id="cx-vt-key"[^>]*type="password"/);
+  assert.ok(plain(m.el.innerHTML).includes(VT_BLURB));
+  m.pane.stop();
+});
+
+test('the vantage waiting panel shows only for vantage', () => {
+  const vt = C.paneHtml({ view: withVt({}), picked: 'vantage', waiting: true, waitingFor: 'vantage' });
+  assert.match(vt, /Finish signing in to Vantage in the tab that opened\./);
+  const atl = C.paneHtml({ view: withVt({}), picked: 'atlassian', waiting: true, waitingFor: 'vantage' });
+  assert.doesNotMatch(atl, /Waiting for you to approve/);
+  const legacy = C.paneHtml({ view: withVt({}), picked: 'atlassian', waiting: true });
+  assert.match(legacy, /Waiting for you to approve in the Atlassian tab/);
+});
+
+test('Sign in posts vantage/start and opens the tab; Cancel posts vantage/cancel', async () => {
+  const m = mountVt(() => withVt({}));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('oauth');
+  assert.deepEqual(m.posts()[0].slice(0, 2), ['POST', '/api/connectors/vantage/start']);
+  assert.equal(m.tab.location.href, 'https://mcp.vantage.sh/authorize?x=1');
+  assert.match(m.el.innerHTML, /Finish signing in to Vantage/);
+  await m.click('cancel');
+  assert.deepEqual(m.posts()[1].slice(0, 2), ['POST', '/api/connectors/vantage/cancel']);
+  m.pane.stop();
+});
+
+test('vantage connected shows the account, tools, the switch and the right sign-out note', () => {
+  const at = new Date(1000).toISOString();
+  const row = { state: 'connected', method: 'oauth', account: 'alex@example.com · Main', lastTest: { ok: true, tools: 3, at } };
+  const html = plain(C.paneHtml({ view: withVt(row), picked: 'vantage' }, 1000));
+  assert.match(html, /Signed in as alex@example\.com · Main/);
+  assert.match(html, /Tested just now: Vantage answered with 3 tools/);
+  assert.match(html, /<input type="checkbox" id="cx-vt-allow"[^>]*role="switch">/);
+  assert.ok(html.includes(VT_NOTE));
+  for (const t of ['Test again', 'Use an API token instead', 'Sign out']) assert.ok(html.includes(`>${t}<`), t);
+  assert.ok(html.includes("Signing out here revokes VaultOS's sign-in at Vantage."));
+  const tok = plain(C.paneHtml({ view: withVt({ ...row, method: 'token', allowChanges: true }), picked: 'vantage' }, 1000));
+  assert.match(tok, />Sign in instead</);
+  assert.match(tok, /id="cx-vt-allow"[^>]* checked/);
+  assert.ok(tok.includes("Signing out here doesn't delete the token in Vantage."));
+});
+
+test('the vantage switch posts the setting', async () => {
+  const m = mountVt(() => withVt({ state: 'connected', method: 'oauth', account: 'a' }));
+  await m.pane.refresh();
+  await m.pick();
+  m.els.change({ target: { id: 'cx-vt-allow', checked: true } });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(m.posts()[0], ['POST', '/api/connectors/vantage/settings', { allowChanges: true }]);
+  m.pane.stop();
+});
+
+test('vantage token save posts vantage/token', async () => {
+  const m = mountVt(() => withVt({}));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('vt-switch');
+  m.els.input({ target: { id: 'cx-vt-key', value: '  vt-abc\n' } });
+  await m.click('vt-token');
+  assert.deepEqual(m.posts()[0], ['POST', '/api/connectors/vantage/token', { token: 'vt-abc' }]);
+  m.pane.stop();
+});
+
+test('vantage needs-sign-in shows the copy and Sign in', () => {
+  const html = C.paneHtml({ view: withVt({ state: 'needs-sign-in', method: 'oauth' }), picked: 'vantage' });
+  assert.match(html, /Your Vantage sign-in has run out\. Sign in again\./);
+  assert.match(html, /data-act="oauth"/);
+  assert.match(html, /data-act="disconnect"/);
+});
+
+test('markup in the vantage account is escaped', () => {
+  const html = C.paneHtml({ view: withVt({ state: 'connected', method: 'oauth', account: '<img src=x onerror=alert(1)>' }), picked: 'vantage' });
+  assert.doesNotMatch(html, /<img src=x/);
+  assert.match(html, /Signed in as &lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.ok(plain(html).includes(VT_FACTS), 'the Vantage card, not a fallback');
+});
