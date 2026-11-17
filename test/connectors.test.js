@@ -9,7 +9,7 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'transcripts', 'azuredevops', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'azure', 'entra', 'transcripts', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
 });
 
 test('PLANNED has the six ids in order', () => {
@@ -31,6 +31,12 @@ test('Atlassian: OAuth on v2, API tokens on v1 (Atlassian documents tokens for v
 test('entryFor atlassian points at the loopback relay with the key', () => {
   assert.deepEqual(entryFor('atlassian', { port: 8080, key: 'k' }), {
     kind: 'http', url: 'http://127.0.0.1:8080/mcp/atlassian', headers: { 'X-VaultOS-Key': 'k' },
+  });
+});
+
+test('entryFor logicmonitor points at the loopback relay with the key', () => {
+  assert.deepEqual(entryFor('logicmonitor', { port: 8080, key: 'k' }), {
+    kind: 'http', url: 'http://127.0.0.1:8080/mcp/logicmonitor', headers: { 'X-VaultOS-Key': 'k' },
   });
 });
 
