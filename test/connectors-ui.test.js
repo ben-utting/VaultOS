@@ -539,3 +539,125 @@ test('transcripts: a finished sign-in clears the typed IDs', async (t) => {
   assert.match(p.html(), /id="tr-tenant"[^>]*value="22222222-2222-3333-4444-555555555555"/);
   p.m.stop && p.m.stop();
 });
+
+// ----- LogicMonitor -----
+const LMROW = { id: 'logicmonitor', label: 'LogicMonitor', by: 'Alerts · devices · metrics', state: 'not-connected', tokenHelp: 'https://www.logicmonitor.com/support/bearer-token', agents: [] };
+const withLm = (over) => ({ connectors: [...FOUR, { ...LMROW, ...over }], planned: PLANNED5 });
+const LM_BLURB = 'VaultOS checks it with LogicMonitor before saving it. Agents can only read: alerts, devices and their metrics, and scheduled downtime. A token on an API-only user with a read-only role keeps it tight.';
+const LM_NOTE = /Signing out here doesn(&#39;|')t delete the token in LogicMonitor\./;
+
+function mountLm(viewFn) {
+  const calls = [];
+  const els = {};
+  const el = { innerHTML: '', addEventListener(t, f) { els[t] = f; }, contains: () => false, querySelector: () => null };
+  const ui = { api: async (m, u, b) => { calls.push([m, u, b]); return m === 'GET' ? viewFn() : {}; } };
+  const pane = C.mountConnectors(el, ui);
+  // The pane's click handler doesn't return the action's promise: wait for a save to settle before the next click.
+  const click = async (act) => { els.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act } } : null) } }); await new Promise((r) => setTimeout(r, 20)); };
+  const pick = () => els.click({ target: { closest: (s) => (s === '.cx-ready .ap-tile' ? { dataset: { id: 'logicmonitor' } } : null) } });
+  const type = (id, value) => els.input({ target: { id, value } });
+  const posts = () => calls.filter((c) => c[0] === 'POST');
+  return { pane, el, els, click, pick, type, posts };
+}
+
+test('logicmonitor not connected shows portal and token fields, the blurb and Get a token', () => {
+  const html = C.paneHtml({ view: withLm({}), picked: 'logicmonitor' });
+  assert.match(html, /id="cx-lm-portal"[^>]*placeholder="acme or acme\.logicmonitor\.com"/);
+  assert.match(html, /id="cx-lm-token"[^>]*type="password"/);
+  assert.ok(html.includes(LM_BLURB));
+  assert.match(html, /href="https:\/\/www\.logicmonitor\.com\/support\/bearer-token"[^>]*>Get a token</);
+  assert.match(html, /data-act="lm-keys"/);
+  assert.doesNotMatch(html, /cx-lm-id/);
+});
+
+test('the access-ID switch swaps the token field for ID and key, and back', async () => {
+  const keys = C.paneHtml({ view: withLm({}), picked: 'logicmonitor', options: { lmKeys: true } });
+  assert.match(keys, /id="cx-lm-id"/);
+  assert.match(keys, /id="cx-lm-key"[^>]*type="password"/);
+  assert.doesNotMatch(keys, /cx-lm-token/);
+  assert.match(keys, /data-act="lm-bearer"/);
+  const m = mountLm(() => withLm({}));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('lm-keys');
+  assert.match(m.el.innerHTML, /id="cx-lm-id"/);
+  await m.click('lm-bearer');
+  assert.match(m.el.innerHTML, /id="cx-lm-token"/);
+  m.pane.stop();
+});
+
+test('logicmonitor save posts portal and token; keys mode posts ID and key; empty fields are refused; Enter saves', async () => {
+  const m = mountLm(() => withLm({}));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('lm-save');
+  assert.equal(m.posts().length, 0);
+  assert.match(m.el.innerHTML, /Enter the LogicMonitor portal name first\./);
+  m.type('cx-lm-portal', ' acme ');
+  await m.click('lm-save');
+  assert.equal(m.posts().length, 0);
+  assert.match(m.el.innerHTML, /Paste the LogicMonitor bearer token first\./);
+  m.type('cx-lm-token', '  lmb_x\n');
+  await m.click('lm-save');
+  assert.deepEqual(m.posts()[0], ['POST', '/api/connectors/logicmonitor/token', { portal: 'acme', token: 'lmb_x' }]);
+  await m.click('lm-keys');
+  m.type('cx-lm-portal', 'acme');
+  await m.click('lm-save');
+  assert.equal(m.posts().length, 1);
+  assert.match(m.el.innerHTML, /Paste the access ID and key first\./);
+  m.type('cx-lm-id', 'id1');
+  m.type('cx-lm-key', ' k1 ');
+  m.els.keydown({ key: 'Enter', preventDefault() {}, target: { id: 'cx-lm-key', closest: () => null } });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(m.posts()[1], ['POST', '/api/connectors/logicmonitor/token', { portal: 'acme', accessId: 'id1', accessKey: 'k1' }]);
+  m.pane.stop();
+});
+
+test('logicmonitor connected shows the portal, the test and the buttons', () => {
+  const at = new Date(1000).toISOString();
+  const html = C.paneHtml({ view: withLm({ state: 'connected', method: 'token', account: 'acme.logicmonitor.com', portal: 'acme', lastTest: { ok: true, tools: 2, at } }), picked: 'logicmonitor' }, 1000);
+  assert.match(html, /Connected to acme\.logicmonitor\.com/);
+  assert.match(html, /Signed in with a bearer token/);
+  assert.match(html, /Tested just now: LogicMonitor answered with 2 tools/);
+  for (const a of ['test', 'lm-replace', 'disconnect']) assert.match(html, new RegExp(`data-act="${a}"`));
+  assert.match(html, />Replace token</);
+  assert.match(html, LM_NOTE);
+  assert.doesNotMatch(html, /cx-lm-token/);
+  const keys = C.paneHtml({ view: withLm({ state: 'connected', account: 'acme.logicmonitor.com', portal: 'acme', lmv1: true }), picked: 'logicmonitor' });
+  assert.match(keys, /Signed in with an access ID and key/);
+});
+
+test('replacing prefills the portal, and saving only a new token keeps it', async () => {
+  const row = { state: 'connected', method: 'token', account: 'acme.logicmonitor.com', portal: 'acme' };
+  const html = C.paneHtml({ view: withLm(row), picked: 'logicmonitor', options: { logicmonitor: true } });
+  assert.match(html, /id="cx-lm-portal"[^>]*value="acme"/);
+  assert.match(html, /data-act="lm-keep"/);
+  const m = mountLm(() => withLm(row));
+  await m.pane.refresh();
+  await m.pick();
+  await m.click('lm-replace');
+  m.type('cx-lm-token', 'lmb_new');
+  await m.click('lm-save');
+  assert.deepEqual(m.posts()[0], ['POST', '/api/connectors/logicmonitor/token', { portal: 'acme', token: 'lmb_new' }]);
+  m.pane.stop();
+});
+
+test('logicmonitor needs-sign-in says the token stopped working and offers the card, Test again, Sign out and agent rows', () => {
+  const html = C.paneHtml({ view: withLm({ state: 'needs-sign-in', account: 'acme.logicmonitor.com', portal: 'acme', agents: [{ id: 'cursor', label: 'Cursor CLI', chip: 'Added' }] }), picked: 'logicmonitor' });
+  assert.match(html, /LogicMonitor no longer accepts this token\. Paste a new one\./);
+  assert.match(html, /id="cx-lm-token"/);
+  assert.match(html, /id="cx-lm-portal"[^>]*value="acme"/);
+  assert.match(html, /data-act="test"/);
+  assert.match(html, /data-act="disconnect"/);
+  assert.match(html, /Cursor CLI/);
+  assert.match(html, LM_NOTE);
+});
+
+test('markup in the LogicMonitor portal or account is escaped', () => {
+  const evil = { state: 'connected', account: '<b>x</b>.logicmonitor.com', portal: '"><i>p' };
+  const shown = C.paneHtml({ view: withLm(evil), picked: 'logicmonitor' });
+  const replacing = C.paneHtml({ view: withLm(evil), picked: 'logicmonitor', options: { logicmonitor: true } });
+  for (const h of [shown, replacing]) assert.doesNotMatch(h, /<b>x|"><i>p/);
+  assert.match(shown, /Connected to &lt;b&gt;x&lt;\/b&gt;\.logicmonitor\.com/);
+  assert.match(replacing, /id="cx-lm-portal"[^>]*value="&quot;&gt;&lt;i&gt;p"/);
+});

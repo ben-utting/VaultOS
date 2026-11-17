@@ -341,6 +341,46 @@
       + `<div class="ap-btns">${btn('test', 'Test again')}${btn('ado-change', 'Change organization')}${btn('ado-off', 'Turn off')}</div>${errP(st, 'actions')}`;
   }
 
+  // LogicMonitor: the person's portal plus a bearer token, or an LMv1 access ID and key. Read-only, core monitoring only.
+  const LM_BLURB = 'VaultOS checks it with LogicMonitor before saving it. Agents can only read: alerts, devices and their metrics, and scheduled downtime. A token on an API-only user with a read-only role keeps it tight.';
+  const LM_INPUTS = { 'cx-lm-portal': 'lmPortal', 'cx-lm-token': 'lmToken', 'cx-lm-id': 'lmId', 'cx-lm-key': 'lmKey' };
+
+  function lmCard(c, st, replacing) {
+    const keys = !!st.options.lmKeys;
+    const help = httpsUrl(c.tokenHelp);
+    const field = (id, label, type, placeholder, value) => `<div class="su-field"><label for="${id}">${esc(label)}</label>`
+      + `<input id="${id}" class="su-input" type="${type}" autocomplete="off" spellcheck="false" placeholder="${esc(placeholder)}" value="${esc(value)}"></div>`;
+    const creds = keys
+      ? field('cx-lm-id', 'Access ID', 'text', 'Access ID', st.lmId) + field('cx-lm-key', 'Access key', 'password', 'Access key', st.lmKey)
+      : field('cx-lm-token', 'Bearer token', 'password', 'Paste the token', st.lmToken);
+    return `<div class="cx-opts"><div class="cx-opt main"><h5>Connect your LogicMonitor portal</h5><p>${esc(LM_BLURB)}</p>`
+      + field('cx-lm-portal', 'Portal', 'text', 'acme or acme.logicmonitor.com', st.lmPortal || c.portal || '') + creds
+      + `<div class="ap-btns">${btn('lm-save', replacing ? 'Save token' : 'Save', ' primary')}`
+      + (help ? `<a class="cx-link" href="${esc(help.href)}" target="_blank" rel="noopener noreferrer">Get a token</a>` : '')
+      + btn(keys ? 'lm-bearer' : 'lm-keys', keys ? 'Use a bearer token instead' : 'Use an access ID and key instead')
+      + `${replacing ? btn('lm-keep', 'Keep my current token') : ''}</div>${errP(st, 'lm')}</div></div>`;
+  }
+
+  function lmBody(c, st, now) {
+    const intro = '<li>Alerts, devices and their metrics, and scheduled downtime from your LogicMonitor portal, read-only</li>';
+    const note = `<p class="cx-muted">${esc("Signing out here doesn't delete the token in LogicMonitor.")}</p>`;
+    const connectedLike = c.state === 'connected' || c.state === 'error';
+    if (!connectedLike) {
+      const lead = c.state === 'needs-sign-in' ? `<p class="su-err cx-err" role="alert">${esc('LogicMonitor no longer accepts this token. Paste a new one.')}</p>` : '';
+      const signedOut = c.state === 'needs-sign-in'
+        ? agentRowsHtml(c) + `<div class="ap-btns">${btn('test', 'Test again')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}` + note : '';
+      return `<ul class="ap-facts">${intro}</ul>${lead}${c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : ''}${lmCard(c, st, false)}${signedOut}`;
+    }
+    if (st.options.logicmonitor) return `<ul class="ap-facts">${intro}</ul>${lmCard(c, st, true)}`;
+    const tested = testedLine(c, now, c.label);
+    return `<ul class="ap-facts">${intro}<li>${esc(`Connected to ${c.account || ''}`)}</li>`
+      + `<li>${c.lmv1 ? 'Signed in with an access ID and key' : 'Signed in with a bearer token'}</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
+      + (c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '')
+      + agentRowsHtml(c)
+      + `<div class="ap-btns">${btn('test', 'Test again')}${btn('lm-replace', 'Replace token')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}`
+      + note;
+  }
+
   // Teams transcripts: the person's own app registration, signed in with a device code.
   const TR_SCOPES = ['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read'];
   function transcriptsBody(c, st, now) {
@@ -376,10 +416,10 @@
       + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${trErr}${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -406,7 +446,7 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
@@ -607,6 +647,29 @@
           await refresh();
         });
       }
+      if (act === 'lm-keys' || act === 'lm-bearer') { st.options.lmKeys = act === 'lm-keys'; st.err.lm = ''; render(); return; }
+      if (act === 'lm-replace') { st.options.logicmonitor = true; st.err.lm = ''; render(); return; }
+      if (act === 'lm-keep') { delete st.options.logicmonitor; st.err.lm = ''; st.lmToken = ''; st.lmId = ''; st.lmKey = ''; render(); return; }
+      if (act === 'lm-save') {
+        return run('lm', async () => {
+          const row = (st.view && st.view.connectors.find((x) => x.id === 'logicmonitor')) || {};
+          const portal = (st.lmPortal || row.portal || '').trim();
+          if (!portal) throw new Error('Enter the LogicMonitor portal name first.');
+          let body;
+          if (st.options.lmKeys) {
+            const accessId = st.lmId.trim(), accessKey = st.lmKey.trim();
+            if (!accessId || !accessKey) throw new Error('Paste the access ID and key first.');
+            body = { portal, accessId, accessKey };
+          } else {
+            const token = st.lmToken.trim();
+            if (!token) throw new Error('Paste the LogicMonitor bearer token first.');
+            body = { portal, token };
+          }
+          await call('POST', '/api/connectors/logicmonitor/token', body);
+          st.lmPortal = ''; st.lmToken = ''; st.lmId = ''; st.lmKey = ''; delete st.options.logicmonitor;
+          await refresh();
+        });
+      }
       const k = Object.values(KEYED).find((x) => act.startsWith(`${x.act}-`));
       if (k && act === `${k.act}-token`) {
         return run(k.err, async () => {
@@ -689,6 +752,7 @@
       else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
       else if (e.target.id === 'tr-tenant') st.trTenant = e.target.value;
       else if (e.target.id === 'tr-client') st.trClient = e.target.value;
+      else if (Object.hasOwn(LM_INPUTS, e.target.id)) st[LM_INPUTS[e.target.id]] = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });
     el.addEventListener('change', (e) => {
@@ -709,6 +773,7 @@
     el.addEventListener('keydown', (e) => {
       const ki = keyedInput(e.target.id);
       if (e.key === 'Enter' && ki) { e.preventDefault(); onAct(`${ki.act}-token`); return; }
+      if (e.key === 'Enter' && Object.hasOwn(LM_INPUTS, e.target.id)) { e.preventDefault(); onAct('lm-save'); return; }
       if (e.key === 'Enter' && e.target.id === 'cx-ado-org') { e.preventDefault(); onAct('ado-on'); return; }
       if (e.key === 'Enter' && (e.target.id === 'cx-email' || e.target.id === 'cx-token')) { e.preventDefault(); onAct('token'); return; }
       const tile = e.target.closest && e.target.closest('.cx-ready .ap-tile');
