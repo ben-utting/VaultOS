@@ -30,6 +30,7 @@
   const DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const DAY_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const KEY_RE = /^(c_[a-z2-7]{10})@(\d{4}-\d{2}-\d{2})$/;   // a due item: <entry id>@<date>
   const PING_OFFSET_MIN = { start: 0, '5m': 5, '10m': 10, '15m': 15, '30m': 30, '1h': 60, '1d': 1440 };
 
   const DATE_MSG = 'Use YYYY-MM-DD (for example 2026-11-20)';
@@ -307,7 +308,7 @@
 
   return {
     TITLE_MAX, NOTE_MAX, SKIP_MAX, PINGS, ALL_DAY_PINGS, REPEATS, DUE_WINDOW_DAYS, ALL_DAY_TIME, SNOOZE_TOMORROW,
-    DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT,
+    DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT, KEY_RE,
     isDate, isTime, addDays, weekday, mondayOf, daysInMonth, daysBetween, todayIn, wallMs,
     validateEntry, parseRepeatFlag, occurrences, lastDate, describeRepeat, pingAt, dueItems, snoozeUntil,
   };

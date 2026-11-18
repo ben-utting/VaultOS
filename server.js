@@ -833,8 +833,8 @@ function logRejectedHost(host) {
   console.log(`host rejected: ${host}`);
 }
 app.use((req, res, next) => {
-  // The /api/term/ POSTs (agent hook, search, automations) are already limited to loopback callers holding a per-terminal token.
-  if (req.path === '/health' || req.path.startsWith('/mcp/') || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search' || req.path.startsWith('/api/term/automations/'))) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
+  // The /api/term/ POSTs (agent hook, search, automations, calendar) are already limited to loopback callers holding a per-terminal token.
+  if (req.path === '/health' || req.path.startsWith('/mcp/') || (req.method === 'POST' && (req.path === '/api/term/agent' || req.path === '/api/term/search' || req.path.startsWith('/api/term/automations/') || req.path.startsWith('/api/term/calendar/'))) || hostAllowed(req.headers.host, ALLOWED_HOSTS)) return next();
   const host = safeHost(req.headers.host);
   logRejectedHost(host);
   res.status(421).type('text/plain').send(
@@ -1165,6 +1165,15 @@ if (TERMINAL_ENV) app.use('/api/term/automations', (req, res, next) => {
   if (!t) return res.status(403).json({ error: 'Forbidden' });
   req.term = t;
   return AUTOMATIONS.termRouter(req, res, next);
+});
+
+// `vaultos-calendar`, run by agents in a VaultOS terminal (lib/calendar-agent-api.js). Same token check;
+// CALENDAR is created further down, so it's looked up per request.
+if (TERMINAL_ENV) app.use('/api/term/calendar', (req, res, next) => {
+  const t = req.method === 'POST' ? termCaller(req) : null;
+  if (!t) return res.status(403).json({ error: 'Forbidden' });
+  req.term = t;
+  return CALENDAR.termRouter(req, res, next);
 });
 
 // The connector callback is a browser navigation (Atlassian sends the person back to it): with no session it gets a page.
