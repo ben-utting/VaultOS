@@ -49,7 +49,7 @@ vaultos-calendar <command> [--json]
 - Timed entries: `start` pings at the start time, `5m` to `1h` that long before, `1d` 24 hours before.
 - All-day entries: `start` pings at 08:00 on the day, `1d` at 08:00 the day before. The minute offsets don't apply.
 - `--ping none` adds the entry without a ping.
-- A time that doesn't exist on the night the clocks go forward pings at the next valid minute. A time that happens twice when they go back pings the first time.
+- On the night the clocks go forward, a time inside the missing hour pings an hour later (01:30 pings at 02:30). A time that happens twice when they go back pings the first time.
 
 ## Repeats
 
