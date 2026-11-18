@@ -1,6 +1,6 @@
 ---
 name: vaultos-calendar
-description: Use when the person asks to be reminded of something, to put something in their calendar or move or cancel it, asks what's on today or this week or when they're free, asks for help planning their week, or says they're overwhelmed by everything they have on. Works through the vaultos-calendar command in a VaultOS terminal.
+description: Use when the person asks to be reminded of something, however soon ("in 2 minutes" included), to put something in their calendar or move or cancel it, asks what's on today or this week or when they're free, asks for help planning their week, or says they're overwhelmed by everything they have on. Use it instead of a timer, cron or scheduled job of your own. Works through the vaultos-calendar command in a VaultOS terminal.
 ---
 
 # VaultOS calendar
@@ -10,6 +10,8 @@ The person keeps a calendar inside VaultOS. Each entry has a title, a date, a st
 You work through the `vaultos-calendar` command. It only works in a VaultOS terminal. Every command, flag and field is in [reference.md](reference.md).
 
 ## Rules
+
+**Every reminder for the person goes in the calendar, however soon.** "In 2 minutes" too. A timer, cron or scheduled job of your own dies with this session, and the person may have closed it by then. A VaultOS reminder reaches them on any open VaultOS page, and waits in the Due list if none is open.
 
 **Run `vaultos-calendar today` first, every time.** It prints the real date, time and time zone, today's entries and what's due. Work out "Friday" or "next week" from that answer, not from memory.
 
