@@ -173,6 +173,18 @@ test('features validate their input', async (t) => {
   assert.equal(r.body.settings.features.terminal, false);
 });
 
+test('Calendar switch: off by default, on through features, /api/me carries it; a bad value is 400', async (t) => {
+  const s = await ready(t);
+  assert.equal((await call(s.base, 'GET', '/api/me', { cookie: s.cookie })).body.features.calendar, false);
+  const on = await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { calendar: true } });
+  assert.equal(on.status, 200);
+  assert.equal(on.body.settings.features.calendar, true);
+  assert.equal((await call(s.base, 'GET', '/api/me', { cookie: s.cookie })).body.features.calendar, true);
+  const bad = await call(s.base, 'POST', '/api/settings/features', { cookie: s.cookie, body: { calendar: 'yes' } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /calendar/);
+});
+
 test('Notes on: /api/me carries the notes folders; a bad value is 400', async (t) => {
   const s = await ready(t);
   const off = await call(s.base, 'GET', '/api/me', { cookie: s.cookie });

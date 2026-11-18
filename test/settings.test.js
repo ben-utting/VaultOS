@@ -12,7 +12,7 @@ const withBoards = (...boards) => ({ ...S.defaults(), boards });
 test('defaults validate', () => {
   assert.deepEqual(S.defaults(), {
     version: 1, setupDone: false, boards: [],
-    features: { today: false, terminal: true, morningRead: true, notes: false, automations: false, learn: false },
+    features: { today: false, terminal: true, morningRead: true, notes: false, automations: false, learn: false, calendar: false },
     today: { dir: 'Today', timezone: 'UTC' }, agent: { profile: 'none' },
     notes: { dir: 'Notes', inbox: 'Inbox', main: 'Main', tags: 'Tags', template: 'Templates/Note.md' },
     learn: { dir: 'Learning' },
@@ -209,6 +209,13 @@ test('features.automations defaults to false and must be boolean', () => {
   assert.equal(S.validate({ version: 1 }).features.automations, false);
   assert.equal(S.validate({ version: 1, features: { automations: true } }).features.automations, true);
   assert.throws(() => S.validate({ version: 1, features: { automations: 'yes' } }), /features\.automations must be true or false/);
+});
+
+test('features.calendar defaults to false and must be true or false', () => {
+  assert.equal(S.defaults().features.calendar, false);
+  assert.equal(S.validate({ version: 1 }).features.calendar, false);
+  assert.equal(S.validate({ version: 1, features: { calendar: true } }).features.calendar, true);
+  assert.throws(() => S.validate({ version: 1, features: { calendar: 'yes' } }), /features\.calendar must be true or false/);
 });
 
 test('learn: off by default, dir Learning', () => {

@@ -971,7 +971,7 @@ app.get('/api/me', (req, res) => {
     authed: true,
     ...(localRead ? { localRead: true } : {}),
     todayDir: s && s.features.today ? s.today.dir : '',
-    features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead), automations: AUTOMATIONS.live() },
+    features: { today: !!(s && s.features.today), terminal: terminalOn(), morningRead: !!(s && s.features.morningRead), automations: AUTOMATIONS.live(), calendar: !!(s && s.features.calendar) },
     notes: s ? { enabled: !!s.features.notes, dir: s.notes.dir, inbox: s.notes.inbox, main: s.notes.main, tags: s.notes.tags } : { enabled: false },
     learn: s ? { enabled: !!s.features.learn, dir: s.learn.dir } : { enabled: false },
     agent: terminalOn() && profile ? { profile: profile.id, label: profile.label, startCommand: startCommand(profile, kickoffPrompt(profile)), plainCommand: plainStartCommand(profile) } : null,
@@ -1466,9 +1466,9 @@ app.patch('/api/settings/boards/:key', settingsGuard, async (req, res) => {
 app.post('/api/settings/features', settingsGuard, (req, res) => withSettingsLock(() => setFeatures(req, res)));
 async function setFeatures(req, res) {
   try {
-    const { today: wantToday, terminal, morningRead, notes, automations, learn, timezone } = req.body || {};
-    if ([wantToday, terminal, morningRead, notes, automations, learn].some((v) => v !== undefined && typeof v !== 'boolean')) {
-      return res.status(400).json({ error: 'today, terminal, morningRead, notes, automations and learn must be true or false' });
+    const { today: wantToday, terminal, morningRead, notes, automations, learn, calendar, timezone } = req.body || {};
+    if ([wantToday, terminal, morningRead, notes, automations, learn, calendar].some((v) => v !== undefined && typeof v !== 'boolean')) {
+      return res.status(400).json({ error: 'today, terminal, morningRead, notes, automations, learn and calendar must be true or false' });
     }
     if (timezone !== undefined && !validTimeZone(timezone)) return res.status(400).json({ error: 'Unknown time zone' });
     // Read inside the queue slot, after any earlier change has saved.
@@ -1483,6 +1483,7 @@ async function setFeatures(req, res) {
         ...(notes !== undefined ? { notes } : {}),
         ...(automations !== undefined ? { automations } : {}),
         ...(learn !== undefined ? { learn } : {}),
+        ...(calendar !== undefined ? { calendar } : {}),
       },
       today: { ...s.today, ...(timezone !== undefined ? { timezone } : {}) },
     };
