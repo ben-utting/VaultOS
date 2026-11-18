@@ -4242,10 +4242,10 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
    The badge is solid brand (a count, like the set-dot); items are panel-2 tiles; Done is the primary action.
    Toasts sit bottom centre above everything but the task drawer's scrim, over the phone's tab bar. */
 .cal-bell { position: relative; }
-.cal-bell-n {
-  position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; display: grid; place-items: center;
-  font-size: 10px; font-weight: 700; line-height: 1; color: var(--on-brand); background: var(--brand); border-radius: var(--radius-full);
-  font-variant-numeric: tabular-nums;
+.cal-bell-n {   /* the terminal button's count badge, same size and colour: "a reminder wants you" */
+  position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box;
+  border-radius: var(--radius-full); background: var(--brand); color: var(--on-brand);
+  font-size: var(--t-xs); font-weight: 700; line-height: 15px; text-align: center; font-variant-numeric: tabular-nums;
 }
 .cal-due {
   position: fixed; z-index: 45; width: min(400px, calc(100vw - 16px)); max-height: min(72vh, 600px); overflow: auto;
