@@ -155,6 +155,7 @@ test('due lists, folds and acks', async (t) => {
   assert.equal(it.allDay, false);
   assert.deepEqual(it.card, { path: 'Work/1. a/01-x/task.md', title: 'The X card', exists: true, board: 'work' });
   assert.match(it.pingAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
+  assert.equal(it.dueSince, it.pingAt);   // not snoozed: due since its ping
   const done = await s.person('POST', `/api/calendar/due/${encodeURIComponent(it.key)}/done`);
   assert.equal(done.status, 200);
   assert.deepEqual((await s.person('GET', '/api/calendar/due')).body, { timezone: LON, count: 0, items: [] });
@@ -286,4 +287,17 @@ test('coming: the rest of today and the next one after', async (t) => {
   s.seed([]);
   assert.deepEqual((await s.person('GET', '/api/calendar/coming')).body.today, []);
   assert.equal((await s.person('GET', '/api/calendar/coming')).body.next, null);
+});
+
+test('saving a ping that has already gone answers with a warning', async (t) => {
+  const s = await ready(t);
+  const past = await s.person('POST', '/api/calendar/entry', { title: 'Too late', date: CC.addDays(today(), -1), start: '09:00' });
+  assert.equal(past.status, 200);
+  assert.equal(past.body.warning, "That ping time has already passed, so it won't ping.");
+  const fine = await s.person('POST', '/api/calendar/entry', { title: 'Later', date: CC.addDays(today(), 2), start: '09:00' });
+  assert.equal(fine.body.warning, undefined);
+  const silent = await s.person('POST', '/api/calendar/entry', { title: 'No ping', date: CC.addDays(today(), -1), start: '09:00', ping: null });
+  assert.equal(silent.body.warning, undefined);   // nothing was promised
+  const ed = await s.person('PUT', `/api/calendar/entry/${fine.body.entry.id}`, { date: CC.addDays(today(), -2) });
+  assert.equal(ed.body.warning, "That ping time has already passed, so it won't ping.");
 });

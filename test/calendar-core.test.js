@@ -134,3 +134,21 @@ test('snoozeUntil', () => {
   assert.equal(CC.snoozeUntil('0m', LON, now), null);
   assert.equal(CC.snoozeUntil('later', LON, now), null);
 });
+
+test('dueItems: dueSince is the ping, or the end of a snooze that has run out', () => {
+  const daily = E({ id: 'c_dddddddddd', date: '2026-11-15', start: '08:00', repeat: { every: 'daily' }, created: { at: '2026-11-17T12:00:00Z' } });
+  const now = Date.parse('2026-11-18T10:00:00Z');
+  assert.equal(CC.dueItems([daily], {}, LON, now)[0].dueSince, Date.parse('2026-11-18T08:00:00Z'));
+  const acks = { 'c_dddddddddd@2026-11-18': { state: 'snoozed', until: '2026-11-18T09:30:00.000Z' } };
+  assert.equal(CC.dueItems([daily], acks, LON, now)[0].dueSince, Date.parse('2026-11-18T09:30:00Z'));
+});
+
+test('nextPingAt: the first ping still to come, or null', () => {
+  const now = Date.parse('2026-11-18T19:00:00Z');
+  assert.equal(CC.nextPingAt(E({ date: '2026-11-19', start: '09:00' }), LON, now), Date.parse('2026-11-19T09:00:00Z'));
+  assert.equal(CC.nextPingAt(E({ date: '2026-11-19', allDay: true, start: null, ping: '1d' }), LON, now), null);   // 08:00 today has gone
+  assert.equal(CC.nextPingAt(E({ date: '2026-11-18', start: '09:00' }), LON, now), null);
+  assert.equal(CC.nextPingAt(E({ date: '2026-11-18', start: '09:00', repeat: { every: 'daily' } }), LON, now), Date.parse('2026-11-19T09:00:00Z'));
+  assert.equal(CC.nextPingAt(E({ date: '2026-11-19', ping: null }), LON, now), null);
+  assert.equal(CC.nextPingAt(E({ date: '2027-06-01', repeat: { every: 'yearly' } }), LON, now), Date.parse('2027-06-01T08:00:00Z'));
+});

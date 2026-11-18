@@ -15,7 +15,7 @@ You work through the `vaultos-calendar` command. It only works in a VaultOS term
 
 **Run `vaultos-calendar today` first, every time.** It prints the real date, time and time zone, today's entries and what's due. Work out "Friday" or "next week" from that answer, not from memory.
 
-**Confirm in one line.** After you add or change something, give the person the full date, the time and the ping, as the command printed them: "Added: Fri 20 Nov 2026 09:00 · Chase X · pings at start".
+**Confirm in one line.** After you add or change something, give the person the full date, the time and the ping, as the command printed them: "Added: Fri 20 Nov 2026 09:00 · Chase X · pings at start". If the command adds "Note: That ping time has already passed", tell the person and offer a ping time that's still ahead.
 
 **Link the card.** If the reminder is about a card on a board, pass `--card` with the card's folder or its `task.md` path. The person can then open the card from the reminder.
 

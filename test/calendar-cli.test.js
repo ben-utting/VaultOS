@@ -170,3 +170,12 @@ test('--help prints the usage and exits 0', async () => {
   assert.equal(r.code, 0);
   assert.ok(r.out.includes(USAGE));
 });
+
+test('a warning from VaultOS prints after the confirmation (the agent relays it)', async () => {
+  const r = await run(['add', '--title', 'Bins', '--date', 'tomorrow', '--all-day', '--ping', '1d'],
+    { answers: [['add', 200, { entry: { ...ENTRY, allDay: true, start: null, ping: '1d' }, warning: "That ping time has already passed, so it won't ping." }]] });
+  assert.equal(r.code, 0);
+  assert.match(r.out, /^Added: .*\nNote: That ping time has already passed, so it won't ping\.\n$/);
+  const e = await run(['edit', 'c_7k2m9p4x1q', '--date', '2026-11-01'], { answers: [['edit', 200, { entry: ENTRY, warning: 'W' }]] });
+  assert.match(e.out, /\nNote: W\n$/);
+});

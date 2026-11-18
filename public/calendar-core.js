@@ -285,14 +285,28 @@
         const ack = a[key];
         if (ack && (ack.state === 'done' || ack.state === 'dismissed')) continue;
         if (ack && ack.state === 'snoozed' && !(Date.parse(ack.until) <= nowMs)) continue;
-        kept.push({ key, date, p });
+        // dueSince: when it (last) became due. A snooze that has run out makes it due again from its end, so a
+        // device that toasted it before toasts it again (the browser keys its seen list on key + dueSince).
+        kept.push({ key, date, p, since: ack && ack.state === 'snoozed' ? Math.max(p, Date.parse(ack.until)) : p });
       }
       if (!kept.length) continue;
       const last = kept[kept.length - 1];
       const earlierKeys = kept.slice(0, -1).reverse().map((k) => k.key);
-      out.push({ key: last.key, entryId: entry.id, date: last.date, pingAt: last.p, missedEarlier: earlierKeys.length, earlierKeys });
+      out.push({ key: last.key, entryId: entry.id, date: last.date, pingAt: last.p, dueSince: last.since, missedEarlier: earlierKeys.length, earlierKeys });
     }
     return out.sort((x, y) => y.pingAt - x.pingAt);
+  }
+
+  // The first ping still to come (after now), looking a little over a year ahead; null when none will.
+  // Used to warn when an entry is saved with a ping that has already gone ("ping the day before", said today).
+  function nextPingAt(entry, tz, nowMs) {
+    if (!entry.ping) return null;
+    const today = todayIn(tz, nowMs);
+    for (const date of occurrences(entry, addDays(today, -1), addDays(today, 400))) {
+      const p = pingAt(entry, date, tz);
+      if (p !== null && p > nowMs) return p;
+    }
+    return null;
   }
 
   // '10m' | '1h' | 'tomorrow' | 'Nm' (1–1440) | 'Nh' (1–24) → the instant the snooze ends, or null.
@@ -310,6 +324,6 @@
     TITLE_MAX, NOTE_MAX, SKIP_MAX, PINGS, ALL_DAY_PINGS, REPEATS, DUE_WINDOW_DAYS, ALL_DAY_TIME, SNOOZE_TOMORROW,
     DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT, KEY_RE,
     isDate, isTime, addDays, weekday, mondayOf, daysInMonth, daysBetween, todayIn, wallMs,
-    validateEntry, parseRepeatFlag, occurrences, lastDate, describeRepeat, pingAt, dueItems, snoozeUntil,
+    validateEntry, parseRepeatFlag, occurrences, lastDate, describeRepeat, pingAt, dueItems, nextPingAt, snoozeUntil,
   };
 });
