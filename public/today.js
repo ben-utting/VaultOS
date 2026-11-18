@@ -230,6 +230,11 @@ const Today = (() => {
               </form>
               <p class="td-note">Separate from the Board. Anything left unticked moves to the next day by itself.</p>
             </section>
+            <section class="td-card td-coming hidden" id="td-coming" aria-labelledby="td-coming-h">
+              <div class="td-card-h"><h2 id="td-coming-h">Coming up</h2><span class="td-hcount" id="td-coming-n"></span>
+                <button type="button" class="cal-link td-coming-cal" id="td-coming-cal">Calendar</button></div>
+              <div id="td-coming-body"></div>
+            </section>
           </div>
         </div></div>
         <figure class="td-card td-quote">
@@ -1067,6 +1072,12 @@ const Today = (() => {
       segSet('segTodaySound', b.dataset.v);
     });
     setInterval(poll, POLL_MS);
+    setInterval(() => { if (shown && document.visibilityState === 'visible') loadComing(); }, POLL_MS);   // with Today's own poll
+    $('td-coming-cal').addEventListener('click', () => setMode('calendar'));
+    $('td-coming-body').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-entry]');
+      if (b && window.Calendar) Calendar.openEntry(b.dataset.entry, b.dataset.date);
+    });
     document.addEventListener('visibilitychange', onVisible);
     // A page that opens on another mode still needs the timer for the chip: fetch once unless show() just did.
     setTimeout(() => { if (!P && !inFlight) load(null, { quiet: true }); }, 0);
@@ -1076,6 +1087,41 @@ const Today = (() => {
     paintCount();
     reload();
     loadBoard();
+    loadComing();
+  }
+
+  // ---------- Coming up (the calendar, spec §5.5) ----------
+  // The rest of today, the next one's time in gold with how long until it, a divider, then the first entry after
+  // today. Hidden while Calendar is off, or with nothing left today and nothing in the next 62 days.
+  let comingSeq = 0;
+  async function loadComing() {
+    const card = $('td-coming');
+    if (!card) return;
+    if (!(typeof calendarOn === 'function' && calendarOn())) { card.classList.add('hidden'); return; }
+    const n = ++comingSeq;
+    let d;
+    try { d = await api('/api/calendar/coming'); } catch { return; }   // a quiet miss: the next poll tries again
+    if (n === comingSeq) paintComing(d);
+  }
+  function paintComing(d) {
+    const CV = window.CalendarView;
+    const esc = CV.esc;
+    const card = $('td-coming');
+    if (!d.today.length && !d.next) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    $('td-coming-n').textContent = d.today.length ? `${d.today.length} more today` : '';
+    const now = Date.now();
+    const row = (o, { first, nextDay }) => {
+      const when = nextDay ? CV.toastWhen(o, d.timezone, now) : CV.timeText(o);   // "Tomorrow 09:00", "Fri 20 Nov 09:00"
+      const soon = first && !o.allDay ? CV.toastWhen(o, d.timezone, now).split(' · ')[1] : '';
+      const sub = [soon === 'now' ? 'now' : soon, o.card ? o.card.title : ''].filter(Boolean).join(' · ');
+      return `<li><button type="button" class="td-crow${first ? ' first' : ''}${nextDay ? ' later' : ''}" data-entry="${esc(o.entryId)}" data-date="${esc(o.date)}">`
+        + `<span class="td-ctime">${esc(when)}</span><span class="td-cmain"><span class="td-ctitle">${esc(o.title)}</span>`
+        + `${sub ? `<span class="td-csub">${esc(sub)}</span>` : ''}</span></button></li>`;
+    };
+    const todays = d.today.map((o, i) => row(o, { first: i === 0, nextDay: false })).join('');
+    $('td-coming-body').innerHTML = (todays ? `<ul class="td-clist">${todays}</ul>` : '<p class="td-cnone">Nothing else today.</p>')
+      + (d.next ? `${todays ? '<hr class="td-cdiv">' : ''}<ul class="td-clist">${row(d.next, { first: false, nextDay: true })}</ul>` : '');
   }
   // Hiding Today leaves the countdown, the chip and the toasts running.
   function hide() { shown = false; }
@@ -1085,5 +1131,8 @@ const Today = (() => {
     loadBoard();
   }
 
-  return { init, show, hide, onWorkspace, reload: () => { if (shown) loadBoard(); return reload(); } };
+  return {
+    init, show, hide, onWorkspace, reload: () => { if (shown) { loadBoard(); loadComing(); } return reload(); },
+    refreshComing: () => { if (shown) loadComing(); else if (!(typeof calendarOn === 'function' && calendarOn())) $('td-coming').classList.add('hidden'); },
+  };
 })();

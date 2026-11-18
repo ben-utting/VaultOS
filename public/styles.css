@@ -4303,3 +4303,23 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   .cal-toast { flex-wrap: wrap; }
   .cal-toast-acts { width: 100%; justify-content: flex-end; }
 }
+
+/* ---------- Today: Coming up (today.js, the calendar's card) ----------
+   A time column and a title column; the next entry today has its time in brand gold. */
+.td-coming-cal { margin-left: auto; font-size: var(--t-sm); text-decoration: underline; }
+.td-clist { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.td-crow {
+  display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 12px; align-items: baseline; width: 100%;
+  padding: 6px 8px; font: inherit; text-align: left; color: var(--text); background: transparent; border: 0;
+  border-radius: var(--radius-md); cursor: pointer;
+}
+.td-crow:hover { background: var(--panel-2); }
+.td-crow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.td-ctime { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
+.td-crow.first .td-ctime { color: var(--brand); font-weight: 600; }
+.td-cmain { display: grid; gap: 2px; min-width: 0; }
+.td-ctitle { font-weight: 600; overflow-wrap: anywhere; }
+.td-crow.later .td-ctitle { font-weight: 400; }
+.td-csub { font-size: var(--t-xs); color: var(--muted); }
+.td-cdiv { margin: 8px 8px; border: 0; border-top: 1px solid var(--line); }
+.td-cnone { margin: 0 0 6px; padding: 0 8px; font-size: var(--t-sm); color: var(--muted); }
