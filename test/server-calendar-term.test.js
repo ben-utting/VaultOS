@@ -94,3 +94,23 @@ test('an entry an agent adds shows Added by in the browser range', { timeout: 30
   const today = await s.as(tm, 'today');
   assert.equal(today.body.now.date, CC.todayIn('Europe/London', Date.now()));
 });
+
+const SKILL_SRC = path.join(__dirname, '..', 'skills', 'vaultos-calendar');
+test('switching Calendar on writes the skill into ~/.claude/skills and ~/.agents/skills', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  for (const root of ['.claude', '.agents']) {
+    for (const f of ['SKILL.md', 'reference.md']) {
+      const dest = path.join(s.home, root, 'skills', 'vaultos-calendar', f);
+      assert.ok(fs.existsSync(dest), dest);
+      assert.equal(fs.readFileSync(dest, 'utf8'), fs.readFileSync(path.join(SKILL_SRC, f), 'utf8'));
+    }
+  }
+});
+
+test('with Calendar off, or terminals not allowed, nothing is written', { timeout: 30000 }, async (t) => {
+  const off = await ready(t, { calendar: false });
+  assert.equal(fs.existsSync(path.join(off.home, '.claude', 'skills', 'vaultos-calendar')), false);
+  const noTerm = await ready(t, { env: { TERMINAL: '0' } });
+  assert.equal(fs.existsSync(path.join(noTerm.home, '.claude', 'skills', 'vaultos-calendar')), false);
+  assert.equal(fs.existsSync(path.join(noTerm.home, '.agents', 'skills', 'vaultos-calendar')), false);
+});
