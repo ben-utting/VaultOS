@@ -6,9 +6,11 @@
 // shows the count on the bell and in the tab title, toasts what came due
 // while the page is open (with one chime), and holds the Due panel: Done,
 // Snooze and Dismiss, and the card each reminder links to.
-// A device toasts each reminder once: the keys it has toasted are kept in
-// localStorage (last 200) and shared with its other tabs over a
-// BroadcastChannel, so two tabs don't both chime.
+// Every open tab toasts what came due since it last looked; the device chimes
+// once. The chime's "already heard" list (key + when it became due, last 200)
+// is kept in localStorage and shared over a BroadcastChannel, and checked and
+// written under a Web Lock where the browser has one, so two tabs don't both
+// chime. A reminder back from a snooze is due again, so it toasts and chimes again.
 // Uses app.js's globals: $, toast, setMode, setWorkspace, openTask, STATE, calendarOn.
 // ========================================================================
 
@@ -19,24 +21,26 @@
   const CHIME_KEY = 'vaultboard.calendar.chime';
   const SEEN_MAX = 200;
   const MAX_TOASTS = 3;
+  const RECENT_MS = 60000;   // on a tab's first poll, items due longer ago than this are announced quietly, not toasted
   const COUNT = /^(\d{2,3}:\d{2} · )?(\(\d+\) )?/;   // Today's countdown, then our count, at the start of the title
 
   const D = {
     timer: null, retry: null, items: [], tz: 'UTC', error: '', first: true, last: 0,
     toasts: [],   // due items toasted on this page and not yet acted on, oldest first
-    count: 0,
+    count: 0, panelSig: null, toastSig: null,
   };
+  const tabSeen = new Set();   // tokens this tab has toasted or announced
   const phone = () => window.matchMedia('(max-width: 700px)').matches;
   const signedIn = () => !$('app').classList.contains('hidden');
 
-  // ---------- Seen keys (per device) ----------
+  // ---------- The device's chime list (tokens = key|dueSince, CalendarView.seenToken) ----------
   function storedSeen() {
     try { const a = JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; }
   }
   const seen = new Set(storedSeen());
   function markSeen(keys) {
     if (!keys.length) return;
-    for (const k of storedSeen()) seen.add(k);   // what the other tabs saw since
+    for (const k of storedSeen()) seen.add(k);   // what the other tabs heard since
     for (const k of keys) { seen.delete(k); seen.add(k); }
     const all = [...seen].slice(-SEEN_MAX);
     seen.clear();
@@ -71,20 +75,40 @@
     const keys = new Set(D.items.map((i) => i.key));
     D.toasts = D.toasts.filter((t) => keys.has(t.key));   // acted on elsewhere
     for (const t of D.toasts) Object.assign(t, D.items.find((i) => i.key === t.key));
-    const fresh = D.items.filter((i) => !seen.has(i.key) && !storedSeen().includes(i.key));
+    let fresh = CV.freshItems(D.items, tabSeen);
     if (D.first) {
+      // A page just opened: what came due a while ago gets one quiet line (once per device), not a toast each.
       D.first = false;
-      markSeen(D.items.map((i) => i.key));
-      if (fresh.length) {
-        toast(`${fresh.length} reminder${fresh.length === 1 ? '' : 's'} came due while VaultOS was closed`,
+      const cut = Date.now() - RECENT_MS;
+      const old = fresh.filter((i) => Date.parse(i.dueSince || i.pingAt) <= cut);
+      fresh = fresh.filter((i) => !old.includes(i));
+      for (const i of old) tabSeen.add(CV.seenToken(i));
+      const unheard = await claim(old);
+      if (unheard.length) {
+        toast(`${unheard.length} reminder${unheard.length === 1 ? '' : 's'} came due while VaultOS was closed`,
           { action: 'Open', onAction: openPanel, tone: 'info', ms: 10000 });
       }
-    } else if (fresh.length) {
-      markSeen(fresh.map((i) => i.key));
+    }
+    if (fresh.length) {
+      for (const i of fresh) tabSeen.add(CV.seenToken(i));
+      D.toasts = D.toasts.filter((t) => !fresh.some((f) => f.key === t.key));
       D.toasts.push(...fresh.slice().reverse());   // the due list is newest first; toasts stack in arrival order
-      if (chimeOn() && typeof TermToast !== 'undefined') TermToast.tone('reminder');   // a top-level const, not on window
+      const unheard = await claim(fresh);
+      if (unheard.length && chimeOn() && typeof TermToast !== 'undefined') TermToast.tone('reminder');   // a top-level const, not on window
     }
     paint();
+  }
+  // The items this device hasn't chimed or announced yet, marked as heard: checked and written in one step
+  // (under a Web Lock when the browser has them) so two tabs polling at once don't both chime.
+  async function claim(items) {
+    if (!items.length) return [];
+    const take = () => {
+      const unheard = CV.freshItems(CV.freshItems(items, seen), storedSeen());
+      markSeen(unheard.map(CV.seenToken));
+      return unheard;
+    };
+    try { if (navigator.locks) return await navigator.locks.request('vaultos-calendar-seen', take); } catch { /* no lock: best effort */ }
+    return take();
   }
   function schedule() {
     clearTimeout(D.timer);
@@ -121,7 +145,11 @@
     const box = $('cal-toasts');
     const shown = D.toasts.slice(-MAX_TOASTS);
     const extra = D.toasts.length - shown.length;
-    box.innerHTML = shown.map((t) => CV.toastHtml(t, D.tz, Date.now())).join('')
+    const now = Date.now();
+    const sig = JSON.stringify([shown.map((t) => [CV.seenToken(t), CV.toastWhen(t, D.tz, now), t.title]), extra]);
+    if (sig === D.toastSig) return;   // unchanged: keep the buttons (and any focus on them)
+    D.toastSig = sig;
+    box.innerHTML = shown.map((t) => CV.toastHtml(t, D.tz, now)).join('')
       + (extra ? `<div class="cal-toast cal-toast-more"><span>+${extra} more</span><button type="button" class="su-btn su-sm" data-act="open">Open Due</button></div>` : '');
   }
   function dropToast(key) {
@@ -139,21 +167,29 @@
       if (res.status === 401) { if (typeof showLogin === 'function') showLogin(); return; }
       if (!res.ok) { const d = await res.json().catch(() => ({})); toast(d.error || 'That reminder could not be changed'); }
     } catch { toast("VaultOS isn't answering"); return; }
+    const wasFocused = $('cal-due').contains(document.activeElement);
     D.items = D.items.filter((i) => i.key !== key);
     dropToast(key);
     if (bc) bc.postMessage({ acked: key });
     paint();
+    // The acted-on item's buttons are gone: keep the keyboard in the panel, on the next Done (or Close).
+    if (wasFocused && panelOpen()) ($('cal-due').querySelector('[data-act="done"]') || $('cal-due-close')).focus({ preventScroll: true });
     await poll();
     if (window.Today && Today.refreshComing) Today.refreshComing();
   }
 
   // ---------- The Due panel ----------
   const panelOpen = () => !$('cal-due').classList.contains('hidden');
-  function paintPanel() {
+  // The list repaints only when what it shows changes, so focus and an open Snooze menu survive a poll.
+  function paintPanel({ force = false } = {}) {
     const now = Date.now();
     $('cal-due-err').textContent = D.error;
     $('cal-due-err').classList.toggle('hidden', !D.error);
-    $('cal-due-list').innerHTML = D.items.map((i) => CV.dueItemHtml(i, D.tz, now)).join('');
+    const sig = CV.dueSignature(D.items);
+    if (force || sig !== D.panelSig) {
+      D.panelSig = sig;
+      $('cal-due-list').innerHTML = D.items.map((i) => CV.dueItemHtml(i, D.tz, now)).join('');
+    }
     $('cal-due-empty').classList.toggle('hidden', D.items.length > 0 || !!D.error);
     const on = chimeOn();
     $('cal-chime').setAttribute('aria-pressed', String(on));
@@ -170,7 +206,7 @@
     p.style.right = `${Math.max(8, Math.round(window.innerWidth - r.right))}px`;
   }
   function openPanel() {
-    paintPanel();
+    paintPanel({ force: true });
     $('cal-due').classList.remove('hidden');
     $('cal-due-scrim').classList.toggle('hidden', !phone());
     $('cal-bell').setAttribute('aria-expanded', 'true');

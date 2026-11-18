@@ -112,3 +112,28 @@ test('due items show when, missed count, card and actions', () => {
     card: { path: 'Work/a/task.md', title: 'Card A', exists: true, board: 'work' }, by: 'Claude Code', missedEarlier: 3 }, LON, Date.parse('2026-11-18T10:00:00Z'));
   for (const s of ['Due 09:00 today', '+3 missed earlier', 'Added by Claude Code', 'Card A', 'data-card="Work/a/task.md"', 'data-board="work"', 'data-act="done"', 'data-act="snooze"', 'data-act="dismiss"', 'data-key="c_a@2026-11-18"']) assert.ok(html.includes(s), s);
 });
+
+test('seenToken and freshItems: a snooze that ran out is new again', () => {
+  const a = { key: 'c_a@2026-11-18', dueSince: '2026-11-18T09:00:00.000Z', pingAt: '2026-11-18T09:00:00.000Z' };
+  const seen = new Set([CV.seenToken(a)]);
+  assert.equal(CV.seenToken(a), 'c_a@2026-11-18|2026-11-18T09:00:00.000Z');
+  assert.deepEqual(CV.freshItems([a], seen), []);
+  const again = { ...a, dueSince: '2026-11-18T09:10:00.000Z' };   // snoozed 10 minutes, now due again
+  assert.deepEqual(CV.freshItems([again], seen), [again]);
+  assert.deepEqual(CV.freshItems([again], [CV.seenToken(again)]), []);   // an array works too (localStorage)
+});
+
+test('dueSignature changes only when what the panel shows changes', () => {
+  const it = { key: 'c_a@2026-11-18', dueSince: '2026-11-18T09:00:00.000Z', missedEarlier: 0, title: 'T', card: null, by: '' };
+  assert.equal(CV.dueSignature([it]), CV.dueSignature([{ ...it }]));
+  assert.notEqual(CV.dueSignature([it]), CV.dueSignature([{ ...it, missedEarlier: 1 }]));
+  assert.notEqual(CV.dueSignature([it]), CV.dueSignature([{ ...it, title: 'U' }]));
+  assert.notEqual(CV.dueSignature([it]), CV.dueSignature([]));
+});
+
+test('toastWhen words a date before today', () => {
+  const now = Date.parse('2026-11-18T10:20:00Z');
+  assert.equal(CV.toastWhen({ date: '2026-11-17', start: '18:00', allDay: false }, LON, now), 'Yesterday 18:00');
+  assert.equal(CV.toastWhen({ date: '2026-11-16', start: '18:00', allDay: false }, LON, now), 'Mon 16 Nov 18:00');
+  assert.equal(CV.toastWhen({ date: '2026-11-17', start: null, allDay: true }, LON, now), 'Yesterday · All day');
+});

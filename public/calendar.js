@@ -290,8 +290,10 @@
         if (r.data.errors) showErrors(r.data.errors); else $('ce-err').textContent = r.data.error || 'Not saved';
         return;
       }
+      const edited = !!P.id;   // closePanel() clears P.id
       closePanel();
-      toast(P.id ? 'Saved' : `Added: ${r.data.entry.title}`, { tone: 'info' });
+      if (r.data.warning) toast(`${edited ? 'Saved' : `Added: ${r.data.entry.title}`}. ${r.data.warning}`, { ms: 9000 });
+      else toast(edited ? 'Saved' : `Added: ${r.data.entry.title}`, { tone: 'info' });
       await afterWrite();
     } catch (err) {
       $('ce-err').textContent = err.message;

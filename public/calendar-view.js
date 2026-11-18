@@ -123,14 +123,26 @@
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
   function toastWhen(item, tz, now) {
     const today = CC.todayIn(tz, now);
-    if (item.allDay) return item.date === today ? 'All day' : item.date === CC.addDays(today, 1) ? 'Tomorrow · All day' : `${dMon(item.date)} · All day`;
-    if (item.date === CC.addDays(today, 1)) return `Tomorrow ${item.start}`;
-    if (item.date !== today) return item.date < today ? `${item.start} · now` : `${dMon(item.date)} ${item.start}`;
+    const yesterday = CC.addDays(today, -1);
+    const day = (d) => (d === yesterday ? 'Yesterday' : d === CC.addDays(today, 1) ? 'Tomorrow' : dMon(d));
+    if (item.allDay) return item.date === today ? 'All day' : `${day(item.date)} · All day`;
+    if (item.date !== today) return `${day(item.date)} ${item.start}`;
     const mins = Math.round((CC.wallMs(item.date, item.start, tz) - now) / 60000);
     if (mins <= 0) return `${item.start} · now`;
     if (mins < 60) return `${item.start} · in ${plural(mins, 'minute')}`;
     return `${item.start} · in ${plural(Math.round(mins / 60), 'hour')}`;
   }
+
+  // ---------- What's new since the last poll ----------
+  // A device remembers the due items it has toasted by key and the moment each became due, so one that comes
+  // back when its snooze runs out (same key, later dueSince) counts as new again.
+  const seenToken = (item) => `${item.key}|${item.dueSince || item.pingAt}`;
+  function freshItems(items, seen) {
+    const has = seen instanceof Set ? (t) => seen.has(t) : (t) => seen.includes(t);
+    return items.filter((i) => !has(seenToken(i)));
+  }
+  // What the Due panel shows; the panel repaints only when this changes, so focus and an open menu survive a poll.
+  const dueSignature = (items) => JSON.stringify(items.map((i) => [seenToken(i), i.missedEarlier, i.title, i.card ? [i.card.title, i.card.exists] : null, i.by]));
 
   // ---------- Markup ----------
   const BELL = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
@@ -173,6 +185,7 @@
 
   return {
     esc, dayLabel, agendaGroups, weekColumns, monthCells, rangeTitle, dueWhen, toastWhen, byText, pingText, timeText,
+    seenToken, freshItems, dueSignature,
     entryRowHtml, dueItemHtml, toastHtml, BELL, MONTH_LONG, wallHm, dMon,
   };
 });
