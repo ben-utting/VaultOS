@@ -1498,6 +1498,7 @@ async function setFeatures(req, res) {
       if (svc) await svc.boot();
     }
     await AUTOMATIONS.sync();
+    await CALENDAR.sync();
     await learnAfterSave(saved);
     res.json({ settings: saved });
   } catch (err) {
@@ -1580,6 +1581,16 @@ const AUTOMATIONS = createAutomationService({
   renderMarkdown: (md) => marked.parse(stripAgentNotes(md), { breaks: true }),   // a note's lines stay lines
 });
 app.use('/api', AUTOMATIONS.router);
+
+// ---------- Calendar ----------
+// Entries, reminders and what's due (lib/calendar-service.js holds the rules; public/calendar-core.js the
+// shared ones). Off unless Settings → Features → Calendar is on; every route then answers 404.
+const { createCalendarService } = require('./lib/calendar-service');
+const CALENDAR = createCalendarService({
+  vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, safeVaultPath,
+  canWrite: (req) => !!(req.session && req.session.authed), profiles: PROFILES, termCmd,
+});
+app.use('/api', CALENDAR.router);
 
 // ---------- Connectors ----------
 // Thin routes over lib/connector-service.js, which holds every rule. Only a ConnectorError carries text
@@ -3636,6 +3647,7 @@ async function boot() {
   const svc = todayService();
   if (svc) svc.boot().catch((err) => console.error('Today boot failed:', err.message));
   await AUTOMATIONS.boot();
+  await CALENDAR.boot();
   // Rough notes removed before a restart lost their undo; keep them a day, then let them go.
   const notes = notesSvc();
   if (notes) notes.sweep().catch((err) => console.error('Notes sweep failed:', err.message));

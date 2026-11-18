@@ -171,3 +171,14 @@ test('ack stores state, until, at and by per key', async (t) => {
   assert.deepEqual(a['c_aaaaaaaaaa@2026-11-17'], { state: 'dismissed', at: '2026-11-18T10:00:00.000Z', by: ME });
   assert.deepEqual(a['c_bbbbbbbbbb@2026-11-18'], { state: 'snoozed', until: '2026-11-18T11:00:00.000Z', at: '2026-11-18T10:00:00.000Z', by: AGENT });
 });
+
+test('a done or dismissed ack is final: a later ack never overwrites it', async (t) => {
+  const { s, disk } = setup(t);
+  await s.ack(['c_aaaaaaaaaa@2026-11-18'], 'done', null, ME);
+  await s.ack(['c_aaaaaaaaaa@2026-11-18', 'c_aaaaaaaaaa@2026-11-19'], 'snoozed', '2026-11-18T11:00:00.000Z', AGENT);
+  const a = disk().acks;
+  assert.equal(a['c_aaaaaaaaaa@2026-11-18'].state, 'done');
+  assert.equal(a['c_aaaaaaaaaa@2026-11-19'].state, 'snoozed');
+  await s.ack(['c_aaaaaaaaaa@2026-11-19'], 'dismissed', null, ME);   // a snooze can still be closed
+  assert.equal(disk().acks['c_aaaaaaaaaa@2026-11-19'].state, 'dismissed');
+});
