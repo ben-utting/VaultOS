@@ -141,7 +141,9 @@ function applyMe() {
   }
   for (const el of [$('mode-automations'), document.querySelector('#mobile-nav [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
   for (const el of [$('mode-learn'), document.querySelector('#mobile-nav [data-for="mode-learn"]')]) el.classList.toggle('hidden', !learnOn());
+  for (const el of [$('mode-calendar'), document.querySelector('#mobile-nav [data-for="mode-calendar"]')]) el.classList.toggle('hidden', !calendarOn());
   if (window.Automations) Automations.featureChanged();
+  if (window.Calendar) Calendar.featureChanged();
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
   renderDrawerAgent();
@@ -1223,6 +1225,7 @@ function setMode(mode) {
   if (mode === 'notes' && !notesOn()) mode = homeMode();
   if (mode === 'automations' && !automationsOn()) mode = homeMode();
   if (mode === 'learn' && !learnOn()) mode = homeMode();
+  if (mode === 'calendar' && !calendarOn()) mode = homeMode();
   // Leaving Notes with an unsaved edit: ask first (Notes.confirmLeave), and stay if the answer is no.
   if (STATE.mode === 'notes' && mode !== 'notes' && window.Notes && !Notes.confirmLeave()) return;
   // Leaving Files: the spreadsheet grid on screen closes its editor (see SheetFiles.beforeViewChange).
@@ -1241,6 +1244,8 @@ function setMode(mode) {
   $('mode-notes').classList.toggle('active', mode === 'notes');
   $('mode-automations').classList.toggle('active', mode === 'automations');
   $('mode-learn').classList.toggle('active', mode === 'learn');
+  $('mode-calendar').classList.toggle('active', mode === 'calendar');
+  $('calendar-view').classList.toggle('hidden', mode !== 'calendar');
   $('learn-view').classList.toggle('hidden', mode !== 'learn');
   $('automations-view').classList.toggle('hidden', mode !== 'automations');
   $('notes-view').classList.toggle('hidden', mode !== 'notes');
@@ -1255,9 +1260,9 @@ function setMode(mode) {
   // Files covers the whole vault, so the workspace chip still shows where Board and KB are but reads as not
   // applying there. It stays clickable: picking one is how you choose where you land next. On Today it is
   // live: Next's Board fallback is that workspace's In Progress task.
-  const wsOff = mode === 'files' || mode === 'notes' || mode === 'learn';
+  const wsOff = mode === 'files' || mode === 'notes' || mode === 'learn' || mode === 'calendar';
   $('ws-chip').classList.toggle('ws-chip-off', wsOff);
-  $('ws-chip').title = mode === 'files' ? 'Files covers the whole vault' : mode === 'notes' ? 'Notes has its own folder' : mode === 'learn' ? 'Learn has its own folder' : '';
+  $('ws-chip').title = mode === 'files' ? 'Files covers the whole vault' : mode === 'notes' ? 'Notes has its own folder' : mode === 'learn' ? 'Learn has its own folder' : mode === 'calendar' ? 'The calendar covers every workspace' : '';
   closeWsMenu({ focus: false });
   closeSheet();   // its folder/column sections depend on the mode (see secAvailable)
   updateFilterBadge();
@@ -1265,6 +1270,7 @@ function setMode(mode) {
   if (mode === 'notes') Notes.show(); else Notes.hide();   // Notes.show() fills #count
   if (window.Automations) { if (mode === 'automations') Automations.show(); else Automations.hide(); }   // show() fills #count
   if (window.Learn) { if (mode === 'learn') Learn.show(); else Learn.hide(); }   // show() empties #count
+  if (window.Calendar) { if (mode === 'calendar') Calendar.show(); else Calendar.hide(); }   // show() fills #count
   if (mode === 'kb') {
     $('count').textContent = `${STATE.kb.articles.length} article${STATE.kb.articles.length === 1 ? '' : 's'}`;
     if (!STATE.kb.loaded) loadKB();

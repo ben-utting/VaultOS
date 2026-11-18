@@ -51,6 +51,7 @@
       <button type="button" id="ws-chip" class="ghost ws-chip hidden" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span class="ws-chip-label"></span><svg class="icon ws-chip-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <nav class="modes">
         <button id="mode-today" class="mode active" data-mode="today">Today</button>
+        <button id="mode-calendar" class="mode hidden" data-mode="calendar">Calendar</button>
         <button id="mode-board" class="mode" data-mode="board">Board</button>
         <button id="mode-notes" class="mode hidden" data-mode="notes">Notes</button>
         <button id="mode-files" class="mode" data-mode="files">Files</button>
@@ -440,6 +441,30 @@
       </div>
     </div>
     <!-- Automations mode (automations.js): the automations on the left, the runs (or one run) on the right; stacked on a phone. -->
+    <!-- Calendar mode (calendar.js): Agenda, Week or Month over /api/calendar, Recently deleted at the foot; entries open in
+         #cal-panel. Text in the rows comes from CalendarView, escaped. -->
+    <div id="calendar-view" class="hidden">
+      <div class="cal-bar">
+        <div class="cal-nav">
+          <button type="button" id="cal-prev" class="ghost cal-arrow" aria-label="Earlier"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+          <button type="button" id="cal-today" class="ghost">Today</button>
+          <button type="button" id="cal-next" class="ghost cal-arrow" aria-label="Later"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+        </div>
+        <h2 id="cal-title" class="cal-title" aria-live="polite"></h2>
+        <div id="cal-views" class="cal-views" role="tablist" aria-label="Calendar view">
+          <button type="button" role="tab" data-v="agenda" aria-selected="true">Agenda</button>
+          <button type="button" role="tab" data-v="week" aria-selected="false">Week</button>
+          <button type="button" role="tab" data-v="month" aria-selected="false">Month</button>
+        </div>
+        <button type="button" id="cal-new" class="su-btn su-sm primary">+ New</button>
+      </div>
+      <p id="cal-banner" class="cal-banner hidden" role="alert"></p>
+      <div id="cal-body" class="cal-body"></div>
+      <div class="cal-foot">
+        <button type="button" id="cal-deleted-btn" class="cal-link hidden" aria-expanded="false" aria-controls="cal-deleted">Recently deleted (0)</button>
+        <div id="cal-deleted" class="cal-deleted hidden"></div>
+      </div>
+    </div>
     <div id="automations-view" class="hidden">
       <div class="au-layout">
         <section class="au-col au-list-col" aria-labelledby="au-list-h">
@@ -476,6 +501,7 @@
          code path per mode; app.js mirrors the active state back onto these. -->
     <nav id="mobile-nav" class="mobile-nav" aria-label="Sections">
       <button type="button" data-for="mode-today" class="active"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v8M4.93 10.93l1.41 1.41M2 18h2M20 18h2M19.07 10.93l-1.41 1.41M22 22H2M8 6l4-4 4 4M16 18a4 4 0 0 0-8 0"/></svg><span>Today</span></button>
+      <button type="button" data-for="mode-calendar" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg><span>Calendar</span></button>
       <button type="button" data-for="mode-board"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="18" rx="1.5"/><rect x="14" y="3" width="7" height="11" rx="1.5"/></svg><span>Board</span></button>
       <button type="button" data-for="mode-notes" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12a4 4 0 0 1 4 4v12H8a4 4 0 0 1-4-4z"/><path d="M8 9h8"/><path d="M8 13h5"/></svg><span>Notes</span></button>
       <button type="button" data-for="mode-files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span>Files</span></button>
@@ -488,6 +514,80 @@
 
   <!-- Automation builder (automations.js): a right-hand panel like the task drawer, full screen on a phone.
        Top half: the agent (who and what). Bottom half: when it runs and on which cards. -->
+  <!-- The calendar's entry panel (calendar.js): the Automations builder's panel, full screen on a phone. -->
+  <div id="cal-scrim" class="scrim hidden"></div>
+  <aside id="cal-panel" class="drawer view-side au-builder cal-panel hidden" role="dialog" aria-modal="true" aria-labelledby="ce-head">
+    <div class="drawer-head">
+      <div><h2 id="ce-head">New entry</h2></div>
+      <button id="ce-close" class="ghost" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 4 4 20"/><path d="m4 4 16 16"/></svg></button>
+    </div>
+    <form id="ce-form" class="ab-form ce-form" novalidate>
+      <div class="su-field"><label for="ce-title">Title</label>
+        <input id="ce-title" class="su-input" type="text" maxlength="120" autocomplete="off" placeholder="Dentist" aria-describedby="ce-title-err">
+        <p class="su-err" id="ce-title-err" aria-live="polite"></p></div>
+      <div class="ce-daterow">
+        <div class="su-field"><label for="ce-date">Date</label>
+          <input id="ce-date" class="su-input" type="date" aria-describedby="ce-date-err">
+          <p class="su-err" id="ce-date-err" aria-live="polite"></p></div>
+        <div class="su-row ce-allday"><div class="su-row-t"><label class="su-label" for="ce-allday">All day</label></div>
+          <input type="checkbox" class="su-switch" id="ce-allday" role="switch" aria-describedby="ce-allDay-err"></div>
+      </div>
+      <p class="su-err" id="ce-allDay-err" aria-live="polite"></p>
+      <div id="ce-times" class="ab-two">
+        <div class="su-field"><label for="ce-start">Start</label>
+          <input id="ce-start" class="su-input" type="time" aria-describedby="ce-start-err">
+          <p class="su-err" id="ce-start-err" aria-live="polite"></p></div>
+        <div class="su-field"><label for="ce-end">End (optional)</label>
+          <input id="ce-end" class="su-input" type="time" aria-describedby="ce-end-err">
+          <p class="su-err" id="ce-end-err" aria-live="polite"></p></div>
+      </div>
+      <div class="su-field"><span class="su-label" id="ce-repeat-l">Repeat</span>
+        <div id="ce-repeat" class="ab-chips" role="group" aria-labelledby="ce-repeat-l"></div>
+        <div id="ce-days" class="ab-chips ce-days hidden" role="group" aria-label="Repeat on"></div>
+        <p id="ce-until-row" class="su-hint ce-until hidden">
+          <span id="ce-until-none">Until: no end date · <button type="button" id="ce-until-add" class="cal-link">set one</button></span>
+          <span id="ce-until-set" class="hidden"><label for="ce-until">Until</label> <input id="ce-until" class="su-input ce-until-in" type="date">
+            <button type="button" id="ce-until-clear" class="cal-link">no end date</button></span>
+        </p>
+        <p class="su-err" id="ce-repeat-err" aria-live="polite"></p>
+        <p class="su-err" id="ce-skip-err" aria-live="polite"></p></div>
+      <div class="su-field"><span class="su-label" id="ce-ping-l">Ping me</span>
+        <div id="ce-ping" class="ab-chips" role="group" aria-labelledby="ce-ping-l"></div>
+        <p class="su-err" id="ce-ping-err" aria-live="polite"></p></div>
+      <div class="su-field"><span class="su-label" id="ce-card-l">Card</span>
+        <div class="ce-card">
+          <span id="ce-card-chip" class="cal-chip hidden"></span>
+          <span id="ce-card-edit" class="hidden"><button type="button" id="ce-card-change" class="cal-link">Change</button> · <button type="button" id="ce-card-remove" class="cal-link">Remove</button></span>
+          <button type="button" id="ce-card-link" class="su-btn su-sm">Link a card…</button>
+        </div>
+        <div id="ce-card-pick" class="ce-pick hidden">
+          <input id="ce-card-q" class="su-input" type="search" placeholder="Search card titles" autocomplete="off" aria-labelledby="ce-card-l" aria-controls="ce-card-res">
+          <ul id="ce-card-res" class="ce-pick-res"></ul>
+        </div>
+        <p class="su-err" id="ce-card-err" aria-live="polite"></p></div>
+      <div class="su-field"><label for="ce-note">Note</label>
+        <textarea id="ce-note" class="su-input ce-note" rows="3" maxlength="2000" aria-describedby="ce-note-err"></textarea>
+        <p class="su-err" id="ce-note-err" aria-live="polite"></p></div>
+      <p id="ce-meta" class="ce-meta"></p>
+      <p class="su-err" id="ce-err" aria-live="polite"></p>
+    </form>
+    <div class="ab-foot">
+      <div id="ce-actions" class="ce-actions">
+        <button type="button" id="ce-delete" class="su-btn ab-danger hidden">Delete</button>
+        <button type="button" id="ce-skip" class="su-btn hidden">Skip this date</button>
+        <span class="su-gap"></span>
+        <button type="button" id="ce-cancel" class="su-btn">Cancel</button>
+        <button type="button" id="ce-save" class="su-btn primary">Add</button>
+      </div>
+      <div id="ce-confirm" class="ce-actions hidden" role="group" aria-labelledby="ce-confirm-t">
+        <span id="ce-confirm-t" class="ce-confirm-t"></span>
+        <span class="su-gap"></span>
+        <button type="button" id="ce-del-one" class="su-btn">This one</button>
+        <button type="button" id="ce-del-all" class="su-btn ab-danger">Whole series</button>
+        <button type="button" id="ce-keep" class="su-btn">Keep it</button>
+      </div>
+    </div>
+  </aside>
   <div id="au-scrim" class="scrim hidden"></div>
   <aside id="au-builder" class="drawer view-side au-builder hidden" role="dialog" aria-modal="true" aria-labelledby="ab-title">
     <div class="drawer-head">
@@ -688,6 +788,8 @@
   <script src="term.js"></script>
   <script src="agent-marks.js"></script>
   <script src="automation-core.js"></script>
+  <script src="calendar-core.js"></script>
+  <script src="calendar-view.js"></script>
   <script src="agent-form.js"></script>
   <script src="more-menu.js"></script>
   <script src="connectors.js"></script>
@@ -714,6 +816,7 @@
   <script src="workbench.js"></script>
   <script src="search-panel.js"></script>
   <script src="notes.js"></script>
+  <script src="calendar.js"></script>
   <script src="capture.js"></script>
   <script src="automations.js"></script>
   <script src="learn.js"></script>
