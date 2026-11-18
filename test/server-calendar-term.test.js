@@ -30,7 +30,7 @@ async function ready(t, { calendar = true, env = {} } = {}) {
   seedVault(d.vault, {});
   const srv = await startServer({ vault: d.vault, data: d.data, home: d.home, env: { TERMINAL: '1', TZ: 'Europe/London', ...env } });
   const terms = [];
-  t.after(async () => { for (const x of terms) x.close(); await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const x of terms) x.close(); await srv.stop(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const base = srv.base;
   assert.equal((await call(base, 'POST', '/api/setup/password', { body: { password: PASSWORD } })).status, 200);
   const cookie = await login(base, PASSWORD);
@@ -63,7 +63,7 @@ test('a Host header outside the allowlist still reaches /api/term/calendar', { t
   fs.mkdirSync(path.join(root, 'home'));
   const srv = await startServer({ vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home'),
     env: { TERMINAL: '1', ALLOWED_HOSTS: 'example.test' } });
-  t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const post = (u) => fetch(`${srv.base}${u}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
   const r = await post('/api/term/calendar/today');
   assert.notEqual(r.status, 421);

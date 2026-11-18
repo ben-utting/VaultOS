@@ -34,7 +34,7 @@ async function ready(t, { automations = true } = {}) {
   seedVault(d.vault, {});
   const srv = await startServer({ vault: d.vault, data: d.data, home: d.home, env: { TERMINAL: '1', AUTOMATION_TEST_AGENT: FAKE, TZ: 'Europe/London' } });
   const terms = [];
-  t.after(async () => { for (const x of terms) x.close(); await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const x of terms) x.close(); await srv.stop(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); });
   const base = srv.base;
   assert.equal((await call(base, 'POST', '/api/setup/password', { body: { password: PASSWORD } })).status, 200);
   const cookie = await login(base, PASSWORD);
