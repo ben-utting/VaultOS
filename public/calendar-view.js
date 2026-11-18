@@ -156,9 +156,9 @@
       + `<div class="cal-due-main"><span class="cal-due-title">${esc(item.title)}</span>`
       + `<span class="cal-due-meta">${meta.join('<span class="cal-dot" aria-hidden="true">·</span>')}</span>${card}</div>`
       + '<div class="cal-due-acts">'
-      + '<button type="button" class="btn sm" data-act="done">Done</button>'
-      + '<button type="button" class="btn sm ghost" data-act="snooze" aria-haspopup="menu" aria-expanded="false">Snooze ▾</button>'
-      + '<button type="button" class="btn sm ghost" data-act="dismiss">Dismiss</button>'
+      + '<button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
+      + '<button type="button" class="su-btn su-sm" data-act="snooze" aria-haspopup="menu" aria-expanded="false">Snooze ▾</button>'
+      + '<button type="button" class="su-btn su-sm" data-act="dismiss">Dismiss</button>'
       + '</div></li>';
   }
   function toastHtml(item, tz, now) {
@@ -166,8 +166,8 @@
     return `<div class="cal-toast" role="status" data-key="${esc(item.key || '')}" data-entry="${esc(item.entryId || '')}">`
       + `<span class="cal-toast-bell">${BELL}</span>`
       + `<div class="cal-toast-text"><strong>${esc(item.title)}</strong><span>${esc(sub)}</span></div>`
-      + '<div class="cal-toast-acts"><button type="button" class="btn sm" data-act="done">Done</button>'
-      + '<button type="button" class="btn sm ghost" data-act="snooze10">Snooze 10m</button>'
+      + '<div class="cal-toast-acts"><button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
+      + '<button type="button" class="su-btn su-sm" data-act="snooze10">Snooze 10m</button>'
       + '<button type="button" class="cal-toast-x" data-act="close" aria-label="Close (it stays in the Due list)">✕</button></div></div>';
   }
 

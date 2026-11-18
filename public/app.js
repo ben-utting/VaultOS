@@ -144,6 +144,7 @@ function applyMe() {
   for (const el of [$('mode-calendar'), document.querySelector('#mobile-nav [data-for="mode-calendar"]')]) el.classList.toggle('hidden', !calendarOn());
   if (window.Automations) Automations.featureChanged();
   if (window.Calendar) Calendar.featureChanged();
+  if (window.CalendarDue) CalendarDue.featureChanged();
   // The agent's name on the card pills and in Start agent's tooltip (renderDrawerAgent is workbench.js's).
   paintCardAgents();
   renderDrawerAgent();

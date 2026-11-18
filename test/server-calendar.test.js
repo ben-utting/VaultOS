@@ -145,6 +145,7 @@ test('due lists, folds and acks', async (t) => {
   const d = await s.person('GET', '/api/calendar/due');
   assert.equal(d.status, 200);
   assert.equal(d.body.count, 1);
+  assert.equal(d.body.timezone, LON);   // the Due panel and toasts word times in it
   const it = d.body.items[0];
   assert.equal(it.key, `c_dddddddddd@${today()}`);
   assert.equal(it.missedEarlier, 2);
@@ -156,7 +157,7 @@ test('due lists, folds and acks', async (t) => {
   assert.match(it.pingAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/);
   const done = await s.person('POST', `/api/calendar/due/${encodeURIComponent(it.key)}/done`);
   assert.equal(done.status, 200);
-  assert.deepEqual((await s.person('GET', '/api/calendar/due')).body, { count: 0, items: [] });
+  assert.deepEqual((await s.person('GET', '/api/calendar/due')).body, { timezone: LON, count: 0, items: [] });
   const acks = JSON.parse(fs.readFileSync(s.file, 'utf8')).acks;
   assert.equal(Object.values(acks).filter((a) => a.state === 'done').length, 3);   // the item and its two missed ones
 });
@@ -181,7 +182,7 @@ test('acking a due item twice is harmless', async (t) => {
   assert.equal((await s.person('POST', url('done'))).status, 200);
   assert.equal((await s.person('POST', url('snooze'), { for: '10m' })).status, 200);
   assert.equal((await s.person('POST', url('dismiss'))).status, 200);
-  assert.deepEqual((await s.person('GET', '/api/calendar/due')).body, { count: 0, items: [] });
+  assert.deepEqual((await s.person('GET', '/api/calendar/due')).body, { timezone: LON, count: 0, items: [] });
   assert.equal(JSON.parse(fs.readFileSync(s.file, 'utf8')).acks[`c_dddddddddd@${today()}`].state, 'done');
   assert.equal((await s.person('POST', `/api/calendar/due/${encodeURIComponent(`c_zzzzzzzzzz@${today()}`)}/done`)).status, 404);
   assert.equal((await s.person('POST', `/api/calendar/due/${encodeURIComponent(`c_dddddddddd@${CC.addDays(today(), -9)}`)}/done`)).status, 404); // before the first date

@@ -69,7 +69,7 @@ const TermToast = (() => {
   document.addEventListener('pointerdown', wake, { capture: true, passive: true });
   document.addEventListener('keydown', wake, { capture: true, passive: true });
 
-  const NOTES = { blocked: [660], done: [880], focus: [660, 880] };
+  const NOTES = { blocked: [660], done: [880], focus: [660, 880], reminder: [784, 988, 784] };   // reminder: a calendar ping
   const NOTE_S = 0.12;
   function tone(kind) {
     const notes = Object.hasOwn(NOTES, kind) ? NOTES[kind] : null;

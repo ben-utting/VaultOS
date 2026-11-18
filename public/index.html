@@ -79,6 +79,8 @@
       <button id="clear-filters" class="clear-filters hidden" type="button" title="Show every task again" aria-label="Clear all filters">Clear<span class="cf-more"> all filters</span></button>
       <!-- Everything occasional (folder filter, columns, appearance) lives in the Settings sheet;
            Refresh is used too often to bury there. The workspace has its chip, by the wordmark. -->
+      <!-- The calendar's Due bell (calendar-due.js): shown while Calendar is on; the badge is the number due. -->
+      <button type="button" id="cal-bell" class="ghost cal-bell hidden" aria-label="Due reminders" aria-haspopup="dialog" aria-expanded="false" aria-controls="cal-due"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="cal-bell-n" class="cal-bell-n hidden" aria-hidden="true"></span></button>
       <button type="button" id="refresh" class="ghost" title="Refresh: reloads VaultOS, picking up app updates (the board also rescans itself every few seconds)" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       <button id="termbtn" class="ghost" title="Terminal (Ctrl+`)" aria-label="Terminal" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
       <button id="setbtn" class="ghost" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="setsheet"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="setbtn-lbl">Settings</span><span id="set-dot" class="set-dot hidden" aria-hidden="true"></span></button>
@@ -87,6 +89,21 @@
     <!-- The chip's menu sits outside the header: the header is its own stacking context (z-index 20), which would
          put the menu under the task drawer's scrim. app.js fills it and places it under the chip. -->
     <div id="ws-menu" class="ws-menu hidden" role="menu" aria-label="Workspace"></div>
+    <!-- The Due panel and the reminder toasts (calendar-due.js), outside the header for the same stacking reason. A popover
+         under the bell on a desktop, a bottom sheet on a phone. -->
+    <div id="cal-due-scrim" class="scrim cal-due-scrim hidden"></div>
+    <div id="cal-due" class="cal-due hidden" role="dialog" aria-labelledby="cal-due-h">
+      <div class="cal-due-head">
+        <h2 id="cal-due-h">Due</h2>
+        <button type="button" id="cal-due-cal" class="cal-link">Calendar</button>
+        <button type="button" id="cal-chime" class="ghost cal-chime" aria-pressed="true" aria-label="Chime on for this device" title="Chime on for this device"><span id="cal-chime-on"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></span><span id="cal-chime-off" class="hidden"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg></span></button>
+        <button type="button" id="cal-due-close" class="ghost" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <p id="cal-due-err" class="cal-banner hidden" role="alert"></p>
+      <ul id="cal-due-list" class="cal-due-list"></ul>
+      <p id="cal-due-empty" class="cal-due-empty hidden">Nothing due. You're clear.</p>
+    </div>
+    <div id="cal-toasts" class="cal-toasts" aria-live="polite"></div>
 
     <!-- Settings sheet: one screen for everything the header used to carry as
          separate popovers (which could stack on top of each other). Sections
@@ -817,6 +834,7 @@
   <script src="search-panel.js"></script>
   <script src="notes.js"></script>
   <script src="calendar.js"></script>
+  <script src="calendar-due.js"></script>
   <script src="capture.js"></script>
   <script src="automations.js"></script>
   <script src="learn.js"></script>
