@@ -17,7 +17,12 @@
   const DAY_MS = 86400000;
   const MIN_MS = 60000;
   const TITLE_MAX = 120;
-  const NOTE_MAX = 2000;
+  const NOTE_MAX = 4000;
+  const LINKS_MAX = 10;
+  const LINK_MAX = 500;
+  const BRIEF_MAX = 500;
+  // The built-in agents an entry may name (lib/agents.js PROFILES; a test keeps the two the same).
+  const AGENT_IDS = ['claude', 'cursor', 'pi', 'codex', 'antigravity', 'copilot', 'opencode', 'kilo'];
   const SKIP_MAX = 500;
   const CARD_MAX = 1024;
   const PINGS = ['start', '5m', '10m', '15m', '30m', '1h', '1d'];
@@ -80,6 +85,14 @@
   // One line: tabs and line breaks become spaces, other control characters go.
   const oneLine = (s) => s.replace(/[\t\n\r\v\f]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim();
   const noteText = (s) => s.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '');
+
+  // A link is a web address, or a vault-relative path: no leading slash, no '..' segment, no control characters.
+  function isLink(s) {
+    if (typeof s !== 'string' || !s || s.length > LINK_MAX || /[\u0000-\u001f\u007f]/.test(s)) return false;
+    if (/^https?:\/\/\S+$/i.test(s)) return true;
+    if (s.includes('://') || /^[\/\\]/.test(s)) return false;
+    return !s.split(/[\/\\]/).includes('..');
+  }
 
   function validateRepeat(r, date, errors) {
     if (r === null || r === undefined) return null;
@@ -166,10 +179,33 @@
       if (e.note.length > NOTE_MAX) errors.note = `Keep the note to ${NOTE_MAX.toLocaleString('en-GB')} characters`;
     }
 
+    if (x.links === undefined || x.links === null) e.links = [];
+    else if (!Array.isArray(x.links)) { errors.links = 'Links must be a list'; e.links = []; }
+    else {
+      e.links = x.links.map((l) => (typeof l === 'string' ? l.trim() : l)).filter((l) => l !== '');
+      const bad = e.links.findIndex((l) => !isLink(l));
+      if (bad >= 0) errors.links = `Link ${bad + 1} isn't a web address or a vault path`;
+      else if (e.links.length > LINKS_MAX) errors.links = `At most ${LINKS_MAX} links`;
+    }
+
+    if (x.brief === undefined || x.brief === null) e.brief = '';
+    else if (typeof x.brief !== 'string') { errors.brief = 'The focus must be text'; e.brief = ''; }
+    else {
+      e.brief = oneLine(x.brief);
+      if (e.brief.length > BRIEF_MAX) errors.brief = `Keep it to ${BRIEF_MAX} characters`;
+    }
+
+    if (x.agent === undefined || x.agent === null) e.agent = null;
+    else if (!AGENT_IDS.includes(x.agent)) { errors.agent = 'Pick one of the built-in agents, or leave it on the default'; e.agent = null; }
+    else e.agent = x.agent;
+
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
       ok: true,
-      entry: { title: e.title, date: e.date, allDay: e.allDay, start: e.start, end: e.end, repeat: e.repeat, skip: e.skip, ping: e.ping, card: e.card, note: e.note },
+      entry: {
+        title: e.title, date: e.date, allDay: e.allDay, start: e.start, end: e.end, repeat: e.repeat, skip: e.skip, ping: e.ping, card: e.card, note: e.note,
+        links: e.links, brief: e.brief, agent: e.agent,
+      },
     };
   }
 
@@ -321,7 +357,7 @@
   }
 
   return {
-    TITLE_MAX, NOTE_MAX, SKIP_MAX, PINGS, ALL_DAY_PINGS, REPEATS, DUE_WINDOW_DAYS, ALL_DAY_TIME, SNOOZE_TOMORROW,
+    TITLE_MAX, NOTE_MAX, SKIP_MAX, LINKS_MAX, LINK_MAX, BRIEF_MAX, AGENT_IDS, isLink, PINGS, ALL_DAY_PINGS, REPEATS, DUE_WINDOW_DAYS, ALL_DAY_TIME, SNOOZE_TOMORROW,
     DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT, KEY_RE,
     isDate, isTime, addDays, weekday, mondayOf, daysInMonth, daysBetween, todayIn, wallMs,
     validateEntry, parseRepeatFlag, occurrences, lastDate, describeRepeat, pingAt, dueItems, nextPingAt, snoozeUntil,

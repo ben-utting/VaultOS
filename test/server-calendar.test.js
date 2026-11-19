@@ -301,3 +301,21 @@ test('saving a ping that has already gone answers with a warning', async (t) => 
   const ed = await s.person('PUT', `/api/calendar/entry/${fine.body.entry.id}`, { date: CC.addDays(today(), -2) });
   assert.equal(ed.body.warning, "That ping time has already passed, so it won't ping.");
 });
+
+test('links, brief and agent round-trip, and views carry agentLabel', async (t) => {
+  const s = await ready(t);
+  const r = await s.person('POST', '/api/calendar/entry', { title: 'Chase', date: today(), allDay: true, ping: 'start', links: ['https://x.test/t/1', 'Work/a.md'], brief: 'Check the reply', agent: 'cursor' });
+  assert.equal(r.status, 200);
+  const id = r.body.entry.id;
+  const got = (await s.person('GET', `/api/calendar/entry/${id}`)).body.entry;
+  assert.deepEqual([got.links, got.brief, got.agent, got.agentLabel], [['https://x.test/t/1', 'Work/a.md'], 'Check the reply', 'cursor', 'Cursor CLI']);
+  const occ = (await s.person('GET', '/api/calendar')).body.occurrences.find((o) => o.entryId === id);
+  assert.deepEqual([occ.agent, occ.agentLabel], ['cursor', 'Cursor CLI']);
+  s.seed([stored('c_bbbbbbbbbb', { start: '00:00', created: { at: daysAgoIso(2), by: ME } }), { ...(await s.person('GET', `/api/calendar/entry/${id}`)).body.entry, card: null, allDay: false, start: '00:00', created: { at: daysAgoIso(2), by: ME }, repeatText: undefined, agentLabel: undefined }]);
+  const due = (await s.person('GET', '/api/calendar/due')).body.items;
+  const mine = due.find((i) => i.entryId === id);
+  const old = due.find((i) => i.entryId === 'c_bbbbbbbbbb');
+  assert.deepEqual([mine.agent, mine.agentLabel], ['cursor', 'Cursor CLI']);
+  assert.deepEqual([old.agent, old.agentLabel], [null, null]);
+  assert.equal((await s.person('POST', '/api/calendar/entry', { title: 'X', date: today(), allDay: true, agent: 'custom' })).body.errors.agent, 'Pick one of the built-in agents, or leave it on the default');
+});

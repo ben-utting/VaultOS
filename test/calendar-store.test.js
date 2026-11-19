@@ -182,3 +182,20 @@ test('a done or dismissed ack is final: a later ack never overwrites it', async 
   await s.ack(['c_aaaaaaaaaa@2026-11-19'], 'dismissed', null, ME);   // a snooze can still be closed
   assert.equal(disk().acks['c_aaaaaaaaaa@2026-11-19'].state, 'dismissed');
 });
+
+test('an entry saved before links/brief/agent existed reads and edits with the defaults', async (t) => {
+  const { s, put } = setup(t);
+  put({ version: 1, entries: [stored(1, '2026-11-20')], deleted: [], acks: {} });
+  const e = (await s.read()).entries[0];
+  assert.deepEqual([e.links, e.brief, e.agent], [[], '', null]);
+  const r = await s.update(e.id, { title: 'T2' }, ME);
+  assert.equal(r.ok, true);
+  assert.deepEqual([r.entry.links, r.entry.brief, r.entry.agent], [[], '', null]);
+});
+test('links, brief and agent are kept through create and update', async (t) => {
+  const { s } = setup(t);
+  const { entry } = await s.create({ ...valid, links: ['https://x.test'], brief: 'Look at X', agent: 'cursor' }, ME);
+  assert.deepEqual([entry.links, entry.brief, entry.agent], [['https://x.test'], 'Look at X', 'cursor']);
+  const r = await s.update(entry.id, { agent: null }, ME);
+  assert.deepEqual([r.entry.links, r.entry.brief, r.entry.agent], [['https://x.test'], 'Look at X', null]);
+});

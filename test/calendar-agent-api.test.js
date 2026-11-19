@@ -18,7 +18,7 @@ function setup(t, nowIso = '2026-11-18T10:05:00Z') {
   const settings = () => ({ features: { calendar: true }, today: { timezone: 'Europe/London' }, boards: [] });
   const svc = createCalendarService({
     vaultDir: vault, settings, boards: () => [], resolveWorkspace: () => ({ dir: vault }), scanAll: async () => [],
-    safeVaultPath: async (rel) => path.join(vault, rel), now,
+    safeVaultPath: async (rel) => path.join(vault, rel), now, profiles: PROFILES,
   });
   const api = createCalendarAgentApi({ store: svc.view.store, view: svc.view, tz: () => 'Europe/London', now });
   return { api, clock, svc };
@@ -127,4 +127,22 @@ test('today answers the real date, time, zone and weekday', async (t) => {
   assert.deepEqual(r.body.now, { date: '2026-07-01', time: '10:05', timezone: 'Europe/London', weekday: 'Wednesday' });
   assert.equal(r.body.entries.length, 1);
   assert.deepEqual(r.body.due, []);
+});
+
+test('list --search also matches the focus for the agent', async (t) => {
+  const { api } = setup(t);
+  await api.add({ entry: one({ title: 'Supplier', brief: 'Check the PR review' }) }, 'Claude Code');
+  const days = (await api.list({ search: 'pr review' })).body.days;
+  assert.equal(days.length, 1);
+  assert.equal(days[0].occurrences[0].title, 'Supplier');
+});
+test('views carry the entry agent and its label', async (t) => {
+  const { api } = setup(t);
+  const { entry } = (await api.add({ entry: one({ agent: 'cursor' }) }, 'Claude Code')).body;
+  const shown = (await api.show({ id: entry.id })).body.entry;
+  assert.deepEqual([shown.agent, shown.agentLabel], ['cursor', 'Cursor CLI']);
+  const occ = (await api.list({})).body.days[0].occurrences[0];
+  assert.deepEqual([occ.agent, occ.agentLabel], ['cursor', 'Cursor CLI']);
+  const plain = (await api.add({ entry: one({ title: 'Plain' }) }, 'Claude Code')).body.entry;
+  assert.deepEqual([(await api.show({ id: plain.id })).body.entry.agentLabel], [null]);
 });

@@ -11,7 +11,7 @@ const E = (x = {}) => ({ id: 'c_aaaaaaaaaa', created: { at: '2026-11-01T00:00:00
 test('validateEntry accepts a timed one-off and normalises it', () => {
   const r = CC.validateEntry({ title: '  Dentist\u0007 ', date: '2026-11-19', allDay: false, start: '15:20', end: '16:00', ping: '30m' });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.entry, { title: 'Dentist', date: '2026-11-19', allDay: false, start: '15:20', end: '16:00', repeat: null, skip: [], ping: '30m', card: null, note: '' });
+  assert.deepEqual(r.entry, { title: 'Dentist', date: '2026-11-19', allDay: false, start: '15:20', end: '16:00', repeat: null, skip: [], ping: '30m', card: null, note: '', links: [], brief: '', agent: null });
 });
 
 test('validateEntry rejects other date and time shapes', () => {
@@ -28,7 +28,7 @@ test('validateEntry field rules', () => {
   assert.ok(CC.validateEntry(E({ allDay: false, start: null })).errors.start);
   assert.ok(CC.validateEntry(E({ repeat: { every: 'weekly', days: [] } })).errors.repeat);
   assert.ok(CC.validateEntry(E({ repeat: { every: 'hourly' } })).errors.repeat);
-  assert.ok(CC.validateEntry(E({ note: 'x'.repeat(2001) })).errors.note);
+  assert.ok(CC.validateEntry(E({ note: 'x'.repeat(4001) })).errors.note);
   assert.equal(CC.validateEntry(E({ allDay: true, start: '09:00' })).entry.start, null);
 });
 
@@ -151,4 +151,36 @@ test('nextPingAt: the first ping still to come, or null', () => {
   assert.equal(CC.nextPingAt(E({ date: '2026-11-18', start: '09:00', repeat: { every: 'daily' } }), LON, now), Date.parse('2026-11-19T09:00:00Z'));
   assert.equal(CC.nextPingAt(E({ date: '2026-11-19', ping: null }), LON, now), null);
   assert.equal(CC.nextPingAt(E({ date: '2027-06-01', repeat: { every: 'yearly' } }), LON, now), Date.parse('2027-06-01T08:00:00Z'));
+});
+
+// ---------- Agent button fields (spec 2026-11-19 §3) ----------
+const base = { title: 'X', date: '2026-11-19', start: '09:00' };
+test('links: web addresses and vault paths, at most 10 of 500', () => {
+  const ok = (links) => CC.validateEntry({ ...base, links });
+  assert.deepEqual(ok(['https://x.test/a', 'Work/1. a/01-x/data/q.pdf', '', 'http://y.test']).entry.links,
+    ['https://x.test/a', 'Work/1. a/01-x/data/q.pdf', 'http://y.test']);
+  assert.deepEqual(ok(undefined).entry.links, []);
+  for (const bad of [['/etc/passwd'], ['Work/../x'], ['..'], ['ftp://x'], ['a\u0007b'], ['x'.repeat(501)], [42]]) {
+    assert.match(ok(bad).errors.links, /^Link 1 isn't a web address or a vault path$/, JSON.stringify(bad));
+  }
+  assert.match(ok(['a', 'b', '/abs']).errors.links, /^Link 3 /);
+  assert.equal(ok(Array(11).fill('a')).errors.links, 'At most 10 links');
+  assert.equal(ok('https://x.test').errors.links, 'Links must be a list');
+});
+test('brief: one line, at most 500', () => {
+  assert.equal(CC.validateEntry({ ...base, brief: ' Check\nthe PR ' }).entry.brief, 'Check the PR');
+  assert.equal(CC.validateEntry({ ...base }).entry.brief, '');
+  assert.equal(CC.validateEntry({ ...base, brief: 'x'.repeat(501) }).errors.brief, 'Keep it to 500 characters');
+});
+test('agent: a built-in id or null', () => {
+  for (const id of CC.AGENT_IDS) assert.equal(CC.validateEntry({ ...base, agent: id }).entry.agent, id);
+  assert.equal(CC.validateEntry({ ...base }).entry.agent, null);
+  for (const bad of ['custom', 'none', 'Claude', 7]) assert.equal(CC.validateEntry({ ...base, agent: bad }).errors.agent, 'Pick one of the built-in agents, or leave it on the default');
+});
+test('AGENT_IDS match the agent profiles', () => {
+  assert.deepEqual(CC.AGENT_IDS, Object.keys(require('../lib/agents').PROFILES));
+});
+test('note: up to 4,000', () => {
+  assert.equal(CC.validateEntry({ ...base, note: 'x'.repeat(4000) }).ok, true);
+  assert.equal(CC.validateEntry({ ...base, note: 'x'.repeat(4001) }).errors.note, 'Keep the note to 4,000 characters');
 });
