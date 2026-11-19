@@ -28,11 +28,16 @@ const stored = (id, more = {}) => ({
   created: { at: daysAgoIso(10), by: ME }, updated: { at: daysAgoIso(10), by: ME }, ...more,
 });
 
-async function ready(t, { calendar = true, env = {} } = {}) {
+async function ready(t, { calendar = true, env = {}, bins = [] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-cal-'));
   const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home') };
   fs.mkdirSync(d.vault);
   fs.mkdirSync(d.home);
+  // Stub agents on the login shell's PATH (the image's profile adds ~/.local/bin), so isInstalled finds them.
+  const bin = path.join(d.home, '.local', 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const b of bins) fs.writeFileSync(path.join(bin, b), '#!/bin/sh\necho 1.0\n', { mode: 0o755 });
+  if (bins.length) env = { PATH: `${bin}:${process.env.PATH}`, ...env };
   seedVault(d.vault, {});
   const srv = await startServer({ vault: d.vault, data: d.data, home: d.home, env: { TZ: LON, ...env } });
   t.after(async () => { await srv.stop(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -318,4 +323,92 @@ test('links, brief and agent round-trip, and views carry agentLabel', async (t) 
   assert.deepEqual([mine.agent, mine.agentLabel], ['cursor', 'Cursor CLI']);
   assert.deepEqual([old.agent, old.agentLabel], [null, null]);
   assert.equal((await s.person('POST', '/api/calendar/entry', { title: 'X', date: today(), allDay: true, agent: 'custom' })).body.errors.agent, 'Pick one of the built-in agents, or leave it on the default');
+});
+
+// ---------- The Agent button's launch (spec 2026-11-19 §5.3) ----------
+const { PROFILES, startCommand } = require('../lib/agents');
+const { calendarKickoff } = require('../lib/calendar-brief');
+async function launchReady(t, { env = {}, agent = 'claude' } = {}) {
+  const s = await ready(t, { env: { TERMINAL: '1', ...env }, bins: ['agent'] });
+  if (agent) assert.equal((await s.person('POST', '/api/settings/agent', { profile: agent })).status, 200);
+  const launch = (id, date) => s.person('GET', `/api/calendar/entry/${id}/agent${date ? `?date=${encodeURIComponent(date)}` : ''}`);
+  return { ...s, launch };
+}
+
+test('agent launch: a card entry opens in the card folder with the fixed check-in', { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t);
+  s.card('Work/1. a/01-x/task.md', 'Chase');
+  s.seed([stored('c_aaaaaaaaaa', { card: 'Work/1. a/01-x/task.md', note: "'; rm -rf ~ #", title: '$(id)' })]);
+  const r = await s.launch('c_aaaaaaaaaa', today());
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual({ ...r.body, command: undefined }, {
+    command: undefined, cwd: 'Work/1. a/01-x', task: 'Work/1. a/01-x/task.md', spaceName: null,
+    agent: { id: 'claude', label: 'Claude Code' }, fellBack: null,
+  });
+  assert.equal(r.body.command, startCommand(PROFILES.claude, calendarKickoff('c_aaaaaaaaaa', today())));
+  assert.doesNotMatch(r.body.command, /rm -rf|\$\(id\)/);
+  const next = await s.launch('c_aaaaaaaaaa');
+  assert.equal(next.body.command, startCommand(PROFILES.claude, calendarKickoff('c_aaaaaaaaaa')));
+});
+
+test('agent launch: the i-have-adhd prefix when that skill is installed', { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t);
+  fs.mkdirSync(path.join(s.home, '.claude', 'skills', 'i-have-adhd'), { recursive: true });
+  fs.writeFileSync(path.join(s.home, '.claude', 'skills', 'i-have-adhd', 'SKILL.md'), '# skill\n');
+  s.seed([stored('c_aaaaaaaaaa')]);
+  assert.match((await s.launch('c_aaaaaaaaaa', today())).body.command, /^claude '\/i-have-adhd A calendar reminder brought you here\./);
+});
+
+test("agent launch: the entry's own agent, or the default when it is not installed", { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t);
+  s.seed([stored('c_aaaaaaaaaa', { agent: 'cursor' }), stored('c_bbbbbbbbbb', { agent: 'codex' })]);
+  const cur = (await s.launch('c_aaaaaaaaaa', today())).body;
+  assert.deepEqual([cur.agent.id, cur.fellBack], ['cursor', null]);
+  assert.match(cur.command, /^agent '/);
+  const codex = (await s.launch('c_bbbbbbbbbb', today())).body;
+  assert.deepEqual([codex.agent.id, codex.fellBack], ['claude', "Codex CLI isn't installed"]);
+});
+
+test('agent launch: no card (or a moved one) opens a new space named after the title', { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t);
+  s.seed([stored('c_aaaaaaaaaa', { title: '🗓️x'.repeat(30).slice(0, 120) }), stored('c_bbbbbbbbbb', { title: 'Short', card: 'Work/gone/task.md' })]);
+  const r = (await s.launch('c_aaaaaaaaaa', today())).body;
+  assert.deepEqual([r.cwd, r.task], ['', null]);
+  assert.ok(Array.from(r.spaceName).length <= 24);
+  assert.ok(r.spaceName.endsWith('…'));
+  assert.doesNotMatch(r.spaceName, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+  const moved = (await s.launch('c_bbbbbbbbbb', today())).body;
+  assert.deepEqual([moved.cwd, moved.task, moved.spaceName], ['', null, 'Short']);
+});
+
+test('agent launch: refusals', { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t, { env: { LOCAL_READ: '1' } });
+  s.seed([stored('c_aaaaaaaaaa', { repeat: { every: 'daily' }, skip: [today()] })], {});
+  const local = await call(s.base, 'GET', `/api/calendar/entry/c_aaaaaaaaaa/agent`);
+  assert.deepEqual([local.status, local.body.error], [403, 'Sign in to start an agent']);
+  const unknown = await s.launch('c_zzzzzzzzzz');
+  assert.deepEqual([unknown.status, unknown.body.error], [404, 'No such entry']);
+  const skipped = await s.launch('c_aaaaaaaaaa', today());
+  assert.deepEqual([skipped.status, skipped.body.error], [400, `c_aaaaaaaaaa isn't on ${today()}`]);
+  const junk = await s.launch('c_aaaaaaaaaa', 'junk');
+  assert.deepEqual([junk.status, junk.body.error], [400, 'Use YYYY-MM-DD (for example 2026-11-20)']);
+  assert.equal((await s.person('POST', '/api/settings/agent', { profile: 'none' })).status, 200);
+  const none = await s.launch('c_aaaaaaaaaa', CC.addDays(today(), 1));
+  assert.deepEqual([none.status, none.body.error], [409, 'Set a default agent in Settings → Agent']);
+});
+
+test('agent launch: terminals off answers 404', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  s.seed([stored('c_aaaaaaaaaa')]);
+  const r = await s.person('GET', `/api/calendar/entry/c_aaaaaaaaaa/agent?date=${today()}`);
+  assert.deepEqual([r.status, r.body.error], [404, 'Terminals are switched off']);
+});
+
+test('the agents list for the entry panel', { timeout: 30000 }, async (t) => {
+  const s = await launchReady(t);
+  const r = await s.person('GET', '/api/calendar/agents');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.default, { id: 'claude', label: 'Claude Code' });
+  assert.deepEqual(r.body.agents.map((a) => a.id), CC.AGENT_IDS);
+  assert.equal(r.body.agents[1].label, 'Cursor CLI');
 });

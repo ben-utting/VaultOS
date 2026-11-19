@@ -1598,6 +1598,7 @@ const { createCalendarService } = require('./lib/calendar-service');
 const CALENDAR = createCalendarService({
   vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, safeVaultPath,
   canWrite: (req) => !!(req.session && req.session.authed), profiles: PROFILES, termCmd,
+  terminalOn, defaultProfile: () => profileFor(SETTINGS()), isInstalled,
 });
 app.use('/api', CALENDAR.router);
 
