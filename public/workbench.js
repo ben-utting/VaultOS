@@ -1380,7 +1380,8 @@ function handToWindow(w, metas) {
 // Open a terminal from elsewhere in the app. With a cwd it's a *new* session
 // in that folder, so a running agent is never interrupted by a `cd`. In
 // window mode a blocked pop-up falls back to the dock rather than doing nothing.
-function termOpen({ cwd, run, task } = {}) {
+// space / spaceName: a new space of its own (the calendar's Agent button on an item with no card).
+function termOpen({ cwd, run, task, space, spaceName } = {}) {
   if (!termOn()) return;
   if (termWhere() === 'window') {
     // The window adds its terminals without the cap check, so ask here first, and only when a new shell
@@ -1391,10 +1392,10 @@ function termOpen({ cwd, run, task } = {}) {
     const winOpen = TW.rows().some((r) => r.where === 'window');
     if ((fresh || !winOpen) && !TW.canOpen()) return;
     const w = openTermWindow();
-    if (w) { handToWindow(w, fresh ? [{ id: twNewId(), cwd: cwd || '', run, task }] : []); return; }
+    if (w) { handToWindow(w, fresh ? [{ id: twNewId(), cwd: cwd || '', run, task, ...(space ? { space, spaceName } : {}) }] : []); return; }
   }
   showTerminals();
-  if (cwd != null || run || !TW.sessions().length) TW.create({ cwd, run, task });
+  if (cwd != null || run || !TW.sessions().length) TW.create({ cwd, run, task, ...(space ? { space, spaceName } : {}) });
 }
 
 // ---------- Agent states, app-wide ----------

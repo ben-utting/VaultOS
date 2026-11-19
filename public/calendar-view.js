@@ -157,7 +157,17 @@
       + (meta.length ? `<span class="cal-row-meta">${meta.join('<span class="cal-dot" aria-hidden="true">·</span>')}</span>` : '')
       + '</span></button>';
   }
-  function dueItemHtml(item, tz = 'UTC', now = Date.now()) {
+  // The Agent button (spec 2026-11-19 §5.1): agent = { label, mark } (mark: the agent's own SVG, from AgentMarks,
+  // trusted) or null for no button. entryId/date say what to brief; compact (Today's Coming up) drops the word.
+  function agentButtonHtml(agent, { entryId = '', date = '', compact = false } = {}) {
+    if (!agent) return '';
+    const label = String(agent.label || 'the agent');
+    return `<button type="button" class="${compact ? 'cal-agent cal-agent-c' : 'su-btn su-sm cal-agent'}" data-act="agent"`
+      + ` data-entry="${esc(entryId)}" data-date="${esc(date || '')}"`
+      + ` data-tip="${esc(`Open ${label} on this reminder. It reads the note and the card, then asks you what to do.`)}"`
+      + ` aria-label="${esc(`Open ${label} on this reminder`)}">${agent.mark || ''}${compact ? '' : '<span>Agent</span>'}</button>`;
+  }
+  function dueItemHtml(item, tz = 'UTC', now = Date.now(), agent = null) {
     const meta = [`<span class="cal-due-when">${esc(dueWhen(item.pingAt, tz, now))}</span>`];
     if (item.missedEarlier) meta.push(`<span class="cal-due-missed">+${esc(item.missedEarlier)} missed earlier</span>`);
     if (item.by) meta.push(`<span>${esc(`Added by ${item.by}`)}</span>`);
@@ -171,21 +181,23 @@
       + '<button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
       + '<button type="button" class="su-btn su-sm" data-act="snooze" aria-haspopup="menu" aria-expanded="false">Snooze ▾</button>'
       + '<button type="button" class="su-btn su-sm" data-act="dismiss">Dismiss</button>'
+      + agentButtonHtml(agent, { entryId: item.entryId, date: item.date })
       + '</div></li>';
   }
-  function toastHtml(item, tz, now) {
+  function toastHtml(item, tz, now, agent = null) {
     const sub = [toastWhen(item, tz, now), item.card ? item.card.title : ''].filter(Boolean).join(' · ');
     return `<div class="cal-toast" role="status" data-key="${esc(item.key || '')}" data-entry="${esc(item.entryId || '')}">`
       + `<span class="cal-toast-bell">${BELL}</span>`
       + `<div class="cal-toast-text"><strong>${esc(item.title)}</strong><span>${esc(sub)}</span></div>`
       + '<div class="cal-toast-acts"><button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
       + '<button type="button" class="su-btn su-sm" data-act="snooze10">Snooze 10m</button>'
+      + agentButtonHtml(agent, { entryId: item.entryId, date: item.date })
       + '<button type="button" class="cal-toast-x" data-act="close" aria-label="Close (it stays in the Due list)">✕</button></div></div>';
   }
 
   return {
     esc, dayLabel, agendaGroups, weekColumns, monthCells, rangeTitle, dueWhen, toastWhen, byText, pingText, timeText,
     seenToken, freshItems, dueSignature,
-    entryRowHtml, dueItemHtml, toastHtml, BELL, MONTH_LONG, wallHm, dMon,
+    entryRowHtml, dueItemHtml, toastHtml, agentButtonHtml, BELL, MONTH_LONG, wallHm, dMon,
   };
 });

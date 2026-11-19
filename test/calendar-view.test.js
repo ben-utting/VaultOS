@@ -101,7 +101,10 @@ test('rows carry the time, title, repeat, ping, card and who added it', () => {
 test('row, due and toast html escape markup', () => {
   const evil = '<img src=x onerror=alert(1)>';
   const o = { entryId: 'c_a', date: '2026-11-18', title: evil, note: evil, allDay: false, start: '09:00', end: null, repeatText: '', ping: 'start', card: { path: 'a/task.md', title: evil, exists: true }, created: { by: { kind: 'agent', agent: evil } } };
-  for (const html of [CV.entryRowHtml(o), CV.dueItemHtml({ ...o, key: 'c_a@2026-11-18', pingAt: '2026-11-18T09:00:00Z', by: evil, missedEarlier: 1 }), CV.toastHtml({ ...o, pingAt: '2026-11-18T09:00:00Z' }, 'Europe/London', Date.parse('2026-11-18T08:55:00Z'))]) {
+  const agent = { label: evil, mark: '<svg class="icon"></svg>' };
+  for (const html of [CV.entryRowHtml(o), CV.dueItemHtml({ ...o, key: 'c_a@2026-11-18', pingAt: '2026-11-18T09:00:00Z', by: evil, missedEarlier: 1 }), CV.toastHtml({ ...o, pingAt: '2026-11-18T09:00:00Z' }, 'Europe/London', Date.parse('2026-11-18T08:55:00Z')),
+    CV.dueItemHtml({ ...o, key: 'c_a@2026-11-18', pingAt: '2026-11-18T09:00:00Z', by: evil }, LON, Date.now(), agent), CV.toastHtml({ ...o, key: 'c_a@2026-11-18', pingAt: '2026-11-18T09:00:00Z' }, LON, Date.now(), agent),
+    CV.agentButtonHtml(agent, { entryId: evil, date: evil })]) {
     assert.ok(!html.includes('<img'), html);
     assert.ok(html.includes('&lt;img'), html);
   }
@@ -136,4 +139,29 @@ test('toastWhen words a date before today', () => {
   assert.equal(CV.toastWhen({ date: '2026-11-17', start: '18:00', allDay: false }, LON, now), 'Yesterday 18:00');
   assert.equal(CV.toastWhen({ date: '2026-11-16', start: '18:00', allDay: false }, LON, now), 'Mon 16 Nov 18:00');
   assert.equal(CV.toastWhen({ date: '2026-11-17', start: null, allDay: true }, LON, now), 'Yesterday · All day');
+});
+
+// ---------- The Agent button (spec 2026-11-19 §5.1) ----------
+test('agentButtonHtml: escaped label, data for the launch, compact drops the word', () => {
+  const a = { label: 'Claude <Code>', mark: '<svg class="icon"></svg>' };
+  const h = CV.agentButtonHtml(a, { entryId: 'c_abcdefgh23', date: '2026-11-19' });
+  assert.match(h, /data-act="agent"/);
+  assert.match(h, /data-entry="c_abcdefgh23"/);
+  assert.match(h, /data-date="2026-11-19"/);
+  assert.match(h, /data-tip="Open Claude &lt;Code&gt; on this reminder\. It reads the note and the card, then asks you what to do\."/);
+  assert.match(h, /aria-label="Open Claude &lt;Code&gt; on this reminder"/);
+  assert.match(h, /<svg class="icon"><\/svg><span>Agent<\/span><\/button>$/);
+  const c = CV.agentButtonHtml(a, { entryId: 'c_abcdefgh23', compact: true });
+  assert.doesNotMatch(c, /<span>Agent<\/span>/);
+  assert.match(c, /data-date=""/);
+  assert.equal(CV.agentButtonHtml(null, { entryId: 'c_abcdefgh23' }), '');
+});
+test('Due item and toast carry the button only when given an agent', () => {
+  const a = { label: 'Claude Code', mark: '<svg></svg>' };
+  const item = { key: 'c_a@2026-11-18', entryId: 'c_a', date: '2026-11-18', title: 'Chase', pingAt: '2026-11-18T09:00:00Z', start: '09:00', allDay: false, card: null, by: '', missedEarlier: 0 };
+  const now = Date.parse('2026-11-18T10:00:00Z');
+  assert.match(CV.dueItemHtml(item, LON, now, a), /data-act="dismiss">Dismiss<\/button><button[^>]+data-act="agent"[^>]+data-entry="c_a" data-date="2026-11-18"/);
+  assert.doesNotMatch(CV.dueItemHtml(item, LON, now), /data-act="agent"/);
+  assert.match(CV.toastHtml(item, LON, now, a), /data-act="snooze10">Snooze 10m<\/button><button[^>]+data-act="agent"/);
+  assert.doesNotMatch(CV.toastHtml(item, LON, now), /data-act="agent"/);
 });

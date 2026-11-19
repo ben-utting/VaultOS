@@ -141,6 +141,8 @@
   }
   new MutationObserver(() => applyTitle()).observe(document.querySelector('title'), { childList: true, characterData: true, subtree: true });
 
+  // The Agent button's agent for an item, or null for no button (window.CalendarAgent, calendar-agent.js).
+  const agentFor = (i) => (window.CalendarAgent ? CalendarAgent.forItem(i.agent || null, i.agentLabel || null) : null);
   function paintToasts() {
     const box = $('cal-toasts');
     const shown = D.toasts.slice(-MAX_TOASTS);
@@ -149,7 +151,7 @@
     const sig = JSON.stringify([shown.map((t) => [CV.seenToken(t), CV.toastWhen(t, D.tz, now), t.title]), extra]);
     if (sig === D.toastSig) return;   // unchanged: keep the buttons (and any focus on them)
     D.toastSig = sig;
-    box.innerHTML = shown.map((t) => CV.toastHtml(t, D.tz, now)).join('')
+    box.innerHTML = shown.map((t) => CV.toastHtml(t, D.tz, now, agentFor(t))).join('')
       + (extra ? `<div class="cal-toast cal-toast-more"><span>+${extra} more</span><button type="button" class="su-btn su-sm" data-act="open">Open Due</button></div>` : '');
   }
   function dropToast(key) {
@@ -188,7 +190,7 @@
     const sig = CV.dueSignature(D.items);
     if (force || sig !== D.panelSig) {
       D.panelSig = sig;
-      $('cal-due-list').innerHTML = D.items.map((i) => CV.dueItemHtml(i, D.tz, now)).join('');
+      $('cal-due-list').innerHTML = D.items.map((i) => CV.dueItemHtml(i, D.tz, now, agentFor(i))).join('');
     }
     $('cal-due-empty').classList.toggle('hidden', D.items.length > 0 || !!D.error);
     const on = chimeOn();
@@ -265,6 +267,7 @@
     if (card) { openCard(card.dataset.card, card.dataset.board); return; }
     const b = e.target.closest('[data-act]');
     if (!b) return;
+    if (b.dataset.act === 'agent') { closePanel({ focus: false }); CalendarAgent.launch(b.dataset.entry, b.dataset.date); return; }
     if (b.dataset.act === 'snooze') snoozeMenu(b);
     else ack(key, b.dataset.act === 'done' ? 'done' : 'dismiss');
   });
@@ -276,6 +279,7 @@
     const key = t && t.dataset.key;
     if (!key) return;
     if (b.dataset.act === 'close') dropToast(key);   // it stays in the Due list
+    else if (b.dataset.act === 'agent') { dropToast(key); CalendarAgent.launch(b.dataset.entry, b.dataset.date); }   // stays in the Due list too
     else if (b.dataset.act === 'done') ack(key, 'done');
     else if (b.dataset.act === 'snooze10') ack(key, 'snooze', '10m');
   });
@@ -298,7 +302,14 @@
     featureChanged() {
       const on = calendarOn();
       $('cal-bell').classList.toggle('hidden', !on);
-      if (on) { if (!D.timer) { poll(); schedule(); } return; }
+      if (on) {
+        // A changed default agent (or terminals switched on or off) changes the Agent buttons: repaint them.
+        D.toastSig = '';
+        paintPanel({ force: true });
+        paintToasts();
+        if (!D.timer) { poll(); schedule(); }
+        return;
+      }
       clearTimeout(D.timer);
       clearTimeout(D.retry);
       D.timer = null;

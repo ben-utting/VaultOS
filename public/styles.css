@@ -4294,6 +4294,16 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .cal-toast-x { padding: 4px 6px; font: inherit; color: var(--muted); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer; }
 .cal-toast-x:hover { color: var(--text); }
 .cal-toast-more { justify-content: space-between; font-size: var(--t-sm); color: var(--muted); }
+/* The Agent button (calendar-agent.js): the agent's own mark, then the word. The compact one (Coming up) is the mark
+   alone, a quiet square that lights up on hover like the other ghost buttons. */
+.cal-agent { display: inline-flex; align-items: center; gap: 6px; }
+.cal-agent .icon { width: 14px; height: 14px; vertical-align: 0; }
+.cal-agent-c {
+  display: grid; place-items: center; width: 32px; height: 32px; flex: none; padding: 0; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer;
+}
+.cal-agent-c:hover { color: var(--text); border-color: var(--muted); }
+.cal-agent-c .icon { width: 16px; height: 16px; }
 @media (max-width: 700px) {
   .cal-due {
     top: auto !important; right: 0 !important; left: 0; bottom: var(--mnav-h, 0px); width: 100%; max-height: calc(86vh - var(--mnav-h, 0px));
