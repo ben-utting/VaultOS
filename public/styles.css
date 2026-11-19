@@ -407,7 +407,8 @@ header #search-chip {
 /* The rail's dot on a row with something to say (Calendar due, Terminals needing you), at the icon's corner. */
 body.sb-rail .sidebar .nv-dot-on::before { content: ''; top: 4px; right: 6px; box-sizing: border-box; }
 body.sb-rail .sidebar #termbtn.nv-dot-on::before { background: var(--review); }
-.sidebar .nv-n.nv-badge { position: static; min-width: 18px; height: 18px; line-height: 18px; }
+/* .mode-scoped to beat the shared .cal-bell-n rule further down, which places the bell's badge absolutely. */
+.sidebar .mode .nv-n.nv-badge { position: static; min-width: 18px; height: 18px; line-height: 18px; }
 .sidebar .nv-n.nv-alert { color: var(--review); font-weight: 600; }
 /* Automations' running dot: after the label when expanded, at the icon's corner in the rail. */
 body.sb-rail .sidebar .mode-dot { position: absolute; top: 6px; right: 8px; margin: 0; }
