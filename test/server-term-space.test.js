@@ -99,3 +99,12 @@ test('a space message moves a live terminal to another space at once', { timeout
   await new Promise((r) => setTimeout(r, 300));
   assert.equal((await s.listed(tm.id)).space, '');
 });
+
+test('a space name is cut by code point, so an emoji is never split', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  const name = `a${'🎉'.repeat(30)}`;
+  const tm = await s.term({ query: { space: 'ab12', spaceName: name } });
+  const row = await s.listed(tm.id);
+  assert.equal(row.spaceName, Array.from(name).slice(0, 40).join(''));
+  assert.doesNotMatch(row.spaceName, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+});

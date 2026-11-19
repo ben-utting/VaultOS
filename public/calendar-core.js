@@ -83,12 +83,13 @@
 
   // ---------- Validation ----------
   // One line: tabs and line breaks become spaces, other control characters go.
-  const oneLine = (s) => s.replace(/[\t\n\r\v\f]/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '').trim();
-  const noteText = (s) => s.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '');
+  // C1 controls (U+0080–U+009F) go too: a terminal reads U+009B as CSI and U+009D as OSC, and `brief`/`show` print these.
+  const oneLine = (s) => s.replace(/[\t\n\r\v\f]/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim();
+  const noteText = (s) => s.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
 
   // A link is a web address, or a vault-relative path: no leading slash, no '..' segment, no control characters.
   function isLink(s) {
-    if (typeof s !== 'string' || !s || s.length > LINK_MAX || /[\u0000-\u001f\u007f]/.test(s)) return false;
+    if (typeof s !== 'string' || !s || s.length > LINK_MAX || /[\u0000-\u001f\u007f-\u009f]/.test(s)) return false;
     if (/^https?:\/\/\S+$/i.test(s)) return true;
     if (s.includes('://') || /^[\/\\]/.test(s)) return false;
     return !s.split(/[\/\\]/).includes('..');

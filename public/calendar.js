@@ -307,12 +307,15 @@
     P.id = null;
   }
   const panelOpen = () => !$('cal-panel').classList.contains('hidden');
-  function openNew() { fill(null, null); openPanel(); }
+  // Opened from Today (Coming up) the mode may never have been shown, so the Agent choices load here too.
+  const ensureAgents = () => { if (!AGENTS.agents.length) loadAgents(); };
+  function openNew() { fill(null, null); openPanel(); ensureAgents(); }
   async function openEntry(entryId, date) {
     const r = await call(`/api/calendar/entry/${encodeURIComponent(entryId)}`);
     if (!r.ok) { toast(r.data.error || 'That entry is gone'); return; }
     fill(r.data.entry, date);
     openPanel();
+    ensureAgents();
   }
   function formValue() {
     const allDay = $('ce-allday').checked;

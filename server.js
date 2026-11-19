@@ -3435,7 +3435,8 @@ function termSpaceParams(sp) {
     const v = sp.get('space');
     if (v === '' || /^[A-Za-z0-9_-]{1,40}$/.test(v)) out.space = v;
   }
-  if (sp.has('spaceName')) out.spaceName = sp.get('spaceName').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+  // Cut by code point (Array.from), so a name ending in emoji never keeps half a surrogate pair.
+  if (sp.has('spaceName')) out.spaceName = Array.from(sp.get('spaceName').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').trim()).slice(0, 40).join('');
   return out;
 }
 

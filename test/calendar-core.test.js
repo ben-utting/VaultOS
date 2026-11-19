@@ -184,3 +184,8 @@ test('note: up to 4,000', () => {
   assert.equal(CC.validateEntry({ ...base, note: 'x'.repeat(4000) }).ok, true);
   assert.equal(CC.validateEntry({ ...base, note: 'x'.repeat(4001) }).errors.note, 'Keep the note to 4,000 characters');
 });
+test('C1 control characters (CSI, OSC) are stripped from titles, focus and notes, and refused in links', () => {
+  const r = CC.validateEntry({ ...base, title: 'A\u009b31mB', brief: 'x\u009d52;c;aGk=\u009cy', note: 'n\u0085o\u009bte' });
+  assert.deepEqual([r.entry.title, r.entry.brief, r.entry.note], ['A31mB', 'x52;c;aGk=y', 'note']);
+  assert.match(CC.validateEntry({ ...base, links: ['Work/a\u009db.md'] }).errors.links, /^Link 1 /);
+});
