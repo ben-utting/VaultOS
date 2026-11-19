@@ -136,7 +136,7 @@ function applyMe() {
   }
   for (const el of [$('termbtn'), document.querySelector('#more-sheet [data-for="termbtn"]'), $('term-where-row'), $('term-sound-row')]) el.classList.toggle('hidden', !term);
   $('d-agent').classList.toggle('hidden', !ME.agent);
-  for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#more-sheet [data-for="mode-notes"]')]) {
+  for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#more-sheet [data-for="mode-notes"]'), document.querySelector('#more-sheet [data-for="capture-btn"]')]) {
     el.classList.toggle('hidden', !notesOn());
   }
   for (const el of [$('mode-automations'), document.querySelector('#more-sheet [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
@@ -1306,14 +1306,15 @@ function syncMobileNav() {
   for (const b of MNAV) if (b.dataset.for) b.classList.toggle('active', $(b.dataset.for).classList.contains('active'));
   $('mnav-more').classList.toggle('active', MORE_MODES.includes(STATE.mode));
 }
-for (const b of MNAV.filter((x) => x.dataset.for)) b.addEventListener('click', () => {
-  // A mode tab while the full-screen terminal is up means "take me there", so
-  // it minimises the terminal as well (the shells keep running).
-  // Same for an open task sheet, which would otherwise sit over the new mode.
-  if (b.dataset.for !== 'termbtn' && $('termbtn').getAttribute('aria-pressed') === 'true') $('termbtn').click();
-  if (b.dataset.for !== 'termbtn' && !$('drawer').classList.contains('hidden')) closeDrawer();
-  $(b.dataset.for).click();
-});
+// A mode tab (or a More-sheet mode row, sidebar.js) while the full-screen terminal is up means "take me there", so
+// it minimises the terminal as well (the shells keep running). Same for an open task sheet, which would otherwise sit
+// over the new mode.
+function goTwin(id) {
+  if (id !== 'termbtn' && $('termbtn').getAttribute('aria-pressed') === 'true') $('termbtn').click();
+  if (id !== 'termbtn' && !$('drawer').classList.contains('hidden')) closeDrawer();
+  $(id).click();
+}
+for (const b of MNAV.filter((x) => x.dataset.for)) b.addEventListener('click', () => goTwin(b.dataset.for));
 new MutationObserver(syncMobileNav).observe($('termbtn'), { attributes: true, attributeFilter: ['aria-pressed', 'data-n', 'data-alert'] });
 for (const id of ['mode-today', 'mode-calendar', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-learn', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
 

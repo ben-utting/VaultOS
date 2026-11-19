@@ -48,14 +48,15 @@
   // What a count slot shows (spec §3): text in the expanded row, a dot in the rail, the tooltip's status, and whether
   // it is the gold number badge (Calendar only). Only Calendar, Board and Terminals have counts.
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-  function countView(name, value, alert) {
+  function countView(name, value, alert, alertCount = 1) {
     const n = Math.max(0, Number(value) || 0);
     const none = { text: '', dot: false, status: '', badge: false };
     if (name === 'calendar') return n ? { text: n > 99 ? '99+' : String(n), dot: true, status: `${n} due`, badge: true } : none;
     if (name === 'board') return n ? { text: String(n), dot: false, status: `${n} open`, badge: false } : none;
     if (name === 'terminals') {
-      if (alert === 'blocked') return { text: 'needs you', dot: true, status: `${Math.max(n, 1)} needs you`, badge: false };
-      return n ? { text: plural(n, 'agent'), dot: false, status: plural(n, 'agent'), badge: false } : none;
+      const k = Math.max(1, Number(alertCount) || 1);
+      if (alert === 'blocked') return { text: 'needs you', dot: true, status: `${k} need${k === 1 ? 's' : ''} you`, badge: false };
+      return n ? { text: plural(n, 'agent'), dot: true, status: plural(n, 'agent'), badge: false } : none;
     }
     return none;
   }

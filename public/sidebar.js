@@ -88,14 +88,15 @@
   function paintCount(name) {
     const b = el(SLOT[name]);
     const c = S.counts[name] || { value: 0 };
-    const v = SC.countView(name, c.value, S.alerts[name] || '');
+    const a = S.alerts[name] || { state: '', n: 0 };
+    const v = SC.countView(name, c.value, a.state, a.n);
     S.counts[name] = { value: c.value, status: v.status };
     if (!b) return;
     const slot = b.querySelector('.nv-n');
     if (slot) {
       slot.textContent = v.text;
       slot.classList.toggle('nv-badge', v.badge);
-      slot.classList.toggle('nv-alert', name === 'terminals' && v.dot);
+      slot.classList.toggle('nv-alert', name === 'terminals' && a.state === 'blocked');
     }
     b.classList.toggle('nv-dot-on', v.dot);
   }
@@ -105,9 +106,9 @@
     paintCount(name);
     paintTips();
   }
-  function setAlert(name, state) {
+  function setAlert(name, state, count) {
     if (!SLOT[name]) return;
-    S.alerts[name] = state || '';
+    S.alerts[name] = { state: state || '', n: count || 0 };
     paintCount(name);
     paintTips();
   }
@@ -150,7 +151,9 @@
       closeMore({ focus: false });
       const twin = el(row.dataset.for);
       if (!twin) return;
-      twin.click();
+      // A mode row goes the tab bar's way (app.js goTwin): the full-screen terminal and a task sheet step aside first.
+      if (/^mode-/.test(row.dataset.for) && typeof window.goTwin === 'function') window.goTwin(row.dataset.for);
+      else twin.click();
       // The workspace menu opens under its chip, which is hidden on a phone: show it above the tab bar instead.
       const menu = el('ws-menu');
       if (row.dataset.for === 'ws-chip' && menu && !menu.classList.contains('hidden')) {

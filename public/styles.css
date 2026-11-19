@@ -406,7 +406,10 @@ header #search-chip {
 }
 /* The rail's dot on a row with something to say (Calendar due, Terminals needing you), at the icon's corner. */
 body.sb-rail .sidebar .nv-dot-on::before { content: ''; top: 4px; right: 6px; box-sizing: border-box; }
-body.sb-rail .sidebar #termbtn.nv-dot-on::before { background: var(--review); }
+/* Terminals: a quiet dot while agents run, amber when one needs you, green when one finished unseen. */
+body.sb-rail .sidebar #termbtn.nv-dot-on::before { background: var(--in-progress); }
+body.sb-rail .sidebar #termbtn[data-alert="blocked"].nv-dot-on::before { background: var(--review); }
+body.sb-rail .sidebar #termbtn[data-alert="done"].nv-dot-on::before { background: var(--done); }
 /* .mode-scoped to beat the shared .cal-bell-n rule further down, which places the bell's badge absolutely. */
 .sidebar .mode .nv-n.nv-badge { position: static; min-width: 18px; height: 18px; line-height: 18px; }
 .sidebar .nv-n.nv-alert { color: var(--review); font-weight: 600; }
@@ -1407,6 +1410,8 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    centred article's box — see the note on .kb-reader-inner above. Only shown
    once there's guaranteed clearance beside a centred 720px column. */
 .kb-toc { display: none; }
+/* Beside the expanded sidebar the column has 232px less room: the panel waits for a wider window. */
+@media (min-width: 1300px) and (max-width: 1419px) { body.sb-open .kb-toc { display: none !important; } }
 @media (min-width: 1300px) {
   .kb-toc {
     display: block;
@@ -1642,10 +1647,16 @@ body.sb-rail { --sb-w: 64px; }
 .sidebar .modes { margin-top: 4px; }
 .nv-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; border-top: 1px solid var(--line); }
 /* The rail: icons only, centred; names, counts and keys move into each button's tooltip (to the right). */
-body.sb-rail .sidebar :is(.nv-lbl, .nv-n, .nv-kbd, .ws-chip-label, .ws-chip-chev, .brand-ault) { display: none; }
+body.sb-rail .sidebar :is(.nv-n, .nv-kbd, .ws-chip-chev, .brand-ault) { display: none; }
+/* Labels leave the screen but stay the buttons' names (touch screens get no tooltips: @media (hover: none)). */
+body.sb-rail .sidebar :is(.nv-lbl, .ws-chip-label) {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 body.sb-rail .sidebar :is(.mode, #ws-chip, #search-btn, .nv-foot > button) { width: 44px; padding: 0; justify-content: center; align-self: center; }
 body.sb-rail .sidebar .brand { padding-left: 0; justify-content: center; }
-body.sb-rail .sidebar .nv-toggle { position: static; order: 99; align-self: center; }
+body.sb-rail .sidebar .nv-toggle { position: relative; top: auto; right: auto; order: 99; align-self: center; }
+/* Hovered or focused, the sidebar rises above the terminal dock (z 45), so the rail's tooltips aren't hidden under it. */
+.sidebar:hover, .sidebar:focus-within { z-index: 46; }
 body.sb-rail .nv-tog-arrow { transform: scaleX(-1); transform-origin: 14.5px 12px; }
 body.sb-rail .sidebar [data-tip]::after { top: 50%; right: auto; left: calc(100% + 10px); transform: translate(-3px, -50%); }
 body.sb-rail .sidebar [data-tip]:hover::after, body.sb-rail .sidebar [data-tip]:focus-visible::after { transform: translate(0, -50%); }
@@ -1745,7 +1756,9 @@ body.fx-solo .sidebar { display: none; }
   /* The phone's top bar (spec §6): "VaultOS · <mode>", then Search and the bell. */
   header { height: auto; min-height: 56px; }
   .mh-brand { display: inline; flex: none; font-family: var(--brand-font); font-weight: 600; font-size: var(--t-lg); color: var(--text); }
-  .mode-title { font-size: var(--t-lg); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .mode-title { flex: 0 1 auto; font-size: var(--t-lg); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* With a chip showing (a search filter, a Pomodoro) the wordmark gives way first, then the mode's name shortens. */
+  header:has(> #search-chip:not(.hidden)) .mh-brand, header:has(> .today-chip:not(.hidden)) .mh-brand { display: none; }
   #search-btn-m { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; padding: 0; }
   header .spacer { order: 2; }
   #search-chip { order: 1; }

@@ -49,9 +49,13 @@ test('countView: what each slot shows, expanded and in the rail', () => {
   assert.deepEqual(SC.countView('calendar', 0), { text: '', dot: false, status: '', badge: false });
   assert.deepEqual(SC.countView('board', 15), { text: '15', dot: false, status: '15 open', badge: false });
   assert.deepEqual(SC.countView('board', 0), { text: '', dot: false, status: '', badge: false });
-  assert.deepEqual(SC.countView('terminals', 2, ''), { text: '2 agents', dot: false, status: '2 agents', badge: false });
-  assert.deepEqual(SC.countView('terminals', 1, ''), { text: '1 agent', dot: false, status: '1 agent', badge: false });
+  // Spec §3: the rail shows a dot while agents run, in the alert colour when one needs you.
+  assert.deepEqual(SC.countView('terminals', 2, ''), { text: '2 agents', dot: true, status: '2 agents', badge: false });
+  assert.deepEqual(SC.countView('terminals', 1, ''), { text: '1 agent', dot: true, status: '1 agent', badge: false });
   assert.deepEqual(SC.countView('terminals', 1, 'blocked'), { text: 'needs you', dot: true, status: '1 needs you', badge: false });
+  // The status counts the agents that need you, not every agent running.
+  assert.deepEqual(SC.countView('terminals', 3, 'blocked', 1), { text: 'needs you', dot: true, status: '1 needs you', badge: false });
+  assert.deepEqual(SC.countView('terminals', 3, 'blocked', 2), { text: 'needs you', dot: true, status: '2 need you', badge: false });
   assert.deepEqual(SC.countView('terminals', 0, ''), { text: '', dot: false, status: '', badge: false });
   assert.deepEqual(SC.countView('nonsense', 3), { text: '', dot: false, status: '', badge: false });
 });
