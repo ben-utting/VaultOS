@@ -134,13 +134,13 @@ function applyMe() {
   for (const el of [$('mode-today'), document.querySelector('#mobile-nav [data-for="mode-today"]'), $('today-sound-row')]) {
     el.classList.toggle('hidden', !today);
   }
-  for (const el of [$('termbtn'), $('mnav-term'), $('term-where-row'), $('term-sound-row')]) el.classList.toggle('hidden', !term);
+  for (const el of [$('termbtn'), document.querySelector('#more-sheet [data-for="termbtn"]'), $('term-where-row'), $('term-sound-row')]) el.classList.toggle('hidden', !term);
   $('d-agent').classList.toggle('hidden', !ME.agent);
-  for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#mobile-nav [data-for="mode-notes"]')]) {
+  for (const el of [$('capture-btn'), $('capture-keys-row'), $('mode-notes'), document.querySelector('#more-sheet [data-for="mode-notes"]')]) {
     el.classList.toggle('hidden', !notesOn());
   }
-  for (const el of [$('mode-automations'), document.querySelector('#mobile-nav [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
-  for (const el of [$('mode-learn'), document.querySelector('#mobile-nav [data-for="mode-learn"]')]) el.classList.toggle('hidden', !learnOn());
+  for (const el of [$('mode-automations'), document.querySelector('#more-sheet [data-for="mode-automations"]')]) el.classList.toggle('hidden', !automationsOn());
+  for (const el of [$('mode-learn'), document.querySelector('#more-sheet [data-for="mode-learn"]')]) el.classList.toggle('hidden', !learnOn());
   for (const el of [$('mode-calendar'), document.querySelector('#mobile-nav [data-for="mode-calendar"]')]) el.classList.toggle('hidden', !calendarOn());
   if (window.Automations) Automations.featureChanged();
   if (window.Calendar) Calendar.featureChanged();
@@ -1300,15 +1300,13 @@ $('mode-learn').addEventListener('click', () => setMode('learn'));
 // listener on #mode-* and #termbtn — workbench.js has some — still runs once),
 // and the active state is read back off those twins rather than tracked twice.
 const MNAV = [...document.querySelectorAll('#mobile-nav button')];
+// More (no twin) is the current tab while the mode is one of its sheet's (spec 2026-11-19 §6).
+const MORE_MODES = ['notes', 'kb', 'learn', 'automations'];
 function syncMobileNav() {
-  for (const b of MNAV) {
-    const twin = $(b.dataset.for);
-    const on = b.dataset.for === 'termbtn' ? twin.getAttribute('aria-pressed') === 'true' : twin.classList.contains('active');
-    b.classList.toggle('active', on);
-    if (b.dataset.for === 'termbtn') { b.dataset.n = twin.dataset.n || ''; b.dataset.alert = twin.dataset.alert || ''; }
-  }
+  for (const b of MNAV) if (b.dataset.for) b.classList.toggle('active', $(b.dataset.for).classList.contains('active'));
+  $('mnav-more').classList.toggle('active', MORE_MODES.includes(STATE.mode));
 }
-for (const b of MNAV) b.addEventListener('click', () => {
+for (const b of MNAV.filter((x) => x.dataset.for)) b.addEventListener('click', () => {
   // A mode tab while the full-screen terminal is up means "take me there", so
   // it minimises the terminal as well (the shells keep running).
   // Same for an open task sheet, which would otherwise sit over the new mode.
@@ -1317,7 +1315,7 @@ for (const b of MNAV) b.addEventListener('click', () => {
   $(b.dataset.for).click();
 });
 new MutationObserver(syncMobileNav).observe($('termbtn'), { attributes: true, attributeFilter: ['aria-pressed', 'data-n', 'data-alert'] });
-for (const id of ['mode-today', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-learn', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
+for (const id of ['mode-today', 'mode-calendar', 'mode-board', 'mode-notes', 'mode-files', 'mode-kb', 'mode-learn', 'mode-automations']) new MutationObserver(syncMobileNav).observe($(id), { attributes: true, attributeFilter: ['class'] });
 
 // ---------- KB sidebar (collections/article list) ----------
 // Closed by default; opens as a hover panel over the reader rather than
@@ -2243,6 +2241,7 @@ function openWsMenu() {
   renderWsMenu();
   const menu = $('ws-menu');
   menu.classList.remove('hidden');
+  menu.style.bottom = ''; menu.style.right = '';   // the phone's More sheet may have placed it at the bottom (sidebar.js)
   const c = $('ws-chip').getBoundingClientRect();
   const r = menu.getBoundingClientRect();
   menu.style.left = Math.max(8, Math.min(c.left, window.innerWidth - r.width - 8)) + 'px';

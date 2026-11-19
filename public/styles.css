@@ -456,7 +456,7 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
   button.refresh-done,
   button.refresh-done .icon { animation: none !important; }
   /* Marks are static: the colour and glyph carry the state, never motion. */
-  .agent-dot[data-agent="working"], #mnav-term[data-alert]::after { animation: none !important; }
+  .agent-dot[data-agent="working"] { animation: none !important; }
   .tm, .tm * { animation: none !important; }
 }
 
@@ -1652,10 +1652,10 @@ body.sb-rail .sidebar [data-tip]:hover::after, body.sb-rail .sidebar [data-tip]:
 /* Fixed things that span the content start at the sidebar's edge. */
 @media (min-width: 701px) { body .term-dock { left: var(--sb-w); } }
 /* A file in its own browser tab (Files → Open in new browser tab): no sidebar at all. */
-body.fx-solo { --sb-w: 0px; }
+body.fx-solo, body.fx-solo.sb-open, body.fx-solo.sb-rail { --sb-w: 0px; }
 body.fx-solo .sidebar { display: none; }
 @media (max-width: 700px) {
-  body { --sb-w: 0px; }
+  body, body.sb-open, body.sb-rail { --sb-w: 0px; }   /* beats the rail's 64px, which is the state below 1280px */
   .sidebar { display: none; }
   .count { display: none; }   /* the running total is repeated on every column head anyway */
 }
@@ -1732,7 +1732,7 @@ body.fx-solo .sidebar { display: none; }
    bar (plus Terminal), which leaves the header a single row: search and the
    ⋮ menu. --mnav-h is the bar's real height, safe-area inset included, and
    every full-height view below subtracts it. */
-.mobile-nav { display: none; }
+.mobile-nav, .mh-brand, #search-btn-m, .more-sheet, .more-scrim { display: none; }
 .kb-back-short { display: none; }
 @media (max-width: 700px) {
   body { --mnav-h: calc(58px + env(safe-area-inset-bottom)); }
@@ -1741,31 +1741,32 @@ body.fx-solo .sidebar { display: none; }
     flex-wrap: nowrap; gap: 8px;
     padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
   }
-  header::after, .modes, .brand, .ws-div { display: none; }
-  header .spacer { order: 2; }   /* pushes the tools right of the icon-only Search button */
-  /* The wordmark is gone, so the chip leads the row; the cap on its label (min(24ch, 38vw)) keeps room for the Search button and the chip. */
-  header button.ws-chip { order: 0; padding: 2px 6px 2px 8px; }
-  #search-btn, #search-chip { order: 1; }
+  /* The phone's top bar (spec §6): "VaultOS · <mode>", then Search and the bell. */
+  header { height: auto; min-height: 56px; }
+  .mh-brand { display: inline; flex: none; font-family: var(--brand-font); font-weight: 600; font-size: var(--t-lg); color: var(--text); }
+  .mode-title { font-size: var(--t-lg); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #search-btn-m { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; padding: 0; }
+  header .spacer { order: 2; }
+  #search-chip { order: 1; }
   /* With a Pomodoro running and a filter on (chip, "Clear") the row was ~70px too wide at 390. "Clear" gives way to
      the chip (its × clears the query; Clear comes back once the query is gone, if folders still narrow the board),
      the gaps close up, and then the chip's query and the workspace name ellipsise, so Refresh and Settings stay. */
   header:has(> .today-chip:not(.hidden)):has(> #search-chip:not(.hidden)) .clear-filters { display: none; }
   header #search-chip { flex: 0 4 auto; min-width: 48px; max-width: 28vw; min-height: 40px; }   /* gives way before the workspace name */
-  header button.ws-chip { flex: 0 1 auto; min-width: 48px; }
-  header button.ws-chip .ws-chip-label { min-width: 0; }
   header:has(> .today-chip:not(.hidden)) { gap: 6px; }
   header:has(> .today-chip:not(.hidden)) .today-chip { padding: 4px 6px; }
   .cf-more { display: none; }   /* "Clear" is enough beside the chip; aria-label keeps the full name */
   .clear-filters { order: 2; padding: 4px 8px; }
   .today-chip { order: 2; padding: 4px 8px; }
   .today-chip .tc-what { max-width: 90px; }
-  #refresh { order: 3; }
-  #setbtn { order: 4; }
-  /* The tab bar has Terminal, and Sign out is in the Settings sheet. */
-  #termbtn, #logout, .setbtn-lbl, #term-where-row { display: none; }
+  #search-btn-m { order: 3; }
+  #cal-bell { order: 3; }
+  #refresh { order: 4; }
+  /* Terminals open from the More sheet on a phone (no "where terminals open" choice to make). */
+  #term-where-row { display: none; }
 
   .mobile-nav {
-    /* One equal column per button showing: Today and Terminal are hidden when they're off. */
+    /* One equal column per tab showing: Today, Calendar, Board, Files and More (Today and Calendar hide when off). */
     display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
     height: var(--mnav-h); padding-bottom: env(safe-area-inset-bottom);
@@ -1780,15 +1781,23 @@ body.fx-solo .sidebar { display: none; }
     -webkit-tap-highlight-color: transparent;
   }
   .mobile-nav .icon { width: 21px; height: 21px; }
-  /* Same "where am I" gold as .mode.active, as a bar over the icon. */
+  /* "Where am I": the current tab's icon and label in --brand (a colour, not a fill). */
   .mobile-nav button.active { color: var(--brand); }
-  /* Running-terminal count, same badge as #termbtn's. */
-  #mnav-term[data-n]:not([data-n=""])::after {
-    content: attr(data-n);
-    position: absolute; top: 6px; left: calc(50% + 6px); min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box;
-    border-radius: var(--radius-full); background: var(--brand); color: var(--on-brand);
-    font-size: var(--t-xs); font-weight: 700; line-height: 15px; text-align: center;
+  /* The More sheet: a bottom sheet over a scrim, above the tab bar. */
+  .more-scrim { display: block; position: fixed; inset: 0; z-index: 55; background: rgba(5, 7, 10, .55); }
+  .more-sheet {
+    position: fixed; left: 0; right: 0; bottom: var(--mnav-h); z-index: 56;
+    display: flex; flex-direction: column; gap: 2px; padding: 12px 12px 14px;
+    background: var(--panel); border: 1px solid var(--line); border-bottom: 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0; box-shadow: var(--shadow-4);
   }
+  .more-row {
+    display: flex; align-items: center; gap: 14px; width: 100%; min-height: 48px; padding: 0 14px; box-sizing: border-box;
+    border: 0; border-radius: var(--radius-lg); background: transparent; color: var(--text);
+    font: inherit; font-size: var(--t-md); text-align: left; cursor: pointer;
+  }
+  .more-row:hover { background: var(--panel-2); }
+  .more-row.more-ws { background: var(--bg); box-shadow: inset 0 0 0 1px var(--line); margin-bottom: 6px; }
   /* The keyboard is up: the bar would only eat the room above it. */
   body.vkb-open .mobile-nav { display: none; }
 
@@ -2368,14 +2377,12 @@ body.term-popout .term-host { position: relative; }
 /* In the sidebar the Terminals row says how many agents are running ("2 agents", "needs you"); its rail dot turns amber. */
 /* An agent is waiting on you (amber) or finished unseen (green) — the dock may
    be minimised, so the count badge takes the colour. */
-#mnav-term[data-alert="blocked"]::after {
-  background: var(--review); color: var(--on-brand); animation: agent-ring 1.6s ease-out infinite;
-}
+
 @keyframes agent-ring {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--review) 70%, transparent); }
   100% { box-shadow: 0 0 0 7px transparent; }
 }
-#mnav-term[data-alert="done"]::after { background: var(--done); color: var(--on-brand); }
+
 .term-slot { flex: 1; min-height: 0; display: flex; }
 .term-area { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); }
 

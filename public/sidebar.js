@@ -112,5 +112,60 @@
     paintTips();
   }
 
-  window.Sidebar = { init, toggle, state: () => S.state, setCount, setAlert };
+  // ---------- Phone: the More sheet (spec §6) ----------
+  // Rows click their twins in the (hidden) sidebar, so every handler and feature switch is the sidebar's own.
+  const sheetOpen = () => el('more-sheet') && !el('more-sheet').classList.contains('hidden');
+  function openMore() {
+    const sheet = el('more-sheet');
+    if (!sheet) return;
+    const chip = el('ws-chip');
+    const wsRow = sheet.querySelector('[data-for="ws-chip"]');
+    if (wsRow && chip) {
+      wsRow.classList.toggle('hidden', chip.classList.contains('hidden'));
+      wsRow.querySelector('.more-ws-name').textContent = (chip.querySelector('.ws-chip-label') || chip).textContent;
+      wsRow.querySelector('.nv-ws-init').textContent = (chip.querySelector('.nv-ws-init') || {}).textContent || '';
+    }
+    sheet.classList.remove('hidden');
+    el('more-scrim').classList.remove('hidden');
+    el('mnav-more').setAttribute('aria-expanded', 'true');
+    const first = [...sheet.querySelectorAll('button')].find((b) => !b.classList.contains('hidden'));
+    if (first) first.focus();
+  }
+  function closeMore({ focus = true } = {}) {
+    if (!sheetOpen()) return;
+    el('more-sheet').classList.add('hidden');
+    el('more-scrim').classList.add('hidden');
+    el('mnav-more').setAttribute('aria-expanded', 'false');
+    if (focus) el('mnav-more').focus();
+  }
+  function wireMore() {
+    const more = el('mnav-more');
+    const sheet = el('more-sheet');
+    if (!more || !sheet) return;
+    more.addEventListener('click', () => (sheetOpen() ? closeMore() : openMore()));
+    el('more-scrim').addEventListener('click', () => closeMore());
+    sheet.addEventListener('click', (e) => {
+      const row = e.target.closest('[data-for]');
+      if (!row) return;
+      closeMore({ focus: false });
+      const twin = el(row.dataset.for);
+      if (!twin) return;
+      twin.click();
+      // The workspace menu opens under its chip, which is hidden on a phone: show it above the tab bar instead.
+      const menu = el('ws-menu');
+      if (row.dataset.for === 'ws-chip' && menu && !menu.classList.contains('hidden')) {
+        Object.assign(menu.style, { left: '8px', right: '8px', top: 'auto', bottom: 'calc(var(--mnav-h, 58px) + 8px)' });
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && sheetOpen()) { e.stopPropagation(); closeMore(); }
+    }, true);
+    const search = el('search-btn-m');
+    if (search) search.addEventListener('click', () => { if (window.SearchPanel) SearchPanel.open({ via: 'button' }); });
+  }
+
+  const initOnce = init;
+  function initAll() { const first = !S.inited; initOnce(); if (first) wireMore(); }
+
+  window.Sidebar = { init: initAll, toggle, state: () => S.state, setCount, setAlert, openMore, closeMore };
 })();
