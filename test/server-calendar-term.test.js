@@ -106,6 +106,7 @@ test('switching Calendar on writes the skill into ~/.claude/skills and ~/.agents
     }
   }
   assert.match(fs.readFileSync(path.join(s.home, '.claude', 'skills', 'vaultos-calendar', 'SKILL.md'), 'utf8'), /vaultos-calendar brief/);
+  assert.match(fs.readFileSync(path.join(s.home, '.claude', 'skills', 'vaultos-calendar', 'SKILL.md'), 'utf8'), /vaultos-calendar clear/);
   const settings = JSON.parse(fs.readFileSync(path.join(s.home, '.claude', 'settings.json'), 'utf8'));
   assert.deepEqual(settings.permissions.allow.filter((r) => r === 'Bash(vaultos-calendar brief:*)'), ['Bash(vaultos-calendar brief:*)']);
 });

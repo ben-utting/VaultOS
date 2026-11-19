@@ -226,3 +226,14 @@ test('show prints links, the focus and the agent', async () => {
   assert.doesNotMatch(plain.out, /Links:|For the agent:/);
   assert.match(plain.out, /\nAgent: default\n/);
 });
+
+test('clear sends the id and date and says what went', async () => {
+  const one = await run(['clear', 'c_7k2m9p4x1q'], { answers: [['clear', 200, { cleared: 'entry', date: '2026-11-20', entry: ENTRY }]] });
+  assert.equal(one.code, 0);
+  assert.deepEqual(one.last.body.args, { id: 'c_7k2m9p4x1q' });
+  assert.equal(one.out, 'Cleared Chase X. It stays in Recently deleted for 30 days; vaultos-calendar restore c_7k2m9p4x1q brings it back.\n');
+  const rep = await run(['clear', 'c_7k2m9p4x1q', '--date', 'today'], { answers: [['clear', 200, { cleared: 'date', date: '2026-11-20', entry: { ...ENTRY, repeat: { every: 'daily' } } }]] });
+  assert.deepEqual(rep.last.body.args, { id: 'c_7k2m9p4x1q', date: 'today' });
+  assert.equal(rep.out, 'Cleared Fri 20 Nov 2026 from Chase X. The rest of the repeat stays.\n');
+  assert.equal((await run(['clear'])).code, 2);
+});

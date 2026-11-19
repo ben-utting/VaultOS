@@ -160,8 +160,18 @@ test('Due item and toast carry the button only when given an agent', () => {
   const a = { label: 'Claude Code', mark: '<svg></svg>' };
   const item = { key: 'c_a@2026-11-18', entryId: 'c_a', date: '2026-11-18', title: 'Chase', pingAt: '2026-11-18T09:00:00Z', start: '09:00', allDay: false, card: null, by: '', missedEarlier: 0 };
   const now = Date.parse('2026-11-18T10:00:00Z');
-  assert.match(CV.dueItemHtml(item, LON, now, a), /data-act="dismiss">Dismiss<\/button><button[^>]+data-act="agent"[^>]+data-entry="c_a" data-date="2026-11-18"/);
+  assert.match(CV.dueItemHtml(item, LON, now, a), /data-act="dismiss">Dismiss<\/button>.*<button[^>]+data-act="agent"[^>]+data-entry="c_a" data-date="2026-11-18"/);
   assert.doesNotMatch(CV.dueItemHtml(item, LON, now), /data-act="agent"/);
-  assert.match(CV.toastHtml(item, LON, now, a), /data-act="snooze10">Snooze 10m<\/button><button[^>]+data-act="agent"/);
+  assert.match(CV.toastHtml(item, LON, now, a), /data-act="snooze10">Snooze 10m<\/button>.*<button[^>]+data-act="agent"/);
   assert.doesNotMatch(CV.toastHtml(item, LON, now), /data-act="agent"/);
+});
+
+// ---------- Clear (card 84) ----------
+test('Due item and toast carry Clear, before the Agent button', () => {
+  const a = { label: 'Claude Code', mark: '<svg></svg>' };
+  const item = { key: 'c_a@2026-11-18', entryId: 'c_a', date: '2026-11-18', title: 'Chase', pingAt: '2026-11-18T09:00:00Z', start: '09:00', allDay: false, card: null, by: '', missedEarlier: 0 };
+  const now = Date.parse('2026-11-18T10:00:00Z');
+  assert.match(CV.dueItemHtml(item, LON, now, a), /data-act="dismiss">Dismiss<\/button><button type="button" class="su-btn su-sm" data-act="clear" data-tip="[^"]+">Clear<\/button><button[^>]+data-act="agent"/);
+  assert.match(CV.dueItemHtml(item, LON, now), /data-act="clear"/);
+  assert.match(CV.toastHtml(item, LON, now, a), /data-act="snooze10">Snooze 10m<\/button><button type="button" class="su-btn su-sm" data-act="clear"[^>]*>Clear<\/button><button[^>]+data-act="agent"/);
 });

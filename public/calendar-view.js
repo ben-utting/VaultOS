@@ -167,6 +167,8 @@
       + ` data-tip="${esc(`Open ${label} on this reminder. It reads the note and the card, then asks you what to do.`)}"`
       + ` aria-label="${esc(`Open ${label} on this reminder`)}">${agent.mark || ''}${compact ? '' : '<span>Agent</span>'}</button>`;
   }
+  // Clear (card 84): takes this date off the calendar (a one-off to Recently deleted), with an Undo toast.
+  const CLEAR_BTN = '<button type="button" class="su-btn su-sm" data-act="clear" data-tip="Take it off the calendar. A one-off goes to Recently deleted; a repeat loses just this date.">Clear</button>';
   function dueItemHtml(item, tz = 'UTC', now = Date.now(), agent = null) {
     const meta = [`<span class="cal-due-when">${esc(dueWhen(item.pingAt, tz, now))}</span>`];
     if (item.missedEarlier) meta.push(`<span class="cal-due-missed">+${esc(item.missedEarlier)} missed earlier</span>`);
@@ -181,6 +183,7 @@
       + '<button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
       + '<button type="button" class="su-btn su-sm" data-act="snooze" aria-haspopup="menu" aria-expanded="false">Snooze ▾</button>'
       + '<button type="button" class="su-btn su-sm" data-act="dismiss">Dismiss</button>'
+      + CLEAR_BTN
       + agentButtonHtml(agent, { entryId: item.entryId, date: item.date })
       + '</div></li>';
   }
@@ -191,6 +194,7 @@
       + `<div class="cal-toast-text"><strong>${esc(item.title)}</strong><span>${esc(sub)}</span></div>`
       + '<div class="cal-toast-acts"><button type="button" class="su-btn su-sm primary" data-act="done">Done</button>'
       + '<button type="button" class="su-btn su-sm" data-act="snooze10">Snooze 10m</button>'
+      + CLEAR_BTN
       + agentButtonHtml(agent, { entryId: item.entryId, date: item.date })
       + '<button type="button" class="cal-toast-x" data-act="close" aria-label="Close (it stays in the Due list)">✕</button></div></div>';
   }

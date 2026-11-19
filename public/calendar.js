@@ -245,6 +245,7 @@
     $('ce-meta').textContent = metaLine(e);
     $('ce-delete').classList.toggle('hidden', !e);
     $('ce-skip').classList.toggle('hidden', !(e && e.repeat && date));
+    $('ce-clear').classList.toggle('hidden', !(e && !e.repeat));
     $('ce-save').textContent = e ? 'Save' : 'Add';
     $('ce-confirm').classList.add('hidden');
     $('ce-actions').classList.remove('hidden');
@@ -373,12 +374,12 @@
     $('ce-actions').classList.remove('hidden');
     $('ce-delete').focus();
   }
-  async function skipDate() {
-    const r = await call(`/api/calendar/entry/${encodeURIComponent(P.id)}/skip`, { method: 'POST', body: JSON.stringify({ date: P.date }) });
-    if (!r.ok) { $('ce-err').textContent = r.data.error || 'Not skipped'; return; }
+  // Clear this date (a repeat) or Clear (a one-off): CalendarClear takes it off the calendar with an Undo toast.
+  function skipDate() {
+    const id = P.id;
+    const date = P.date || (P.entry && P.entry.date);
     closePanel();
-    toast(`Skipped ${CV.dMon(P.date || r.data.entry.date)}`, { tone: 'info' });
-    await afterWrite();
+    CalendarClear.clear(id, date);
   }
   async function deleteAll() {
     const id = P.id;
@@ -479,6 +480,7 @@
   $('ce-del-one').addEventListener('click', skipDate);
   $('ce-del-all').addEventListener('click', deleteAll);
   $('ce-skip').addEventListener('click', skipDate);
+  $('ce-clear').addEventListener('click', skipDate);
   $('ce-link-add').addEventListener('click', () => {
     const list = linkValues();
     if (list.length >= LINKS_MAX) return;

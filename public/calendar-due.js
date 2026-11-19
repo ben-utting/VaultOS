@@ -268,6 +268,7 @@
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'agent') { closePanel({ focus: false }); CalendarAgent.launch(b.dataset.entry, b.dataset.date); return; }
+    if (b.dataset.act === 'clear') { CalendarClear.clear(item.dataset.entry, key.split('@')[1]); return; }
     if (b.dataset.act === 'snooze') snoozeMenu(b);
     else ack(key, b.dataset.act === 'done' ? 'done' : 'dismiss');
   });
@@ -280,6 +281,7 @@
     if (!key) return;
     if (b.dataset.act === 'close') dropToast(key);   // it stays in the Due list
     else if (b.dataset.act === 'agent') { dropToast(key); CalendarAgent.launch(b.dataset.entry, b.dataset.date); }   // stays in the Due list too
+    else if (b.dataset.act === 'clear') { dropToast(key); CalendarClear.clear(t.dataset.entry, key.split('@')[1]); }
     else if (b.dataset.act === 'done') ack(key, 'done');
     else if (b.dataset.act === 'snooze10') ack(key, 'snooze', '10m');
   });

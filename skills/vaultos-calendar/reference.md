@@ -14,6 +14,7 @@ vaultos-calendar <command> [--json]
   add --file <entry.json>            (--file - reads stdin)
   edit <id> [any add flag] [--no-links] | --file <changes.json>   changes the whole series
   skip <id> --date D                 drop one date from a repeat
+  clear <id> [--date D]              off the calendar: a one-off to Recently deleted, a repeat loses that date
   delete <id>                        to Recently deleted (30 days)
   deleted                            what's in Recently deleted
   restore <id>
@@ -26,6 +27,7 @@ vaultos-calendar <command> [--json]
 - `--card` takes a card's folder or its `task.md` path, relative to the vault. `--card none` on `edit` removes the link.
 - `edit` sends only the flags you give. `--time` on an all-day entry makes it a timed one. `--until` on its own keeps the entry's repeat and changes its end.
 - `--link` can be given up to 10 times, one link each. On `edit`, any `--link` replaces the whole list and `--no-links` clears it. `--brief ""` clears the focus. `--agent default` goes back to the default agent.
+- `clear` takes one occurrence off the calendar. A one-off goes to Recently deleted (it counts as a delete in the limits below); a repeat needs `--date` and loses only that date. `done` only stops the ping.
 - `done`, `dismiss` and `snooze` take a due key (`c_7k2m9p4x1q@2026-11-20`) or an entry id. An id means that entry's item in the Due list.
 - `--json` prints the server's answer as it came.
 - Exit codes: 0 done, 1 VaultOS refused (the reason prints, with one line per field), 2 bad usage or not in a VaultOS terminal, 3 VaultOS isn't answering.

@@ -602,7 +602,8 @@
     <div class="ab-foot">
       <div id="ce-actions" class="ce-actions">
         <button type="button" id="ce-delete" class="su-btn ab-danger hidden">Delete</button>
-        <button type="button" id="ce-skip" class="su-btn hidden">Skip this date</button>
+        <button type="button" id="ce-skip" class="su-btn hidden" data-tip="Take this date off the calendar. The rest of the repeat stays.">Clear this date</button>
+        <button type="button" id="ce-clear" class="su-btn hidden" data-tip="Take it off the calendar. It stays in Recently deleted for 30 days.">Clear</button>
         <span class="su-gap"></span>
         <button type="button" id="ce-agent-btn" class="su-btn cal-agent hidden"></button>
         <button type="button" id="ce-cancel" class="su-btn">Cancel</button>
@@ -820,6 +821,7 @@
   <script src="calendar-core.js"></script>
   <script src="calendar-view.js"></script>
   <script src="calendar-agent.js"></script>
+  <script src="calendar-clear.js"></script>
   <script src="agent-form.js"></script>
   <script src="more-menu.js"></script>
   <script src="connectors.js"></script>

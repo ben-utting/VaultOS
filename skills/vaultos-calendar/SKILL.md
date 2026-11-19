@@ -33,7 +33,7 @@ You work through the `vaultos-calendar` command. It only works in a VaultOS term
 
 **Leave `.vaultos/calendar.json` alone.** Change the calendar only through the command. If the command says the calendar is switched off, tell the person to switch it on in VaultOS Settings → Features, and stop there.
 
-**Close what the person has dealt with.** If they say they've done something on the Due list, run `vaultos-calendar done <id>`. They can also click Done in VaultOS.
+**Close what the person has dealt with.** If they say they've done something on the Due list, run `vaultos-calendar done <id>`: that stops the ping and leaves it on the calendar. If they want it off the calendar too, run `vaultos-calendar clear <id>` (add `--date D` for one date of a repeat). A cleared one-off stays in Recently deleted for 30 days. They can also click Done or Clear in VaultOS.
 
 ## Planning a week, or "I'm overwhelmed"
 

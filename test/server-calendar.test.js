@@ -412,3 +412,50 @@ test('the agents list for the entry panel', { timeout: 30000 }, async (t) => {
   assert.deepEqual(r.body.agents.map((a) => a.id), CC.AGENT_IDS);
   assert.equal(r.body.agents[1].label, 'Cursor CLI');
 });
+
+// ---------- Clear (card 84): take one occurrence off the calendar ----------
+test('clear: a one-off goes to Recently deleted and can be restored', async (t) => {
+  const s = await ready(t);
+  s.seed([stored('c_aaaaaaaaaa', { start: '00:00', created: { at: daysAgoIso(2), by: ME } })]);
+  assert.equal((await s.person('GET', '/api/calendar/due')).body.count, 1);
+  const r = await s.person('POST', '/api/calendar/entry/c_aaaaaaaaaa/clear', { date: today() });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.cleared, 'entry');
+  assert.equal(r.body.entry.id, 'c_aaaaaaaaaa');
+  assert.equal((await s.person('GET', '/api/calendar/entry/c_aaaaaaaaaa')).status, 404);
+  assert.equal((await s.person('GET', '/api/calendar/due')).body.count, 0);
+  assert.deepEqual((await s.person('GET', '/api/calendar/deleted')).body.entries.map((e) => e.id), ['c_aaaaaaaaaa']);
+  assert.equal((await s.person('POST', '/api/calendar/deleted/c_aaaaaaaaaa/restore')).status, 200);
+  assert.equal((await s.person('GET', '/api/calendar/entry/c_aaaaaaaaaa')).status, 200);
+  const noDate = await s.person('POST', '/api/calendar/entry/c_aaaaaaaaaa/clear', {});
+  assert.deepEqual([noDate.status, noDate.body.cleared], [200, 'entry']);
+});
+
+test('clear: a repeat loses only that date, and the skip can be undone', async (t) => {
+  const s = await ready(t);
+  s.seed([stored('c_aaaaaaaaaa', { start: '00:00', repeat: { every: 'daily' }, created: { at: daysAgoIso(2), by: ME } })]);
+  const r = await s.person('POST', '/api/calendar/entry/c_aaaaaaaaaa/clear', { date: today() });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.cleared, 'date');
+  assert.deepEqual(r.body.entry.skip, [today()]);
+  const days = (await s.person('GET', '/api/calendar')).body.occurrences.filter((o) => o.entryId === 'c_aaaaaaaaaa').map((o) => o.date);
+  assert.ok(!days.includes(today()));
+  assert.ok(days.includes(CC.addDays(today(), 1)));
+  assert.equal((await s.person('GET', '/api/calendar/due')).body.count, 0);
+  const undo = await s.person('PUT', '/api/calendar/entry/c_aaaaaaaaaa', { skip: [] });
+  assert.equal(undo.status, 200);
+  assert.ok((await s.person('GET', '/api/calendar')).body.occurrences.some((o) => o.entryId === 'c_aaaaaaaaaa' && o.date === today()));
+});
+
+test('clear: refusals', async (t) => {
+  const s = await ready(t);
+  s.seed([stored('c_aaaaaaaaaa', { repeat: { every: 'weekly', days: [CC.weekday(today())] } }), stored('c_bbbbbbbbbb')]);
+  const off = await s.person('POST', '/api/calendar/entry/c_aaaaaaaaaa/clear', { date: CC.addDays(today(), 1) });
+  assert.deepEqual([off.status, off.body.error], [400, `c_aaaaaaaaaa isn't on ${CC.addDays(today(), 1)}`]);
+  const none = await s.person('POST', '/api/calendar/entry/c_aaaaaaaaaa/clear', {});
+  assert.deepEqual([none.status, none.body.error], [400, 'Say which date to clear from this repeat']);
+  const junk = await s.person('POST', '/api/calendar/entry/c_bbbbbbbbbb/clear', { date: 'soon' });
+  assert.deepEqual([junk.status, junk.body.error], [400, 'Use YYYY-MM-DD (for example 2026-11-20)']);
+  assert.equal((await s.person('POST', '/api/calendar/entry/c_zzzzzzzzzz/clear', { date: today() })).status, 404);
+  assert.equal((await call(s.base, 'POST', '/api/calendar/entry/c_bbbbbbbbbb/clear', { body: { date: today() } })).status, 401);
+});

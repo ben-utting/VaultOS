@@ -158,3 +158,24 @@ test('brief resolves today and tomorrow, and says which date', async (t) => {
   const allDay = (await api.add({ entry: one({ title: 'Bins', date: 'today', allDay: true, start: null }) }, 'Claude Code')).body.entry;
   assert.equal((await api.brief({ id: allDay.id, date: 'today' })).body.when.text, 'Due Wed 18 Nov 2026 · all day');
 });
+
+test('clear: a one-off counts as a delete and is tagged; a repeat clears the date given', async (t) => {
+  const { api } = setup(t);
+  const once = (await api.add({ entry: one({ title: 'Once' }) }, 'Claude Code')).body.entry;
+  const r = await api.clear({ id: once.id }, 'Claude Code');
+  assert.deepEqual([r.status, r.body.cleared], [200, 'entry']);
+  assert.deepEqual((await api.deleted()).body.entries[0].deletedBy, { kind: 'agent', agent: 'Claude Code' });
+  const rep = (await api.add({ entry: one({ title: 'Daily', date: 'today', repeat: { every: 'daily' } }) }, 'Claude Code')).body.entry;
+  const d = await api.clear({ id: rep.id, date: 'tomorrow' }, 'Claude Code');
+  assert.deepEqual([d.status, d.body.cleared, d.body.date], [200, 'date', '2026-11-19']);
+  assert.deepEqual(d.body.entry.skip, ['2026-11-19']);
+});
+test('clear: one-offs share the agents\' delete limit', async (t) => {
+  const { api } = setup(t);
+  for (let i = 0; i < DELETES_PER_HOUR; i++) {
+    const e = (await api.add({ entry: one({ title: `E${i}` }) }, 'Claude Code')).body.entry;
+    assert.equal((await api.clear({ id: e.id }, 'Claude Code')).status, 200);
+  }
+  const e = (await api.add({ entry: one({ title: 'One more' }) }, 'Claude Code')).body.entry;
+  assert.equal((await api.clear({ id: e.id }, 'Claude Code')).status, 429);
+});
