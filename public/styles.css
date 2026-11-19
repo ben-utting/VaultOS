@@ -4299,19 +4299,26 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   position: fixed; left: 50%; bottom: 20px; z-index: 46; display: grid; gap: 8px; width: min(520px, calc(100vw - 32px));
   transform: translateX(-50%); pointer-events: none;
 }
+/* Two rows: the bell, the title and its time, close; then the buttons under the text. The title keeps the toast's
+   whole width and wraps at words, so a long name (up to 120 characters) reads as two or three lines, not a column. */
 .cal-toast {
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; pointer-events: auto;
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: 0 12px 32px rgba(0,0,0,.45);
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; column-gap: 12px; row-gap: 10px;
+  padding: 12px 10px 12px 14px; pointer-events: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
   animation: fade-in var(--dur-short) var(--ease-out);
 }
-.cal-toast-bell { display: grid; place-items: center; width: 32px; height: 32px; flex: none; color: var(--brand); background: var(--tag-bg); border-radius: var(--radius-full); }
-.cal-toast-text { display: grid; gap: 2px; flex: 1; min-width: 0; }
-.cal-toast-text strong { overflow-wrap: anywhere; }
+.cal-toast-bell { display: grid; place-items: center; width: 32px; height: 32px; margin-top: 1px; color: var(--brand); background: var(--tag-bg); border-radius: var(--radius-full); }
+.cal-toast-text { display: grid; gap: 3px; min-width: 0; padding-top: 1px; }
+.cal-toast-text strong { line-height: 1.35; overflow-wrap: break-word; text-wrap: pretty; }
 .cal-toast-text span { font-size: var(--t-xs); color: var(--muted); }
-.cal-toast-acts { display: flex; align-items: center; gap: 6px; flex: none; }
-.cal-toast-x { padding: 4px 6px; font: inherit; color: var(--muted); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer; }
-.cal-toast-x:hover { color: var(--text); }
-.cal-toast-more { justify-content: space-between; font-size: var(--t-sm); color: var(--muted); }
+.cal-toast-acts { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cal-toast-acts .su-btn.primary { min-width: 76px; }
+.cal-toast-x {
+  grid-column: 3; grid-row: 1; display: grid; place-items: center; width: 28px; height: 28px; margin-top: -2px; padding: 0;
+  color: var(--muted); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer;
+}
+.cal-toast-x:hover { color: var(--text); background: var(--panel-2); }
+.cal-toast-more { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-sm); color: var(--muted); }
 /* The Agent button (calendar-agent.js): the agent's own mark, then the word. The compact one (Coming up) is the mark
    alone, a quiet square that lights up on hover like the other ghost buttons. */
 .cal-agent { display: inline-flex; align-items: center; gap: 6px; }
@@ -4335,8 +4342,15 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
     border-radius: var(--radius-xl) var(--radius-xl) 0 0; padding-bottom: 16px;
   }
   .cal-toasts { bottom: calc(var(--mnav-h, 58px) + 10px); }
-  .cal-toast { flex-wrap: wrap; }
-  .cal-toast-acts { width: 100%; justify-content: flex-end; }
+  /* The buttons take the full width under the bell and share it; 36 px tall for a thumb. */
+  .cal-toast-acts { grid-column: 1 / -1; }
+  .cal-toast-acts .su-btn, .cal-toast-acts .su-btn.primary { flex: 1 1 auto; min-width: 0; min-height: 36px; padding-inline: 6px; }
+  .cal-toast-x { width: 36px; height: 36px; margin: -6px -4px 0 0; }
+}
+
+@media (max-width: 359px) {
+  /* Too narrow for one row of four: two by two, rather than Agent alone on a second row. */
+  .cal-toast-acts { display: grid; grid-template-columns: 1fr 1fr; }
 }
 
 /* ---------- Today: Coming up (today.js, the calendar's card) ----------
