@@ -1,0 +1,49 @@
+'use strict';
+
+// ========================================================================
+// SidebarCore — the sidebar's pure decisions (spec 2026-11-19 §5): which
+// state it starts in, reading the saved choice, the phone breakpoint, when
+// Ctrl+B may toggle it, and tooltip text (window.SidebarCore; also a Node
+// module for the tests). No DOM writes, no storage writes, no clock.
+// ========================================================================
+
+(function (root, f) {
+  if (typeof module === 'object' && module.exports) module.exports = f();
+  else root.SidebarCore = f();
+})(typeof self !== 'undefined' ? self : this, function () {
+  const STORE_KEY = 'vaultboard.sidebar';
+  const OPEN_MIN = 1280;   // expanded by default from this window width
+  const PHONE_MAX = 700;   // the phone layout (tab bar, no sidebar) at and below this width
+  const STATES = ['open', 'rail'];
+
+  // The saved choice, or null when there is none, it's not one of ours, or the storage refuses to be read.
+  function readStored(storage) {
+    try {
+      const v = storage ? storage.getItem(STORE_KEY) : null;
+      return STATES.includes(v) ? v : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function initialState(width, stored) {
+    if (STATES.includes(stored)) return stored;
+    return width >= OPEN_MIN ? 'open' : 'rail';
+  }
+
+  const isPhone = (width) => width <= PHONE_MAX;
+
+  // Ctrl+B toggles the sidebar unless the person is typing or working in a terminal (where it's a shell key).
+  const TYPING = new Set(['INPUT', 'TEXTAREA', 'SELECT']);
+  function shortcutAllowed(target) {
+    if (!target) return true;
+    if (TYPING.has(String(target.tagName || '').toUpperCase())) return false;
+    if (target.isContentEditable) return false;
+    if (typeof target.closest === 'function' && target.closest('.xterm, #term-area')) return false;
+    return true;
+  }
+
+  const tipText = (name, status) => (status ? `${name} · ${status}` : String(name));
+
+  return { STORE_KEY, OPEN_MIN, PHONE_MAX, readStored, initialState, isPhone, shortcutAllowed, tipText };
+});
