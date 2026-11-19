@@ -105,11 +105,16 @@ test('switching Calendar on writes the skill into ~/.claude/skills and ~/.agents
       assert.equal(fs.readFileSync(dest, 'utf8'), fs.readFileSync(path.join(SKILL_SRC, f), 'utf8'));
     }
   }
+  assert.match(fs.readFileSync(path.join(s.home, '.claude', 'skills', 'vaultos-calendar', 'SKILL.md'), 'utf8'), /vaultos-calendar brief/);
+  const settings = JSON.parse(fs.readFileSync(path.join(s.home, '.claude', 'settings.json'), 'utf8'));
+  assert.deepEqual(settings.permissions.allow.filter((r) => r === 'Bash(vaultos-calendar brief:*)'), ['Bash(vaultos-calendar brief:*)']);
 });
 
 test('with Calendar off, or terminals not allowed, nothing is written', { timeout: 30000 }, async (t) => {
   const off = await ready(t, { calendar: false });
   assert.equal(fs.existsSync(path.join(off.home, '.claude', 'skills', 'vaultos-calendar')), false);
+  const offSettings = path.join(off.home, '.claude', 'settings.json');
+  assert.doesNotMatch(fs.existsSync(offSettings) ? fs.readFileSync(offSettings, 'utf8') : '', /vaultos-calendar brief/);
   const noTerm = await ready(t, { env: { TERMINAL: '0' } });
   assert.equal(fs.existsSync(path.join(noTerm.home, '.claude', 'skills', 'vaultos-calendar')), false);
   assert.equal(fs.existsSync(path.join(noTerm.home, '.agents', 'skills', 'vaultos-calendar')), false);

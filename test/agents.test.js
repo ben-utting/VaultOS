@@ -343,3 +343,35 @@ test('kickoffPrompt takes another base prompt: Learn\'s, with the same /i-have-a
   assert.equal(A.kickoffPrompt(A.PROFILES.claude, home, A.LEARN_KICKOFF), `/i-have-adhd ${A.LEARN_KICKOFF}`);
   assert.equal(A.kickoffPrompt(A.PROFILES.claude, home), `/i-have-adhd ${A.KICKOFF_PROMPT}`, 'the default base is unchanged');
 });
+
+// ---------- addClaudeAllow (calendar Agent button, spec 2026-11-19 §6) ----------
+const RULE = 'Bash(vaultos-calendar brief:*)';
+const allowHome = (t) => { const h = fs.mkdtempSync(path.join(os.tmpdir(), 'allow-')); t.after(() => fs.rmSync(h, { recursive: true, force: true })); return h; };
+test('addClaudeAllow creates settings.json with the rule', async (t) => {
+  const home = allowHome(t);
+  assert.equal(await A.addClaudeAllow(home, RULE), true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, '.claude', 'settings.json'), 'utf8')), { permissions: { allow: [RULE] } });
+});
+test('addClaudeAllow keeps everything else and adds the rule once', async (t) => {
+  const home = allowHome(t);
+  const file = path.join(home, '.claude', 'settings.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ hooks: { Stop: [{ hooks: [] }] }, permissions: { allow: ['Read'], deny: ['Bash(rm:*)'] }, model: 'x' }));
+  assert.equal(await A.addClaudeAllow(home, RULE), true);
+  const once = fs.readFileSync(file, 'utf8');
+  assert.deepEqual(JSON.parse(once), { hooks: { Stop: [{ hooks: [] }] }, permissions: { allow: ['Read', RULE], deny: ['Bash(rm:*)'] }, model: 'x' });
+  assert.equal(await A.addClaudeAllow(home, RULE), false);
+  assert.equal(fs.readFileSync(file, 'utf8'), once);
+});
+test('addClaudeAllow leaves an odd settings.json alone and says why', async (t) => {
+  for (const text of ['{ not json', '[]', '{"permissions": []}', '{"permissions": {"allow": "Read"}}']) {
+    const home = allowHome(t);
+    const file = path.join(home, '.claude', 'settings.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, text);
+    const logs = [];
+    assert.equal(await A.addClaudeAllow(home, RULE, { log: (m) => logs.push(m) }), false, text);
+    assert.equal(fs.readFileSync(file, 'utf8'), text);
+    assert.equal(logs.length, 1, text);
+  }
+});
