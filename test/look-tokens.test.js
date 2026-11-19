@@ -238,8 +238,6 @@ test('only the mode pill and primary buttons fill with gold', () => {
   // Written down from the file as it stood. The filled surfaces below are the identity (--brand) or an
   // action (--accent): a mode pill, a primary button, or a small badge, dot or rule that is gold on purpose.
   const IDENTITY_AND_ACTION = [
-    '.mode.active',                                    // the active mode pill: the one "you are here" in the shell
-    '.mobile-nav button.active::before',               // the same pill on the phone's bottom bar
     '.login-card button', '.su-btn.primary', '.td-btn.primary',                  // primary buttons
     '.fx-sheet-save:not(:disabled)', '.sg-note-warn .sg-note-acts button:first-child:not(:disabled)',
     '.tw-compose-btns .tw-compose-send',

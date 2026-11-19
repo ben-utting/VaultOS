@@ -43,48 +43,42 @@
   </div>
 
   <div id="app" class="hidden">
-    <header>
-      <div class="brand">Vault<span class="brand-os">OS</span></div>
-      <!-- Which workspace Board, Knowledge Base and Today's Next are showing, and the way to change it. Always here,
-           dimmed on Files (it covers the whole vault), so the header is the same shape in every mode. -->
-      <span class="ws-div" aria-hidden="true"></span>
-      <button type="button" id="ws-chip" class="ghost ws-chip hidden" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span class="ws-chip-label"></span><svg class="icon ws-chip-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
-      <nav class="modes">
-        <button id="mode-today" class="mode active" data-mode="today">Today</button>
-        <button id="mode-calendar" class="mode hidden" data-mode="calendar">Calendar</button>
-        <button id="mode-board" class="mode" data-mode="board">Board</button>
-        <button id="mode-notes" class="mode hidden" data-mode="notes">Notes</button>
-        <button id="mode-files" class="mode" data-mode="files">Files</button>
-        <button id="mode-kb" class="mode" data-mode="kb">Knowledge&nbsp;Base</button>
-        <!-- Learn (learn.js): shown while Settings → Features → Learn mode is on. -->
-        <button id="mode-learn" class="mode hidden" data-mode="learn">Learn</button>
-        <!-- Automations (automations.js): shown while Settings → Features → Automations is on; the dot shows while a run is going. -->
-        <button id="mode-automations" class="mode hidden" data-mode="automations">Automations<span class="mode-dot hidden" aria-hidden="true"></span></button>
+    <!-- The sidebar (sidebar.js, spec 2026-11-19): the workspace, Search, the modes and the global tools. 232px, or a
+         64px icon rail (Ctrl+B, remembered per device). Not shown at ≤700px, where the tab bar and its More sheet take over. -->
+    <aside id="sidebar" class="sidebar" aria-label="VaultOS">
+      <div class="brand"><span>V</span><span class="brand-ault">ault</span><span class="brand-os">OS</span></div>
+      <button type="button" id="sb-toggle" class="ghost nv-toggle" aria-controls="sidebar" aria-expanded="true" aria-label="Hide sidebar" data-tip="Hide sidebar · Ctrl+B"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path class="nv-tog-arrow" d="M16 15l-3-3 3-3"/></svg></button>
+      <button type="button" id="ws-chip" class="ghost ws-chip hidden" aria-haspopup="menu" aria-expanded="false" aria-controls="ws-menu"><span class="nv-ws-init" aria-hidden="true"></span><span class="ws-chip-label"></span><svg class="icon ws-chip-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button type="button" id="search-btn" class="ghost" aria-label="Search (Ctrl+F)" aria-haspopup="dialog"><svg class="icon sb-lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><clipPath id="sb-lens-clip"><circle cx="11" cy="11" r="6"/></clipPath><linearGradient id="sb-glint-grad" class="sb-glint-grad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-opacity="0"/><stop offset=".5" stop-opacity="1"/><stop offset="1" stop-opacity="0"/></linearGradient></defs><g clip-path="url(#sb-lens-clip)"><g transform="rotate(30 11 11)"><rect class="sb-glint" x="0" y="0" width="6" height="22" fill="url(#sb-glint-grad)" stroke="none"/></g></g><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg><span class="nv-lbl">Search</span><span class="nv-kbd kbd" id="search-kbd">Ctrl F</span></button>
+      <nav class="modes" aria-label="Modes">
+        <button id="mode-today" class="mode active" data-mode="today"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><span class="nv-lbl">Today</span><span class="nv-n"></span></button>
+        <button id="mode-calendar" class="mode hidden" data-mode="calendar"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nv-lbl">Calendar</span><span class="nv-n"></span></button>
+        <button id="mode-board" class="mode" data-mode="board"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/></svg><span class="nv-lbl">Board</span><span class="nv-n"></span></button>
+        <button id="mode-notes" class="mode hidden" data-mode="notes"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4M2 10h4M2 14h4M2 18h4"/><path d="M18.4 2.6a2.17 2.17 0 0 1 3 3L16 11l-4 1 1-4Z"/></svg><span class="nv-lbl">Notes</span><span class="nv-n"></span></button>
+        <button id="mode-files" class="mode" data-mode="files"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="nv-lbl">Files</span><span class="nv-n"></span></button>
+        <button id="mode-kb" class="mode" data-mode="kb"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span class="nv-lbl">Knowledge Base</span><span class="nv-n"></span></button>
+        <button id="mode-learn" class="mode hidden" data-mode="learn"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg><span class="nv-lbl">Learn</span><span class="nv-n"></span></button>
+        <button id="mode-automations" class="mode hidden" data-mode="automations"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg><span class="nv-lbl">Automations</span><span class="nv-n"></span><span class="mode-dot hidden" aria-hidden="true"></span></button>
       </nav>
-      <!-- Opens the search panel (search-panel.js), in every mode, beside the last mode tab. Ctrl+F / Ctrl+K open the same
-           panel and play the button's animation (styles.css, "Search button"): the lens swings, and .sb-glint, clipped to
-           the lens, is the gold streak. The chip beside it names the filter now narrowing the current mode: its text
-           reopens the panel with it, its × clears it. -->
-      <button type="button" id="search-btn" class="ghost" aria-label="Search (Ctrl+F)" title="Search (Ctrl+F)" aria-haspopup="dialog"><svg class="icon sb-lens" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><defs><clipPath id="sb-lens-clip"><circle cx="11" cy="11" r="6"/></clipPath><linearGradient id="sb-glint-grad" class="sb-glint-grad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-opacity="0"/><stop offset=".5" stop-opacity="1"/><stop offset="1" stop-opacity="0"/></linearGradient></defs><g clip-path="url(#sb-lens-clip)"><g transform="rotate(30 11 11)"><rect class="sb-glint" x="0" y="0" width="6" height="22" fill="url(#sb-glint-grad)" stroke="none"/></g></g><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button>
-      <span id="search-chip" class="search-chip hidden"><button type="button" class="sc-text" title="Search for this again"></button><button type="button" class="sc-x" aria-label="Clear filter">×</button></span>
-      <!-- New thought (capture.js): shown at every width while Notes is on, so the way to write something down is always in sight. -->
-      <button type="button" id="capture-btn" class="ghost hidden" aria-label="New thought" title="New thought (Ctrl+J)" aria-haspopup="dialog" aria-controls="cp-box"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-      <div class="spacer"></div>
+      <div class="nv-foot">
+        <button type="button" id="capture-btn" class="ghost hidden" aria-label="New thought" aria-haspopup="dialog" aria-controls="cp-box"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><span class="nv-lbl">New thought</span><span class="nv-kbd kbd" id="capture-kbd">Ctrl J</span></button>
+        <button id="termbtn" class="ghost" aria-label="Terminals" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span class="nv-lbl">Terminals</span><span class="nv-n"></span></button>
+        <button id="setbtn" class="ghost" aria-label="Settings" aria-haspopup="dialog" aria-controls="setsheet"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="setbtn-lbl nv-lbl">Settings</span><span id="set-dot" class="set-dot hidden" aria-hidden="true"></span></button>
+      </div>
+    </aside>
+    <!-- The top bar: only what the current mode needs, on one row. -->
+    <header>
+      <h1 id="mode-title" class="mode-title">Today</h1>
       <span id="count" class="count"></span>
+      <span id="search-chip" class="search-chip hidden"><button type="button" class="sc-text" title="Search for this again"></button><button type="button" class="sc-x" aria-label="Clear filter">×</button></span>
+      <div class="spacer"></div>
       <!-- The Pomodoro's time left and target, in every mode while a session runs or is paused (today.js). -->
       <button type="button" id="today-chip" class="today-chip hidden"><span class="tc-time"></span><span class="tc-what"> · <span class="tc-label"></span></span></button>
-      <!-- Appears only when something is narrowing the board. Three filters can stack
-           (search text, folder checkboxes, batch chip) and clearing one used to leave the
-           others on with nothing on screen saying so — this is the one way out. -->
+      <!-- Appears only when something is narrowing the board: the one way out of every filter at once. -->
       <button id="clear-filters" class="clear-filters hidden" type="button" title="Show every task again" aria-label="Clear all filters">Clear<span class="cf-more"> all filters</span></button>
-      <!-- Everything occasional (folder filter, columns, appearance) lives in the Settings sheet;
-           Refresh is used too often to bury there. The workspace has its chip, by the wordmark. -->
       <!-- The calendar's Due bell (calendar-due.js): shown while Calendar is on; the badge is the number due. -->
       <button type="button" id="cal-bell" class="ghost cal-bell hidden" aria-label="Due reminders" aria-haspopup="dialog" aria-expanded="false" aria-controls="cal-due"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span id="cal-bell-n" class="cal-bell-n hidden" aria-hidden="true"></span></button>
       <button type="button" id="refresh" class="ghost" title="Refresh: reloads VaultOS, picking up app updates (the board also rescans itself every few seconds)" aria-label="Refresh"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
-      <button id="termbtn" class="ghost" title="Terminal (Ctrl+`)" aria-label="Terminal" aria-pressed="false"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></button>
-      <button id="setbtn" class="ghost" title="Settings" aria-label="Settings" aria-haspopup="dialog" aria-controls="setsheet"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span class="setbtn-lbl">Settings</span><span id="set-dot" class="set-dot hidden" aria-hidden="true"></span></button>
-      <button id="logout" class="ghost">Sign out</button>
     </header>
     <!-- The chip's menu sits outside the header: the header is its own stacking context (z-index 20), which would
          put the menu under the task drawer's scrim. app.js fills it and places it under the chip. -->
@@ -837,6 +831,8 @@
   <script src="search-core.js"></script>
   <script src="notes-core.js"></script>
   <script src="learn-core.js"></script>
+  <script src="sidebar-core.js"></script>
+  <script src="sidebar.js"></script>
   <script src="app.js"></script>
   <script src="today-next.js"></script>
   <script src="today.js"></script>

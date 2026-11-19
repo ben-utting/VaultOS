@@ -180,7 +180,6 @@ async function signOut() {
   await fetch('/api/logout', { method: 'POST' });
   showLogin();
 }
-$('logout').addEventListener('click', signOut);
 $('logout-sheet').addEventListener('click', signOut);
 
 // ---------- Helpers ----------
@@ -1246,6 +1245,11 @@ function setMode(mode) {
   $('mode-automations').classList.toggle('active', mode === 'automations');
   $('mode-learn').classList.toggle('active', mode === 'learn');
   $('mode-calendar').classList.toggle('active', mode === 'calendar');
+  // The sidebar marks the current mode for assistive tech too, and the top bar names it (spec 2026-11-19 §4).
+  for (const b of document.querySelectorAll('#sidebar .mode')) {
+    if (b.dataset.mode === mode) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
+  { const cur = document.querySelector(`#sidebar .mode[data-mode="${mode}"] .nv-lbl`); if (cur) $('mode-title').textContent = cur.textContent; }
   $('calendar-view').classList.toggle('hidden', mode !== 'calendar');
   $('learn-view').classList.toggle('hidden', mode !== 'learn');
   $('automations-view').classList.toggle('hidden', mode !== 'automations');
@@ -2128,9 +2132,10 @@ $('search-btn').addEventListener('click', () => { if (window.SearchPanel) window
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   // The header's Search button names the shortcut in its tooltip and label; Settings → Appearance names all the keys.
   for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + ({ k: 'K', j: 'J' }[k.dataset.key] || 'F');
-  $('search-btn').title = `Search (${mac ? '⌘F' : 'Ctrl+F'})`;
-  $('search-btn').setAttribute('aria-label', $('search-btn').title);
-  $('capture-btn').title = `New thought (${mac ? '⌘J' : 'Ctrl+J'})`;
+  // The sidebar's Search and New thought buttons show their keys (the rail's tooltips name them too, sidebar.js).
+  $('search-btn').setAttribute('aria-label', `Search (${mac ? '⌘F' : 'Ctrl+F'})`);
+  $('search-kbd').textContent = mac ? '⌘F' : 'Ctrl F';
+  $('capture-kbd').textContent = mac ? '⌘J' : 'Ctrl J';
   $('cp-hint').textContent = `${mac ? '⌘' : 'Ctrl+'}Enter saves. Esc keeps it for later.`;
 }
 $('clear-filters').addEventListener('click', clearAllFilters);
@@ -2218,6 +2223,7 @@ function renderWorkspaceSwitcher() {
   const pick = WORKSPACE_LIST.length > 1;
   chip.classList.toggle('hidden', !cur || !pick);   // nothing to name until /api/workspaces has answered, and nothing to choose between with one
   chip.querySelector('.ws-chip-label').textContent = cur ? cur.label : '';
+  chip.querySelector('.nv-ws-init').textContent = cur ? cur.label.trim().slice(0, 2) : '';   // the rail shows the first two letters
   if (cur) chip.setAttribute('aria-label', `Workspace: ${cur.label}`); else chip.removeAttribute('aria-label');
   if (pick) { chip.setAttribute('aria-haspopup', 'menu'); chip.setAttribute('aria-expanded', String(wsMenuOpen())); }
   else { chip.removeAttribute('aria-haspopup'); chip.removeAttribute('aria-expanded'); closeWsMenu({ focus: false }); }
@@ -2716,6 +2722,7 @@ async function importLocalReads() {
 }
 
 async function start({ restore = false } = {}) {
+  if (window.Sidebar) Sidebar.init();
   applyMe();
   await loadWorkspaces();
   await importLocalReads();   // before the first KB load, so it shows the imported history

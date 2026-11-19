@@ -262,28 +262,26 @@ body {
 .error { color: var(--danger-fg); margin: 0; min-height: 1.2em; font-size: var(--t-sm); }
 
 /* ---------- Header ---------- */
+/* The top bar (spec 2026-11-19 §4): the mode's title and count line, then only what the current mode needs, on one row. */
 header {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 18px;
+  height: 56px; box-sizing: border-box; padding: 0 22px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: sticky; top: 0; z-index: 20;
 }
+.mode-title { margin: 0; flex: none; font-size: var(--t-xl); font-weight: 600; line-height: 1.2; color: var(--text); white-space: nowrap; }
 .brand { font-family: var(--brand-font); font-weight: 600; font-size: var(--t-lg); letter-spacing: .01em; color: var(--text); }
 .brand-os { color: var(--brand); }
-/* The workspace chip: which workspace Board and Knowledge Base are showing, and the way to change it. A .ghost
-   button (its border and hover), with a --text label and a --muted chevron. */
-.ws-div { flex: none; width: 1px; height: 18px; background: var(--line); }
-header:has(#ws-chip.hidden) .ws-div { display: none; }
-header button.ws-chip {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;   /* beats the touch rule's 12px */
-  white-space: nowrap;
-}
-.ws-chip-label { max-width: min(24ch, 38vw); overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+/* The workspace chip (in the sidebar): which workspace Board and Knowledge Base are showing, and the way to change it.
+   A .ghost button with a --text label and a --muted chevron. */
+.ws-chip-label { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .ws-chip-chev { width: 12px; height: 12px; flex: none; }   /* currentColor: --muted, --text on hover */
 .ws-chip-off .ws-chip-label { color: var(--muted); }   /* Files: not the workspace you are looking at */
 .spacer { flex: 1; }
 .count { color: var(--muted); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+/* The count line gives way first when the top bar runs out of room (spec §4), then the Pomodoro chip's label. */
+header .count { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Today's running timer, in every mode (today.js). Gold for focus, blue for a break, quiet when paused.
    It asks for no more than the time (66px) and grows into spare room up to its full text, so a crowded
    header cuts the target short (…) before anything else has to wrap. With less than 3em left for the
@@ -315,7 +313,7 @@ header button.ws-chip {
 
 /* The one row never wraps a control: only the chips give way (the search chip, the workspace chip's label and Today's chip), their text ellipsizing.
    Without these, "Sign out" and the count broke onto two lines and the header grew 62px → 81px. */
-#logout, .count, #setbtn, .clear-filters { white-space: nowrap; flex: none; }
+.clear-filters { white-space: nowrap; flex: none; }
 /* The Search button sits beside the last mode tab in every mode, sized like Refresh and Terminal; Ctrl+F / Ctrl+K open
    the same panel (Settings → Appearance names the keys). On a phone or touch tablet it is a 40px icon button. The chip
    beside it names the filter narrowing the current mode and only shows while one is set; its text gives way. */
@@ -1009,7 +1007,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    16% is the smallest tint that steps 1.2:1 off the track in both themes (look-tokens.test.js checks it, and
    --text on it). Later selectors (a menuitemradio, an icon tile) join this list and use the same percentage.
    Declared after every rule it overrides (.ss-nav, .seg, .ws-menu button). */
-.seg button.on, .ss-nav button.active, .ws-row.active, .ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"],
+.seg button.on, .ss-nav button.active, .ws-row.active, .mode.active, .ws-menu [aria-checked="true"], .more-menu [role="menuitemradio"][aria-checked="true"],
 .sp-seg button[aria-pressed="true"], .sp-row.sel, .nt-seg button[aria-pressed="true"], .nt-row.sel, .cal-views button.on {
   background: color-mix(in srgb, var(--accent) 16%, var(--panel-2)); color: var(--text); box-shadow: none;
 }
@@ -1044,16 +1042,16 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .bd-addrow .su-input { flex: 1; }
 
 /* ---------- Workspace + mode toggles ---------- */
-.modes { display: flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 2px; }
+.modes { display: flex; flex-direction: column; gap: 2px; }
 .mode {
-  background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-sm);
-  padding: 5px 12px; font: inherit; cursor: pointer;
+  background: transparent; color: var(--muted); border: 0; border-radius: var(--radius-md);
+  font: inherit; cursor: pointer;
   transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
 }
-.mode:hover { color: var(--text); }
-/* Brand identity, not "interactive" — this is "where am I", so it gets --brand
-   rather than --accent (which means clickable/focusable everywhere else). */
-.mode.active { background: var(--brand); color: var(--on-brand); font-weight: 600; }
+.mode:not(.active):hover { color: var(--text); background: var(--panel-2); }
+/* The current mode takes the shared selected tint (no ring: a gold ring is focus only), with its icon in --brand:
+   "where am I" stays VaultOS's colour without a solid gold fill. */
+.mode.active .icon { color: var(--brand); }
 
 /* ---------- Card KB link ---------- */
 .card-foot { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -1600,58 +1598,58 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
    narrow-viewport (or touch) override, so a wide window with a mouse never
    sees any of it. */
 
-/* ---------- Header ----------
-   Thirteen controls in one non-wrapping row (Terminal, Today's chip and "Clear all filters" included) need about
-   1340px, so from 861px up it stays one row by giving things way in steps rather than one cliff, and only below
-   860px wraps onto a second row. Nothing is lost on the way: Sign out is in the Settings sheet (#logout-sheet), the
-   Settings button keeps its icon and name, and every column head repeats the count. Checked with Terminal shown,
-   with a search on and with the Pomodoro chip, at 880–1600px in every mode. */
-@media (max-width: 1280px) {
-  /* Sign out folds into the Settings sheet's footer and Settings becomes its gear. */
-  #logout, .setbtn-lbl { display: none; }
+/* ---------- Sidebar (spec 2026-11-19) ----------
+   Fixed on the left; #app is padded by its width (--sb-w), so every view and sticky header sits beside it.
+   body.sb-open = 232px, body.sb-rail = the 64px icon rail (sidebar.js, Ctrl+B). Not shown at ≤700px (the tab bar). */
+body { --sb-w: 232px; }
+body.sb-rail { --sb-w: 64px; }
+#app { padding-left: var(--sb-w); transition: padding-left var(--dur-short) var(--ease-out); }
+.sidebar {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 30; width: var(--sb-w); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px 10px;
+  background: var(--panel); border-right: 1px solid var(--line);
+  transition: width var(--dur-short) var(--ease-out);
 }
-@media (min-width: 861px) and (max-width: 1366px) {
-  /* While a filter is on, "Clear all filters" takes the count's place: the column heads still count. */
-  header:has(> #clear-filters:not(.hidden)) .count { display: none; }
+.sidebar .brand { display: flex; align-items: center; height: 36px; padding-left: 8px; font-size: var(--t-lg); }
+/* .sidebar-scoped: [data-tip] sets position: relative on every tooltip owner. */
+.sidebar .nv-toggle { position: absolute; top: 12px; right: 10px; width: 36px; height: 36px; padding: 0; display: grid; place-items: center; border-color: transparent; }
+/* Every row: icon, label, then a count or key on the right. */
+.sidebar :is(.mode, #ws-chip, #search-btn, .nv-foot > button) {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 36px; box-sizing: border-box;
+  padding: 0 10px; justify-content: flex-start; text-align: left; font-size: var(--t-md); white-space: nowrap;
 }
-/* The last stretch before the two-row layout takes over at 860px: the total (repeated on every column head) and the
-   divider give way, "Clear all filters" says just "Clear" (its aria-label keeps the full name), the gaps close up
-   and a long workspace name is cut earlier, so the one row neither wraps nor scrolls sideways. */
-@media (min-width: 861px) and (max-width: 1100px) {
-  header { column-gap: 8px; }
-  header .count, header .ws-div, .cf-more { display: none; }
-  .ws-chip-label { max-width: 14ch; }
-  header #search-chip { max-width: 14ch; }
+.sidebar :is(#ws-chip, #search-btn) { min-height: 40px; background: var(--bg); }
+.sidebar #search-btn { color: var(--muted); }
+.nv-foot > button { border-color: transparent; color: var(--muted); }
+.nv-foot > button:hover { color: var(--text); background: var(--panel-2); }
+.nv-lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nv-n { color: var(--muted); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.nv-n:empty { display: none; }
+.nv-kbd { flex: none; }
+.nv-ws-init {
+  flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--radius-sm);
+  background: var(--tag-bg); color: var(--brand); font-size: var(--t-xs); font-weight: 700;
 }
-/* Under 961px Today's chip and "Clear" together still don't fit, so while the chip runs the wordmark gives way
-   (as it does on a phone): it is the same in every mode, because the chip is. */
-@media (min-width: 861px) and (max-width: 960px) {
-  header:has(> .today-chip:not(.hidden)) .brand { display: none; }
-}
-
-@media (max-width: 860px) {
-  header { flex-wrap: wrap; row-gap: 0; padding: 10px 12px; }
-  /* Zero-height full-width flex item = a forced line break. Row one is identity
-     and tools; row two is the two things actually touched all day. */
-  header::after { content: ""; flex: 0 0 100%; height: 8px; order: 7; }
-  .brand, .ws-div, .ws-chip { order: 1; }
-  header .spacer { order: 4; }
-  .count, .today-chip { order: 5; }
-  #refresh, #termbtn, #setbtn, #logout { order: 6; }
-  .modes { order: 8; flex: none; }
-  #search-btn, #search-chip { order: 9; }
-}
+.sidebar .modes { margin-top: 4px; }
+.nv-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding-top: 10px; border-top: 1px solid var(--line); }
+/* The rail: icons only, centred; names, counts and keys move into each button's tooltip (to the right). */
+body.sb-rail .sidebar :is(.nv-lbl, .nv-n, .nv-kbd, .ws-chip-label, .ws-chip-chev, .brand-ault) { display: none; }
+body.sb-rail .sidebar :is(.mode, #ws-chip, #search-btn, .nv-foot > button) { width: 44px; padding: 0; justify-content: center; align-self: center; }
+body.sb-rail .sidebar .brand { padding-left: 0; justify-content: center; }
+body.sb-rail .sidebar .nv-toggle { position: static; order: 99; align-self: center; }
+body.sb-rail .nv-tog-arrow { transform: scaleX(-1); transform-origin: 14.5px 12px; }
+body.sb-rail .sidebar [data-tip]::after { top: 50%; right: auto; left: calc(100% + 10px); transform: translate(-3px, -50%); }
+body.sb-rail .sidebar [data-tip]:hover::after, body.sb-rail .sidebar [data-tip]:focus-visible::after { transform: translate(0, -50%); }
+@media (prefers-reduced-motion: reduce) { #app, .sidebar { transition: none; } }
+/* Fixed things that span the content start at the sidebar's edge. */
+@media (min-width: 701px) { body .term-dock { left: var(--sb-w); } }
+/* A file in its own browser tab (Files → Open in new browser tab): no sidebar at all. */
+body.fx-solo { --sb-w: 0px; }
+body.fx-solo .sidebar { display: none; }
 @media (max-width: 700px) {
-  /* The running total is repeated on every column head anyway. */
-  .count { display: none; }
-}
-
-@media (max-width: 560px) {
-  /* Row one is controls only now — the wordmark is redundant here, the PWA's
-     own chrome already names the app. */
-  .brand { display: none; }
-  header { column-gap: 8px; }
-  .mode { padding-left: 10px; padding-right: 10px; }
+  body { --sb-w: 0px; }
+  .sidebar { display: none; }
+  .count { display: none; }   /* the running total is repeated on every column head anyway */
 }
 
 /* ---------- Board columns ---------- */
@@ -1776,10 +1774,6 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
   .mobile-nav .icon { width: 21px; height: 21px; }
   /* Same "where am I" gold as .mode.active, as a bar over the icon. */
   .mobile-nav button.active { color: var(--brand); }
-  .mobile-nav button.active::before {
-    content: ''; position: absolute; top: 0; left: 30%; right: 30%; height: 2px;
-    border-radius: 0 0 2px 2px; background: var(--brand);
-  }
   /* Running-terminal count, same badge as #termbtn's. */
   #mnav-term[data-n]:not([data-n=""])::after {
     content: attr(data-n);
