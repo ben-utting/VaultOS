@@ -179,3 +179,50 @@ test('a warning from VaultOS prints after the confirmation (the agent relays it)
   const e = await run(['edit', 'c_7k2m9p4x1q', '--date', '2026-11-01'], { answers: [['edit', 200, { entry: ENTRY, warning: 'W' }]] });
   assert.match(e.out, /\nNote: W\n$/);
 });
+
+// ---------- brief and the Agent button's fields (spec 2026-11-19 §4) ----------
+const BRIEF = { text: 'Calendar item c_7k2m9p4x1q\nChase X\n\nBefore you do anything:\n  - Read first.', entry: ENTRY, when: { date: '2026-11-20', text: 'Due Fri 20 Nov 2026 09:00' }, card: null, rules: ['Read first.'] };
+test('brief sends the id and date and prints the server text exactly', async () => {
+  const r = await run(['brief', 'c_7k2m9p4x1q', '--date', 'today'], { answers: [['brief', 200, BRIEF]] });
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.last.body.args, { id: 'c_7k2m9p4x1q', date: 'today' });
+  assert.equal(r.out, `${BRIEF.text}\n`);
+  const plain = await run(['brief', 'c_7k2m9p4x1q'], { answers: [['brief', 200, BRIEF]] });
+  assert.deepEqual(plain.last.body.args, { id: 'c_7k2m9p4x1q' });
+  const json = await run(['brief', 'c_7k2m9p4x1q', '--json'], { answers: [['brief', 200, BRIEF]] });
+  assert.deepEqual(JSON.parse(json.out), BRIEF);
+});
+test('brief without an id is a usage error; a refusal exits 1 with the message', async () => {
+  const bare = await run(['brief']);
+  assert.equal(bare.code, 2);
+  assert.match(bare.err, /brief <id> \[--date D\]/);
+  const r = await run(['brief', 'c_zzzzzzzzzz'], { answers: [['brief', 404, { error: 'No calendar entry c_zzzzzzzzzz' }]] });
+  assert.equal(r.code, 1);
+  assert.match(r.err, /^No calendar entry c_zzzzzzzzzz/);
+});
+test('add takes repeated --link, --brief and --agent', async () => {
+  const r = await run(['add', '--title', 'X', '--date', 'today', '--time', '09:00', '--link', 'Work/a.md', '--link', 'https://b.test', '--brief', 'Look at B', '--agent', 'cursor'],
+    { answers: [['add', 200, { entry: ENTRY }]] });
+  assert.equal(r.code, 0);
+  const e = r.last.body.args.entry;
+  assert.deepEqual([e.links, e.brief, e.agent], [['Work/a.md', 'https://b.test'], 'Look at B', 'cursor']);
+  const def = await run(['add', '--title', 'X', '--date', 'today', '--time', '09:00', '--agent', 'default'], { answers: [['add', 200, { entry: ENTRY }]] });
+  assert.equal(def.last.body.args.entry.agent, null);
+});
+test('edit sends only the new fields it was given', async () => {
+  const ok = [['edit', 200, { entry: ENTRY }]];
+  assert.deepEqual((await run(['edit', 'c_7k2m9p4x1q', '--link', 'z'], { answers: ok })).last.body.args.changes, { links: ['z'] });
+  assert.deepEqual((await run(['edit', 'c_7k2m9p4x1q', '--no-links'], { answers: ok })).last.body.args.changes, { links: [] });
+  assert.deepEqual((await run(['edit', 'c_7k2m9p4x1q', '--brief', ''], { answers: ok })).last.body.args.changes, { brief: '' });
+  assert.deepEqual((await run(['edit', 'c_7k2m9p4x1q', '--agent', 'default'], { answers: ok })).last.body.args.changes, { agent: null });
+});
+test('show prints links, the focus and the agent', async () => {
+  const e = { ...ENTRY, links: ['https://x.test', 'Work/a.md'], brief: 'Did they reply?', agent: 'cursor', agentLabel: 'Cursor CLI' };
+  const r = await run(['show', 'c_7k2m9p4x1q'], { answers: [['show', 200, { entry: e }]] });
+  assert.match(r.out, /\nLinks:\n {2}https:\/\/x\.test\n {2}Work\/a\.md\n/);
+  assert.match(r.out, /\nFor the agent: Did they reply\?\n/);
+  assert.match(r.out, /\nAgent: Cursor CLI\n/);
+  const plain = await run(['show', 'c_7k2m9p4x1q'], { answers: [['show', 200, { entry: { ...ENTRY, links: [], brief: '', agent: null, agentLabel: null } }]] });
+  assert.doesNotMatch(plain.out, /Links:|For the agent:/);
+  assert.match(plain.out, /\nAgent: default\n/);
+});
