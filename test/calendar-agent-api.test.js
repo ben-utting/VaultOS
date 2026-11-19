@@ -146,3 +146,15 @@ test('views carry the entry agent and its label', async (t) => {
   const plain = (await api.add({ entry: one({ title: 'Plain' }) }, 'Claude Code')).body.entry;
   assert.deepEqual([(await api.show({ id: plain.id })).body.entry.agentLabel], [null]);
 });
+
+test('brief resolves today and tomorrow, and says which date', async (t) => {
+  const { api } = setup(t);
+  const { entry } = (await api.add({ entry: one({ date: 'today', repeat: { every: 'daily' } }) }, 'Claude Code')).body;
+  const r = await api.brief({ id: entry.id, date: 'tomorrow' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.when.date, '2026-11-19');
+  assert.equal(r.body.when.text, 'Due Thu 19 Nov 2026 09:00');
+  assert.match(r.body.text, /^Calendar item c_[a-z2-7]{10}\nChase X\nDue Thu 19 Nov 2026 09:00 · Every day · pings at start · Added by Claude Code\n/);
+  const allDay = (await api.add({ entry: one({ title: 'Bins', date: 'today', allDay: true, start: null }) }, 'Claude Code')).body.entry;
+  assert.equal((await api.brief({ id: allDay.id, date: 'today' })).body.when.text, 'Due Wed 18 Nov 2026 · all day');
+});

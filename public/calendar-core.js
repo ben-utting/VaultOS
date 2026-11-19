@@ -358,7 +358,7 @@
 
   return {
     TITLE_MAX, NOTE_MAX, SKIP_MAX, LINKS_MAX, LINK_MAX, BRIEF_MAX, AGENT_IDS, isLink, PINGS, ALL_DAY_PINGS, REPEATS, DUE_WINDOW_DAYS, ALL_DAY_TIME, SNOOZE_TOMORROW,
-    DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT, KEY_RE,
+    DAY_NAMES, DAY_SHORT, DAY_LONG, MONTH_SHORT, KEY_RE, DATE_MSG,
     isDate, isTime, addDays, weekday, mondayOf, daysInMonth, daysBetween, todayIn, wallMs,
     validateEntry, parseRepeatFlag, occurrences, lastDate, describeRepeat, pingAt, dueItems, nextPingAt, snoozeUntil,
   };
