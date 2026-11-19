@@ -126,6 +126,7 @@
     const n = $('cal-bell-n');
     n.textContent = D.count > 99 ? '99+' : String(D.count);
     n.classList.toggle('hidden', !D.count);
+    if (window.Sidebar) Sidebar.setCount('calendar', D.count);   // the sidebar's Calendar row
     $('cal-bell').setAttribute('aria-label', D.count ? `Due reminders: ${D.count}` : 'Due reminders: none');
     applyTitle();
     paintToasts();

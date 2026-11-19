@@ -83,9 +83,34 @@
     if (label) new MutationObserver(paintTips).observe(label, { childList: true, characterData: true, subtree: true });
   }
 
-  // Filled in with the counts (Task 3): store, then repaint the tooltips.
-  function setCount(name, value) { S.counts[name] = { value, status: '' }; paintTips(); }
-  function setAlert(name, state) { S.alerts[name] = state || ''; paintTips(); }
+  // Counts come from the code that already works them out; each repaints its slot and the rail tooltips.
+  const SLOT = { calendar: 'mode-calendar', board: 'mode-board', terminals: 'termbtn' };
+  function paintCount(name) {
+    const b = el(SLOT[name]);
+    const c = S.counts[name] || { value: 0 };
+    const v = SC.countView(name, c.value, S.alerts[name] || '');
+    S.counts[name] = { value: c.value, status: v.status };
+    if (!b) return;
+    const slot = b.querySelector('.nv-n');
+    if (slot) {
+      slot.textContent = v.text;
+      slot.classList.toggle('nv-badge', v.badge);
+      slot.classList.toggle('nv-alert', name === 'terminals' && v.dot);
+    }
+    b.classList.toggle('nv-dot-on', v.dot);
+  }
+  function setCount(name, value) {
+    if (!SLOT[name]) return;
+    S.counts[name] = { value, status: (S.counts[name] || {}).status || '' };
+    paintCount(name);
+    paintTips();
+  }
+  function setAlert(name, state) {
+    if (!SLOT[name]) return;
+    S.alerts[name] = state || '';
+    paintCount(name);
+    paintTips();
+  }
 
   window.Sidebar = { init, toggle, state: () => S.state, setCount, setAlert };
 })();

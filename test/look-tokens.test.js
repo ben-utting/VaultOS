@@ -243,9 +243,9 @@ test('only the mode pill and primary buttons fill with gold', () => {
     '.tw-compose-btns .tw-compose-send',
     '.kb-eyebrow::before', '.km-eyebrow::before',      // the 18px brand rule before a heading
     '.tw-prefix', '.fx-fresh', '.su-bar span.now',     // brand marks: tmux prefix, new file, current setup step
-    '#termbtn[data-n]:not([data-n=""])::after', '#mnav-term[data-n]:not([data-n=""])::after',   // "an agent wants you"
-    '.cal-bell-n',                                     // the Due bell's count: "a reminder wants you"
-    '.set-dot', '.ss-nav .n', '.cx-dots span',         // unsaved dot, count badge, working dots
+    '#mnav-term[data-n]:not([data-n=""])::after',      // "an agent wants you"
+    '.cal-bell-n', '.sidebar .nv-n.nv-badge',          // the Due bell's count and the sidebar's Calendar count: "a reminder wants you"
+    '.set-dot', 'body.sb-rail .sidebar .nv-dot-on::before', '.ss-nav .n', '.cx-dots span',   // unsaved dot, the rail's dot, count badge, working dots
     '.tw-split[data-dir]::after',                      // the split-pane drop hint
   ];
   // Solid gold that is a state or progress mark, not a selection (ruling 9): stays gold on purpose.

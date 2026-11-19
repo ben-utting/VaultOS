@@ -1415,6 +1415,7 @@ TW.onList((list) => {
     else if (x.agent.state === 'done' && !alert) alert = 'done';
   }
   $('termbtn').dataset.alert = alert;
+  if (window.Sidebar) { Sidebar.setCount('terminals', list.filter((x) => x.agent).length); Sidebar.setAlert('terminals', alert); }
   const sig = JSON.stringify(byTask);
   if (sig === AGENT_SIG) return;
   AGENT_SIG = sig;

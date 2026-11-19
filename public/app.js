@@ -780,6 +780,7 @@ function render() {
   // and Today owns the count slot while it's showing.
   const open = tasks.filter((t) => t.status !== 'done').length;
   const allOpen = STATE.tasks.filter((t) => t.status !== 'done').length;
+  if (window.Sidebar) Sidebar.setCount('board', allOpen);   // the sidebar's Board row, whatever the mode
   if (STATE.mode === 'board') {
     $('count').textContent = allOpen - open
       ? `${open} of ${allOpen} open tasks`
