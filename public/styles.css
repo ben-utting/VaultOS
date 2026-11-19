@@ -4304,6 +4304,13 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 }
 .cal-agent-c:hover { color: var(--text); border-color: var(--muted); }
 .cal-agent-c .icon { width: 16px; height: 16px; }
+.cal-agent:disabled { opacity: .55; cursor: not-allowed; }
+/* The entry panel's links: one input per link with a remove button. */
+.ce-links { display: grid; gap: 6px; margin: 0 0 6px; padding: 0; list-style: none; }
+.ce-links:empty { display: none; }
+.ce-link { display: flex; align-items: center; gap: 6px; }
+.ce-link .su-input { flex: 1; min-width: 0; }
+.ce-link-x { flex: none; padding: 4px 8px; }
 @media (max-width: 700px) {
   .cal-due {
     top: auto !important; right: 0 !important; left: 0; bottom: var(--mnav-h, 0px); width: 100%; max-height: calc(86vh - var(--mnav-h, 0px));
@@ -4324,6 +4331,9 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
   border-radius: var(--radius-md); cursor: pointer;
 }
 .td-crow:hover { background: var(--panel-2); }
+/* A Coming up row and its Agent button side by side: the row stays the click target for the entry. */
+.td-crow-w { display: flex; align-items: center; gap: 4px; }
+.td-crow-w .td-crow { flex: 1; min-width: 0; }
 .td-crow:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .td-ctime { font-size: var(--t-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .td-crow.first .td-ctime { color: var(--brand); font-weight: 600; }

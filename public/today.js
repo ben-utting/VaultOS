@@ -1075,6 +1075,8 @@ const Today = (() => {
     setInterval(() => { if (shown && document.visibilityState === 'visible') loadComing(); }, POLL_MS);   // with Today's own poll
     $('td-coming-cal').addEventListener('click', () => setMode('calendar'));
     $('td-coming-body').addEventListener('click', (e) => {
+      const ag = e.target.closest('.cal-agent');
+      if (ag) { if (window.CalendarAgent) CalendarAgent.launch(ag.dataset.entry, ag.dataset.date); return; }
       const b = e.target.closest('[data-entry]');
       if (b && window.Calendar) Calendar.openEntry(b.dataset.entry, b.dataset.date);
     });
@@ -1115,9 +1117,12 @@ const Today = (() => {
       const when = nextDay ? CV.toastWhen(o, d.timezone, now) : CV.timeText(o);   // "Tomorrow 09:00", "Fri 20 Nov 09:00"
       const soon = first && !o.allDay ? CV.toastWhen(o, d.timezone, now).split(' · ')[1] : '';
       const sub = [soon === 'now' ? 'now' : soon, o.card ? o.card.title : ''].filter(Boolean).join(' · ');
-      return `<li><button type="button" class="td-crow${first ? ' first' : ''}${nextDay ? ' later' : ''}" data-entry="${esc(o.entryId)}" data-date="${esc(o.date)}">`
+      // The row opens the entry; the Agent button beside it (never inside it) opens an agent on it.
+      const agent = window.CalendarAgent ? CalendarAgent.forItem(o.agent || null, o.agentLabel || null) : null;
+      return `<li class="td-crow-w"><button type="button" class="td-crow${first ? ' first' : ''}${nextDay ? ' later' : ''}" data-entry="${esc(o.entryId)}" data-date="${esc(o.date)}">`
         + `<span class="td-ctime">${esc(when)}</span><span class="td-cmain"><span class="td-ctitle">${esc(o.title)}</span>`
-        + `${sub ? `<span class="td-csub">${esc(sub)}</span>` : ''}</span></button></li>`;
+        + `${sub ? `<span class="td-csub">${esc(sub)}</span>` : ''}</span></button>`
+        + `${CV.agentButtonHtml(agent, { entryId: o.entryId, date: o.date, compact: true })}</li>`;
     };
     const todays = d.today.map((o, i) => row(o, { first: i === 0, nextDay: false })).join('');
     $('td-coming-body').innerHTML = (todays ? `<ul class="td-clist">${todays}</ul>` : '<p class="td-cnone">Nothing else today.</p>')

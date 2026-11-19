@@ -20,7 +20,8 @@
   const REPEAT_CHOICES = [['none', 'None'], ['daily', 'Daily'], ['weekdays', 'Weekdays'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']];
   const PING_TIMED = [['none', 'None'], ['start', 'At start'], ['5m', '5 min'], ['10m', '10 min'], ['15m', '15 min'], ['30m', '30 min'], ['1h', '1 hour'], ['1d', 'Day before']];
   const PING_ALLDAY = [['none', 'None'], ['start', '08:00 on the day'], ['1d', 'Day before']];
-  const FIELDS = ['title', 'date', 'allDay', 'start', 'end', 'repeat', 'ping', 'card', 'note', 'skip'];
+  const FIELDS = ['title', 'date', 'allDay', 'start', 'end', 'repeat', 'ping', 'card', 'note', 'skip', 'links', 'brief', 'agent'];
+  const LINKS_MAX = CC.LINKS_MAX;
 
   const readView = () => { try { const v = localStorage.getItem(VIEW_KEY); return VIEWS.includes(v) ? v : 'agenda'; } catch { return 'agenda'; } };
   const CAL = {
@@ -157,7 +158,7 @@
   }
 
   // ---------- The entry panel ----------
-  const P = { id: null, date: null, entry: null, repeat: 'none', days: [], until: null, ping: 'start', card: null, confirming: false };
+  const P = { id: null, date: null, entry: null, repeat: 'none', days: [], until: null, ping: 'start', card: null, confirming: false, clean: '' };
   const repeatOf = () => {
     if (P.repeat === 'none') return null;
     const r = { every: P.repeat };
@@ -238,6 +239,9 @@
     P.ping = e ? (e.ping || 'none') : 'start';
     P.card = e && e.card ? e.card : null;
     $('ce-note').value = e ? e.note : '';
+    paintLinks(e && Array.isArray(e.links) ? e.links : []);
+    $('ce-brief').value = e && e.brief ? e.brief : '';
+    paintAgentChoice(e ? e.agent || '' : '');
     $('ce-meta').textContent = metaLine(e);
     $('ce-delete').classList.toggle('hidden', !e);
     $('ce-skip').classList.toggle('hidden', !(e && e.repeat && date));
@@ -248,7 +252,48 @@
     paintRepeat();
     paintAllDay();
     paintCard();
+    P.clean = JSON.stringify(formValue());
+    paintAgentBtn();
   }
+
+  // ---------- Links, focus and agent (the Agent button, spec 2026-11-19 §5.2) ----------
+  function linkRow(v) {
+    return `<li class="ce-link"><input class="su-input" type="text" maxlength="500" autocomplete="off" value="${esc(v)}" placeholder="https://… or a vault path" aria-label="Link">`
+      + '<button type="button" class="ghost ce-link-x" aria-label="Remove this link">✕</button></li>';
+  }
+  function paintLinks(list) {
+    $('ce-links').innerHTML = list.map(linkRow).join('');
+    $('ce-link-add').classList.toggle('hidden', list.length >= LINKS_MAX);
+  }
+  const linkValues = () => [...$('ce-links').querySelectorAll('input')].map((i) => i.value);
+  // The Agent choices: Default (the Settings agent), then the built-ins. Loaded once per visit to the mode.
+  let AGENTS = { default: null, agents: [] };
+  async function loadAgents() {
+    try { const r = await call('/api/calendar/agents'); if (r.ok) AGENTS = r.data; } catch { /* keep the last list */ }
+    if (panelOpen()) paintAgentChoice($('ce-agent').value);
+  }
+  function paintAgentChoice(value) {
+    const def = AGENTS.default ? `Default (${AGENTS.default.label})` : 'Default';
+    const opts = [['', def], ...AGENTS.agents.map((a) => [a.id, a.label])];
+    if (value && !opts.some(([v]) => v === value)) opts.push([value, value]);
+    $('ce-agent').innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    $('ce-agent').value = value || '';
+  }
+  // Saved entries only; greyed out while the form has unsaved changes (the agent is briefed from what's saved).
+  function paintAgentBtn() {
+    const btn = $('ce-agent-btn');
+    const e = P.entry;
+    const a = e && window.CalendarAgent ? CalendarAgent.forItem(e.agent || null, e.agentLabel || null) : null;
+    btn.classList.toggle('hidden', !a);
+    if (!a) return;
+    const dirty = JSON.stringify(formValue()) !== P.clean;
+    btn.innerHTML = `${a.mark}<span>Agent</span>`;
+    btn.disabled = dirty;
+    btn.dataset.tip = dirty ? 'Save first' : `Open ${a.label} on this reminder. It reads the note and the card, then asks you what to do.`;
+    btn.setAttribute('aria-label', dirty ? 'Agent: save first' : `Open ${a.label} on this reminder`);
+  }
+  let dirtyFrame = 0;
+  const checkDirty = () => { cancelAnimationFrame(dirtyFrame); dirtyFrame = requestAnimationFrame(paintAgentBtn); };
   function openPanel() {
     $('cal-panel').classList.remove('hidden');
     $('cal-scrim').classList.remove('hidden');
@@ -275,6 +320,7 @@
       title: $('ce-title').value, date: $('ce-date').value, allDay,
       start: allDay ? null : $('ce-start').value || null, end: allDay ? null : $('ce-end').value || null,
       repeat: repeatOf(), ping: P.ping === 'none' ? null : P.ping, card: P.card ? P.card.path : null, note: $('ce-note').value,
+      links: linkValues().map((l) => l.trim()).filter(Boolean), brief: $('ce-brief').value, agent: $('ce-agent').value || null,
     };
   }
   async function save() {
@@ -430,6 +476,31 @@
   $('ce-del-one').addEventListener('click', skipDate);
   $('ce-del-all').addEventListener('click', deleteAll);
   $('ce-skip').addEventListener('click', skipDate);
+  $('ce-link-add').addEventListener('click', () => {
+    const list = linkValues();
+    if (list.length >= LINKS_MAX) return;
+    paintLinks([...list, '']);
+    const inputs = $('ce-links').querySelectorAll('input');
+    inputs[inputs.length - 1].focus();
+    checkDirty();
+  });
+  $('ce-links').addEventListener('click', (e) => {
+    const x = e.target.closest('.ce-link-x');
+    if (!x) return;
+    x.closest('.ce-link').remove();
+    $('ce-link-add').classList.toggle('hidden', linkValues().length >= LINKS_MAX);
+    checkDirty();
+  });
+  $('ce-form').addEventListener('input', checkDirty);
+  $('ce-form').addEventListener('change', checkDirty);
+  $('ce-form').addEventListener('click', checkDirty);   // the chips (repeat, ping, days) and the card picker
+  $('ce-agent-btn').addEventListener('click', () => {
+    if (!P.id || $('ce-agent-btn').disabled) return;
+    const id = P.id;
+    const date = P.date || undefined;
+    closePanel();
+    CalendarAgent.launch(id, date);
+  });
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && panelOpen()) { e.stopPropagation(); if (P.confirming) cancelDelete(); else closePanel(); }
   }, true);
@@ -440,6 +511,7 @@
     init() {},
     show() {
       CAL.visible = true;
+      loadAgents();
       if (CAL.data) render();
       load();
       schedule();

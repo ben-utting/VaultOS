@@ -583,8 +583,19 @@
         </div>
         <p class="su-err" id="ce-card-err" aria-live="polite"></p></div>
       <div class="su-field"><label for="ce-note">Note</label>
-        <textarea id="ce-note" class="su-input ce-note" rows="3" maxlength="2000" aria-describedby="ce-note-err"></textarea>
+        <textarea id="ce-note" class="su-input ce-note" rows="3" maxlength="4000" aria-describedby="ce-note-err"></textarea>
         <p class="su-err" id="ce-note-err" aria-live="polite"></p></div>
+      <!-- What an agent opened from this entry (the Agent button) is pointed at: links, a focus, and which agent. -->
+      <div class="su-field"><span class="su-label" id="ce-links-l">Links</span>
+        <ul id="ce-links" class="ce-links" aria-labelledby="ce-links-l"></ul>
+        <div><button type="button" id="ce-link-add" class="su-btn su-sm">+ Add link</button></div>
+        <p class="su-err" id="ce-links-err" aria-live="polite"></p></div>
+      <div class="su-field"><label for="ce-brief">For the agent</label>
+        <input id="ce-brief" class="su-input" type="text" maxlength="500" autocomplete="off" placeholder="What it should look at, e.g. whether the PR got a review" aria-describedby="ce-brief-err">
+        <p class="su-err" id="ce-brief-err" aria-live="polite"></p></div>
+      <div class="su-field"><label for="ce-agent">Agent</label>
+        <select id="ce-agent" class="su-input" aria-describedby="ce-agent-err"><option value="">Default</option></select>
+        <p class="su-err" id="ce-agent-err" aria-live="polite"></p></div>
       <p id="ce-meta" class="ce-meta"></p>
       <p class="su-err" id="ce-err" aria-live="polite"></p>
     </form>
@@ -593,6 +604,7 @@
         <button type="button" id="ce-delete" class="su-btn ab-danger hidden">Delete</button>
         <button type="button" id="ce-skip" class="su-btn hidden">Skip this date</button>
         <span class="su-gap"></span>
+        <button type="button" id="ce-agent-btn" class="su-btn cal-agent hidden"></button>
         <button type="button" id="ce-cancel" class="su-btn">Cancel</button>
         <button type="button" id="ce-save" class="su-btn primary">Add</button>
       </div>
