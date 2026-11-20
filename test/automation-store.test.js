@@ -208,3 +208,31 @@ test('switching off still works after the default agent stops covering the level
   assert.equal((await store.update(value.id, input({ level: 'work', enabled: true }), lv(['report', 'update']))).ok, false);
   assert.equal((await store.update(value.id, input({ level: 'work', enabled: false, agent: 'cursor' }), lv(['report', 'update']))).ok, false);
 });
+
+// ---------- The model ----------
+
+test('a model is saved with the automation, and a save without one clears it', async (t) => {
+  const { store, file } = setup(t);
+  const { value } = await store.create(input({ model: 'gpt-5' }), ctx);
+  assert.equal(value.model, 'gpt-5');
+  assert.equal(JSON.parse(fs.readFileSync(file('automations.json'), 'utf8')).automations[0].model, 'gpt-5');
+  const kept = await store.update(value.id, input({ model: 'gpt-5', enabled: false }), ctx);
+  assert.equal(kept.value.model, 'gpt-5', 'switching off from the tab keeps the model');
+  const cleared = await store.update(value.id, input(), ctx);
+  assert.equal('model' in cleared.value, false);
+  assert.equal((await store.create(input({ model: 'x'.repeat(201) }), ctx)).errors.model !== undefined, true);
+});
+
+test('a record saved before models existed loads, updates and switches off with no model added', async (t) => {
+  const { store, file } = setup(t);
+  const old = {
+    id: '0000abcd', ...input({ name: 'Old check-in' }), created: '2026-11-12T10:00:00.000Z', updated: '2026-11-12T10:00:00.000Z',
+  };
+  fs.mkdirSync(path.dirname(file('automations.json')), { recursive: true });
+  fs.writeFileSync(file('automations.json'), JSON.stringify({ version: 1, automations: [old] }));
+  assert.deepEqual(await store.get(old.id), old);
+  const off = await store.update(old.id, input({ name: 'Old check-in', enabled: false }), ctx);
+  assert.equal(off.ok, true, JSON.stringify(off.errors));
+  assert.equal('model' in off.value, false);
+  assert.equal('model' in JSON.parse(fs.readFileSync(file('automations.json'), 'utf8')).automations[0], false);
+});

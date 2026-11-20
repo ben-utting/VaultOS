@@ -111,6 +111,55 @@ test('a prompt or cards edit switches it off and records what changed', async (t
   assert.equal(d.agentChange.switchedOff, true);
 });
 
+test('create keeps a model, trimmed', async (t) => {
+  const s = setup(t);
+  const r = await s.api.create(draft({ agent: 'cursor', model: ' gpt-5 ' }), 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.automation.model, 'gpt-5');
+  assert.equal((await s.store.get(r.body.automation.id)).model, 'gpt-5');
+});
+
+test('editing the model of one that is on switches it off, like an agent edit', async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ agent: 'cursor' });
+  const r = await s.api.edit(a.id, { model: 'claude-opus-4-8[context=1m,effort=high,fast=false]' }, 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const b = r.body.automation;
+  assert.equal(b.enabled, false);
+  assert.equal(b.model, 'claude-opus-4-8[context=1m,effort=high,fast=false]');
+  assert.deepEqual(b.agentChange, { agent: 'Claude Code', fields: ['model'], switchedOff: true, at: '2026-11-11T09:00:00.000Z' });
+  assert.equal(AC.agentTagText(b, TZ), 'Claude Code changed the model. Off until you switch it on.');
+  assert.equal((await s.store.get(a.id)).enabled, false, 'it stays off in the store');
+  // A safe edit afterwards keeps the model and doesn't switch it back on.
+  const c = (await s.api.edit(a.id, { name: 'Renamed' }, 'Claude Code')).body.automation;
+  assert.equal(c.model, 'claude-opus-4-8[context=1m,effort=high,fast=false]');
+  assert.equal(c.enabled, false);
+});
+
+test('clearing the model (null) removes it and also switches it off; the same model again changes nothing', async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ agent: 'cursor', model: 'gpt-5' });
+  const same = (await s.api.edit(a.id, { model: 'gpt-5' }, 'Claude Code')).body.automation;
+  assert.equal(same.enabled, true);
+  assert.equal('agentChange' in same, false);
+  const b = (await s.api.edit(a.id, { model: null }, 'Claude Code')).body.automation;
+  assert.equal('model' in b, false);
+  assert.equal(b.enabled, false);
+  assert.deepEqual(b.agentChange.fields, ['model']);
+});
+
+test('a bad model is a 400 on model and leaves the automation as it was', async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ agent: 'cursor' });
+  for (const model of ['', 'gpt-5\nsecond line', 'm'.repeat(201)]) {
+    const r = await s.api.edit(a.id, { model }, 'Claude Code');
+    assert.equal(r.status, 400, JSON.stringify(model));
+    assert.ok(r.body.errors.model, JSON.stringify(r.body));
+  }
+  assert.deepEqual(await s.store.get(a.id), a);
+  assert.equal((await s.api.create(draft({ model: 'a\nb' }), 'Claude Code')).status, 400);
+});
+
 test('a partial cards or schedule edit keeps the rest', async (t) => {
   const s = setup(t);
   const a = await s.personOn({ cards: { board: 'home', statuses: ['in-progress'], subtasks: true } });

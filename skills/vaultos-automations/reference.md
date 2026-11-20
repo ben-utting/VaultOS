@@ -41,6 +41,7 @@ Exit codes: `0` done, `1` VaultOS refused (the reason and any field errors follo
 | --- | --- |
 | `name` | 1 to 60 characters |
 | `agent` | `default` (the person's default agent) or an agent id from `options`. The agent must be offered at the chosen level |
+| `model` | Optional, Cursor CLI only. The model the run passes to Cursor as `--model`, for example `gpt-5` or `claude-opus-4-8[context=1m,effort=high,fast=false]`. Leave it out (or `null`) for Cursor's default. One line, 1 to 200 characters. It isn't checked against a list, so a wrong id only shows when the run fails: `cursor-agent --list-models` lists what this install can use. Other agents ignore it, and so does `default` unless the default agent is Cursor |
 | `template` | `check-in` or `blank`. A label of where the prompt started; the prompt is what counts |
 | `prompt` | What the agent does on each card, up to 8,000 characters. VaultOS adds the card, its task.md and the rules for the level |
 | `level` | `report`: reads and writes a note. `update`: can also propose a status change (never to Done). `work`: can edit files in the card's folder |
@@ -69,7 +70,8 @@ Board keys and agent ids differ per install: take them from `options`.
 `changes.json` holds only the fields you want to change. `cards` and `schedule` merge into what's there, so `{"schedule": {"time": "09:00"}}` keeps the repeat and `{"cards": {"statuses": ["blocked"]}}` keeps the board.
 
 - Changing `name`, `schedule`, `timeLimitMin`, `section` or `template` keeps the automation on or off as it was.
-- Changing `agent`, `level`, `prompt` or `cards` switches it off. The Automations tab then says what you changed, and the person switches it back on.
+- Changing `agent`, `model`, `level`, `prompt` or `cards` switches it off. The Automations tab then says what you changed, and the person switches it back on.
+- `"model": null` removes the model, so Cursor uses its default. That counts as a model change.
 - `"enabled": true` is ignored. `"enabled": false` switches it off.
 
 ## Trials

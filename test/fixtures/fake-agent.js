@@ -4,6 +4,17 @@
 // echoed into the note, so a test can tell which prompt a card got.
 const fs = require('node:fs');
 
+// `fake-agent.js models` stands in for `cursor-agent --list-models`; AUTOMATION_TEST_MODELS=fail makes it fail.
+if (process.argv[2] === 'models') {
+  if (process.env.AUTOMATION_TEST_MODELS === 'fail') {
+    process.stderr.write('Error: not signed in\n');
+    process.exitCode = 1;
+  } else {
+    process.stdout.write('Available models\n\nauto - Auto (current, default)\ngpt-5 - GPT-5\nclaude-opus-4-8[context=1m,effort=high,fast=false] - Opus 4.8 1M High\n');
+  }
+  return;
+}
+
 let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (d) => { input += d; });

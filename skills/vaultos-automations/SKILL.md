@@ -12,7 +12,7 @@ You work through the `vaultos-automations` command. It only works in a VaultOS t
 ## What you can and can't do
 
 - You can read everything: `options`, `list`, `show`, `match`, `runs`, `run`.
-- You can create and edit automations. Anything you create is saved **off**. Editing the agent, level, prompt or cards of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
+- You can create and edit automations. Anything you create is saved **off**. Editing the agent, model, level, prompt or cards of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
 - You can `try` one: a trial on up to 3 cards, read-only, with notes kept in the run history and nothing written into the cards. At most 6 trials an hour.
 - You can switch one `off`, and `delete` one that's off.
 - You can't switch one on, start a real run or stop a run. The person does that in the Automations tab. Don't look for a way round it, and never edit `.vaultos/automations.json`.

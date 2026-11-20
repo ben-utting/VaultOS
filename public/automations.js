@@ -139,8 +139,8 @@
   $('au-new').addEventListener('click', () => openBuilder(null));
   // Only the fields an automation is saved with (the list adds scheduleText, nextRun and the like).
   function definition(a) {
-    const { name, enabled, agent, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
-    return { name, enabled, agent, template, prompt, level, cards, schedule, section, timeLimitMin };
+    const { name, enabled, agent, model, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
+    return { name, enabled, agent, ...(model ? { model } : {}), template, prompt, level, cards, schedule, section, timeLimitMin };
   }
 
   // ---------- Runs ----------
@@ -269,12 +269,12 @@
   // A right-hand panel over the page. B.editing is the automation being edited (null for a new one);
   // nothing is saved until Save. The server's checks are the real ones; validateAutomation gives the same
   // answers first, beside the fields.
-  const B = { editing: null, matchTimer: null, matchSeq: 0, template: 'check-in' };
+  const B = { editing: null, matchTimer: null, matchSeq: 0, template: 'check-in', models: null, modelsLoading: null };
   const FIELD_OF = {
-    name: 'ab-name', agent: 'ab-agent', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
+    name: 'ab-name', agent: 'ab-agent', model: 'ab-model', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
     statuses: 'ab-statuses', subtasks: 'ab-subtasks', schedule: 'ab-schedule', section: 'ab-section', timeLimitMin: 'ab-limit', enabled: 'ab',
   };
-  const INPUT_FIELDS = new Set(['ab-name', 'ab-prompt', 'ab-section', 'ab-limit', 'ab-board', 'ab-template']);
+  const INPUT_FIELDS = new Set(['ab-name', 'ab-model', 'ab-prompt', 'ab-section', 'ab-limit', 'ab-board', 'ab-template']);
   const defaults = () => ({
     name: '', enabled: true, agent: 'default', template: 'check-in', prompt: AC.TEMPLATES['check-in'].prompt, level: 'report',
     cards: { board: (typeof STATE !== 'undefined' && STATE.workspace) || 'all', statuses: ['in-progress', 'blocked'], subtasks: false },
@@ -308,6 +308,40 @@
         <span class="ab-tile-mark">${window.AgentMarks ? AgentMarks.svg(c.mark) : ''}</span>
         <span class="ab-tile-t">${esc(c.label)}</span>${why ? `<span class="ab-tile-why">${esc(why)}</span>` : ''}</button>`;
     }).join('');
+  }
+  // ---- The model (Cursor only) ----
+  // The field shows when the picked agent is Cursor, or Default while the default is Cursor; otherwise it's
+  // hidden and cleared, so no model is saved. Suggestions come from Cursor's own list when it loads; any id
+  // can be typed either way, and saving never waits for the list.
+  const modelAgent = () => {
+    const v = radio('ab-agent');
+    return v === 'cursor' || (v === 'default' && !!AU.data && AU.data.defaultAgent === 'cursor');
+  };
+  const MODEL_HINT = "Leave blank to use Cursor's default.";
+  function syncModel() {
+    const show = modelAgent();
+    $('ab-model-f').classList.toggle('hidden', !show);
+    if (!show) {
+      $('ab-model').value = '';
+      $('ab-model-err').textContent = '';
+      $('ab-model').removeAttribute('aria-invalid');
+      return;
+    }
+    loadModels();
+  }
+  function paintModels() {
+    const m = B.models;
+    $('ab-model-list').innerHTML = (m && m.models ? m.models : []).map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join('');
+    $('ab-model-hint').textContent = m && m.error ? `${MODEL_HINT} ${m.error}` : MODEL_HINT;
+  }
+  function loadModels() {
+    if (B.models && !B.models.error) { paintModels(); return; }
+    if (B.modelsLoading) return;
+    $('ab-model-hint').textContent = `${MODEL_HINT} Loading Cursor's models…`;
+    B.modelsLoading = api('/api/automations/models')
+      .then((m) => { B.models = { models: Array.isArray(m.models) ? m.models : [], error: m.error || '' }; })
+      .catch((err) => { B.models = { models: [], error: `Couldn't list Cursor's models (${err.message}). You can still type a model id.` }; })
+      .finally(() => { B.modelsLoading = null; paintModels(); });
   }
   function renderLevels(selected) {
     $('ab-level').innerHTML = AC.LEVELS.map((l) => `<button type="button" role="radio" class="ab-level" data-v="${l}" aria-checked="${l === selected}">
@@ -349,7 +383,8 @@
   function formValue() {
     return {
       name: $('ab-name').value, enabled: B.editing ? B.editing.enabled : (B.enabled !== undefined ? B.enabled : true),
-      agent: radio('ab-agent'), template: $('ab-template').value, prompt: $('ab-prompt').value, level: radio('ab-level'),
+      agent: radio('ab-agent'), model: $('ab-model').value.trim() || undefined,
+      template: $('ab-template').value, prompt: $('ab-prompt').value, level: radio('ab-level'),
       cards: { board: $('ab-board').value, statuses: checkedChips('ab-statuses'), subtasks: $('ab-subtasks').checked },
       schedule: scheduleFromForm(), section: $('ab-section').value, timeLimitMin: Number($('ab-limit').value),
     };
@@ -413,6 +448,8 @@
     $('ab-name').value = v.name;
     renderLevels(v.level);
     renderAgents(v.agent);
+    $('ab-model').value = v.model || '';
+    syncModel();
     $('ab-template').innerHTML = Object.entries(AC.TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
     $('ab-template').value = v.template;
     $('ab-prompt').value = v.prompt;
@@ -488,6 +525,7 @@
     if (!t || t.getAttribute('aria-disabled') === 'true') return;
     setRadio('ab-agent', t.dataset.v);
     $('ab-agent-err').textContent = '';
+    syncModel();
   });
   $('ab-level').addEventListener('click', (e) => {
     const t = e.target.closest('.ab-level');

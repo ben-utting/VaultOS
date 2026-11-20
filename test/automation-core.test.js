@@ -128,6 +128,32 @@ test('schedule is normalised to its own fields', () => {
   assert.deepEqual(AC.validateAutomation(a, ctx).value.schedule, { repeat: 'hours', every: 4, from: '08:00' });
 });
 
+// ---------- The model (passed to Cursor as --model) ----------
+
+test('model: left out or null means none, and the value carries no model key', () => {
+  assert.equal('model' in AC.validateAutomation(example(), ctx).value, false);
+  const r = AC.validateAutomation({ ...example(), model: null }, ctx);
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.equal('model' in r.value, false);
+});
+
+test('model: a set id is kept, trimmed; a parameterized id is fine', () => {
+  assert.equal(AC.validateAutomation({ ...example(), model: '  gpt-5  ' }, ctx).value.model, 'gpt-5');
+  const id = 'claude-opus-4-8[context=1m,effort=high,fast=false]';
+  assert.equal(AC.validateAutomation({ ...example(), model: id }, ctx).value.model, id);
+  assert.equal(AC.validateAutomation({ ...example(), model: 'm'.repeat(200) }, ctx).value.model, 'm'.repeat(200));
+});
+
+test('model: empty, multi-line, over 200 characters, control characters, a leading dash or a non-string are refused', () => {
+  for (const model of ['', '   ', 'gpt-5\nrm -rf', 'gpt-5\r', 'a\tb', 'gpt\u0000', 'gpt x', 'm'.repeat(201), '--force', 42, ['gpt-5'], {}]) {
+    assert.ok(errorsFor({ model }).model, `expected ${JSON.stringify(model)} to be refused`);
+  }
+});
+
+test('model: it is not checked against any list of models', () => {
+  assert.equal(AC.validateAutomation({ ...example(), model: 'some-model-from-next-year' }, ctx).ok, true);
+});
+
 test('runSummary', () => {
   const start = Date.parse('2026-11-11T08:00:00Z');
   const cards = [...Array(5)].map(() => ({ state: 'noted' })).concat([{ state: 'skipped' }]);

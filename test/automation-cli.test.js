@@ -80,6 +80,21 @@ test('edit sends the id and the changes', async () => {
   assert.deepEqual(r.sent[0].body.args, { id: 'abcd1234', changes: { schedule: { time: '09:00' } } });
 });
 
+test('a model edit is sent as is and says it switched the automation off', async () => {
+  const r = await run(['edit', 'abcd1234', '--file', 'c.json'], {
+    files: { 'c.json': '{"model":"gpt-5"}' },
+    answers: [['edit', 200, { automation: { id: 'abcd1234', name: 'Check', enabled: false, model: 'gpt-5', agentChange: { fields: ['model'], switchedOff: true } } }]],
+  });
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(r.sent[0].body.args, { id: 'abcd1234', changes: { model: 'gpt-5' } });
+  assert.match(r.out, /off until the person switches it on in the Automations tab \(changed: model\)/);
+});
+
+test('the help names the model among the edits that switch an automation off', async () => {
+  const r = await run(['--help']);
+  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt or cards changes switch it off/);
+});
+
 test('a file that is not JSON is a usage error', async () => {
   const r = await run(['create', '--file', 'a.json'], { files: { 'a.json': '{ nope' } });
   assert.equal(r.code, 2);

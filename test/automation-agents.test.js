@@ -62,6 +62,69 @@ test('cursor command keeps an XDG_CONFIG_HOME the server already has', () => {
   assert.ok(r.cmd.includes('XDG_CONFIG_HOME=/x/conf'), r.cmd);
 });
 
+// ---------- The automation's model ----------
+const count = (s, part) => s.split(part).length - 1;
+
+test('cursor command: no model, or a blank one, passes no --model', () => {
+  for (const opts of [{ home: '/h' }, { home: '/h', model: '' }, { home: '/h', model: null }, { home: '/h', model: '   ' }]) {
+    const r = A.agentCommand('cursor', 'report', 'P', opts);
+    assert.ok(!r.cmd.includes('--model'), r.cmd);
+  }
+});
+
+test('cursor command: a set model is passed once, shell-quoted, after the read-only flags', () => {
+  const r = A.agentCommand('cursor', 'report', 'P', { home: '/h', model: 'gpt-5' });
+  assert.equal(count(r.cmd, '--model'), 1, r.cmd);
+  assert.ok(r.cmd.endsWith(" --trust --mode ask --model 'gpt-5'"), r.cmd);
+  assert.equal(r.input, 'P', 'the prompt still goes on stdin');
+  const p = A.agentCommand('cursor', 'update', 'P', { home: '/h', model: 'claude-opus-4-8[context=1m,effort=high,fast=false]' });
+  assert.equal(count(p.cmd, '--model'), 1, p.cmd);
+  assert.ok(p.cmd.includes(" --mode ask --model 'claude-opus-4-8[context=1m,effort=high,fast=false]'"), p.cmd);
+});
+
+test('cursor command: a model holding shell syntax stays one quoted word', () => {
+  const r = A.agentCommand('cursor', 'report', 'P', { home: '/h', model: "x'; touch /tmp/pwned; echo '" });
+  assert.ok(r.cmd.endsWith(` --model 'x'\\''; touch /tmp/pwned; echo '\\'''`), r.cmd);
+  for (const bad of ['--force', '--yolo', '--approve-mcps', '--sandbox']) assert.ok(!r.cmd.includes(bad), `${bad} in ${r.cmd}`);
+});
+
+test('a model is never passed to another agent', () => {
+  for (const level of ['report', 'update', 'work']) {
+    const r = A.agentCommand('claude', level, 'P', { model: 'gpt-5' });
+    assert.ok(!r.cmd.includes('--model'), r.cmd);
+    assert.ok(!r.cmd.includes('gpt-5'), r.cmd);
+    assert.equal(r.cmd, A.agentCommand('claude', level, 'P').cmd);
+  }
+});
+
+test('cursor models command: --list-models from the automation Cursor home with the real sign-in', () => {
+  const r = A.cursorModelsCommand({ home: '/h' });
+  for (const part of [
+    'XDG_CONFIG_HOME=/h/.config', 'HOME=/h/.cache/vaultos/automation-cursor', 'CURSOR_CONFIG_DIR=/h/.cache/vaultos/automation-cursor/.cursor',
+    '"$(command -v cursor-agent || command -v agent)" --list-models',
+  ]) assert.ok(r.cmd.includes(part), `${part} in ${r.cmd}`);
+  assert.ok(!r.cmd.includes(' -p'), r.cmd);
+});
+
+test('parseCursorModels reads ids and labels from --list-models output', () => {
+  const out = [
+    '\u001b[1mAvailable models\u001b[0m', '',
+    'auto - Auto (current, default)',
+    'gpt-5.3-codex - Codex 5.3',
+    'grok-4.7-low-fast - Grok 4.7  Low Fast​​',
+    'claude-opus-4-8[context=1m] - Opus 4.8 1M',
+    'Tip: use --model <id>', 'gpt-5.3-codex - Codex 5.3',
+  ].join('\n');
+  assert.deepEqual(A.parseCursorModels(out), [
+    { id: 'auto', label: 'Auto (current, default)' },
+    { id: 'gpt-5.3-codex', label: 'Codex 5.3' },
+    { id: 'grok-4.7-low-fast', label: 'Grok 4.7 Low Fast' },
+    { id: 'claude-opus-4-8[context=1m]', label: 'Opus 4.8 1M' },
+  ]);
+  assert.deepEqual(A.parseCursorModels('Error: not signed in'), []);
+  assert.deepEqual(A.parseCursorModels(''), []);
+});
+
 // Cursor's permission globs (checked 2026-11-11 in its bundle): Kind(pattern), only `*` is a wildcard and it
 // matches anything, "/" and dot files included; the rest is literal; a deny wins over any allow.
 const denies = (rules, kind, p) => rules.some((r) => {

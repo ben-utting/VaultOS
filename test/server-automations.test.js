@@ -212,3 +212,48 @@ test('a note keeps its line breaks in the run detail', async (t) => {
   const detail = await s.api('GET', `/api/automations/runs/${run.id}`);
   assert.match(detail.body.cards[0].noteHtml, /line one<br>\s*line two/);
 });
+
+// ---------- The model ----------
+
+test('a model is saved through the routes and comes back in the list; a bad one is a 400 on model', async (t) => {
+  const s = await ready(t, { env: { AUTOMATION_TEST_LEVELS: 'cursor:report,update' } });
+  await s.turnOn();
+  const c = await s.api('POST', '/api/automations', automation({ agent: 'cursor', model: 'gpt-5' }));
+  assert.equal(c.status, 200, c.text);
+  assert.equal(c.body.automation.model, 'gpt-5');
+  const { id } = c.body.automation;
+  assert.equal((await s.api('GET', '/api/automations')).body.automations[0].model, 'gpt-5');
+  for (const model of ['', 'gpt-5\nsecond', 'm'.repeat(201)]) {
+    const bad = await s.api('PUT', `/api/automations/${id}`, automation({ agent: 'cursor', model }));
+    assert.equal(bad.status, 400, JSON.stringify(model));
+    assert.ok(bad.body.errors.model, bad.text);
+  }
+  const cleared = await s.api('PUT', `/api/automations/${id}`, automation({ agent: 'cursor' }));
+  assert.equal('model' in cleared.body.automation, false);
+});
+
+test('the models route lists what Cursor offers, only while automations are live', async (t) => {
+  const s = await ready(t);
+  assert.equal((await s.api('GET', '/api/automations/models')).status, 403);
+  await s.turnOn();
+  const r = await s.api('GET', '/api/automations/models');
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.body.models, [
+    { id: 'auto', label: 'Auto (current, default)' },
+    { id: 'gpt-5', label: 'GPT-5' },
+    { id: 'claude-opus-4-8[context=1m,effort=high,fast=false]', label: 'Opus 4.8 1M High' },
+  ]);
+  assert.equal(r.body.error, undefined);
+});
+
+test('the models route says why when the list cannot be loaded, and saving still works', async (t) => {
+  const s = await ready(t, { env: { AUTOMATION_TEST_MODELS: 'fail', AUTOMATION_TEST_LEVELS: 'cursor:report,update' } });
+  await s.turnOn();
+  const r = await s.api('GET', '/api/automations/models');
+  assert.equal(r.status, 200, r.text);
+  assert.deepEqual(r.body.models, []);
+  assert.match(r.body.error, /couldn't list/i);
+  const c = await s.api('POST', '/api/automations', automation({ agent: 'cursor', model: 'typed-by-hand' }));
+  assert.equal(c.status, 200, c.text);
+  assert.equal(c.body.automation.model, 'typed-by-hand');
+});

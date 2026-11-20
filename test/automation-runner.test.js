@@ -183,6 +183,58 @@ test('a trial runs the agent at report level with the report prompt for a work a
   assert.ok(!prompts[0].includes(AC.LEVEL_PARAGRAPHS.work));
 });
 
+// The real Cursor command each card would get (the fake agent still does the run).
+const cursorSpy = (cmds) => ({
+  resolveAgent: () => ({ id: 'cursor', label: 'Cursor CLI' }),
+  agentCommand: (id, level, prompt, opts) => {
+    if (prompt) cmds.push(A.ADAPTERS[id].command(level, prompt, { ...opts, home: '/h' }).cmd);
+    return A.agentCommand(id, level, prompt, opts);
+  },
+});
+
+test('a run passes the automation model to every card, and a trial does too', async (t) => {
+  const cmds = [];
+  const s = setup(t, { cards: { '01-a': ['in-progress'], '02-b': ['blocked'] }, ...cursorSpy(cmds) });
+  const a = await s.make({ agent: 'default', model: 'claude-opus-4-8[context=1m,effort=high,fast=false]' });
+  assert.equal(a.model, 'claude-opus-4-8[context=1m,effort=high,fast=false]');
+  const run = await runAndWait(s, a);
+  assert.deepEqual(run.cards.map((c) => c.state), ['noted', 'noted']);
+  await tryAndWait(s, a);
+  assert.equal(cmds.length, 4);
+  for (const cmd of cmds) {
+    assert.equal(cmd.split('--model').length - 1, 1, cmd);
+    assert.ok(cmd.endsWith(" --model 'claude-opus-4-8[context=1m,effort=high,fast=false]'"), cmd);
+  }
+});
+
+test('an automation with no model runs Cursor without --model', async (t) => {
+  const cmds = [];
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, ...cursorSpy(cmds) });
+  const run = await runAndWait(s, await s.make());
+  assert.equal(run.cards[0].state, 'noted');
+  assert.equal(cmds.length, 1);
+  assert.ok(!cmds[0].includes('--model'), cmds[0]);
+});
+
+test('an automation saved before models existed (no model field) loads and runs', async (t) => {
+  const cmds = [];
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, ...cursorSpy(cmds) });
+  const old = {
+    id: '0123abcd', name: 'Old check', enabled: true, agent: 'cursor', template: 'blank', prompt: 'FAKE:note', level: 'report',
+    cards: { board: 'work', statuses: ['in-progress'], subtasks: false }, schedule: { repeat: 'daily', time: '20:00' },
+    section: 'Latest check-in', timeLimitMin: 10, created: '2026-11-12T10:00:00.000Z', updated: '2026-11-12T10:00:00.000Z',
+  };
+  fs.mkdirSync(path.join(s.vault, '.vaultos'), { recursive: true });
+  fs.writeFileSync(path.join(s.vault, '.vaultos', 'automations.json'), JSON.stringify({ version: 1, automations: [old] }));
+  assert.deepEqual(await s.store.get(old.id), old);
+  const run = await runAndWait(s, old);
+  assert.equal(run.state, 'finished');
+  assert.equal(run.cards[0].state, 'noted');
+  assert.match(s.read('01-a'), /## Latest check-in\n.*Old check · Cursor CLI_\n\nFake note\./);
+  assert.ok(!cmds[0].includes('--model'), cmds[0]);
+  assert.equal('model' in (await s.store.get(old.id)), false, 'running it adds no model');
+});
+
 test('an update trial records the move it would make without making it', async (t) => {
   const s = setup(t, { cards: { '01-a': ['in-progress'] } });
   const before = s.read('01-a');

@@ -116,6 +116,10 @@
   const NOTE_MAX = 1500;
   const PROMPT_MAX = 8000;
   const NAME_MAX = 60;
+  const MODEL_MAX = 200;
+  // A model id goes on the agent's command line, so it's one line with no control characters, and it can't
+  // start with "-" (no model id does, and it must never read as another option).
+  const MODEL_BAD = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
   const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
   const SECTION_RE = /^[A-Za-z0-9 -]{1,40}$/;
 
@@ -175,6 +179,14 @@
     const enabled = a.enabled === undefined ? true : a.enabled;
     if (typeof enabled !== 'boolean') errors.enabled = 'Must be on or off';
     if (!ctx.agentIds.includes(a.agent)) errors.agent = 'Pick an agent that can run automations';
+    // The model is optional (left out or null: the agent's own default) and isn't checked against a model list.
+    let model = '';
+    if (a.model !== undefined && a.model !== null) {
+      model = typeof a.model === 'string' ? a.model.trim() : '';
+      if (typeof a.model !== 'string' || MODEL_BAD.test(a.model) || !model || model.length > MODEL_MAX || model.startsWith('-')) {
+        errors.model = `Give a model id of 1 to ${MODEL_MAX} characters on one line, or leave it blank`;
+      }
+    }
     if (!Object.prototype.hasOwnProperty.call(TEMPLATES, a.template)) errors.template = 'Unknown template';
     const prompt = typeof a.prompt === 'string' ? a.prompt : '';
     if (!prompt.trim()) errors.prompt = 'Write what the agent should do';
@@ -210,7 +222,7 @@
     return {
       ok: true,
       value: {
-        name, enabled, agent: a.agent, template: a.template, prompt, level: a.level,
+        name, enabled, agent: a.agent, ...(model ? { model } : {}), template: a.template, prompt, level: a.level,
         cards: { board: c.board, statuses, subtasks }, schedule, section, timeLimitMin: a.timeLimitMin,
       },
     };
@@ -300,7 +312,7 @@
   return {
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
-    LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX,
+    LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
     TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText,
   };
 });
