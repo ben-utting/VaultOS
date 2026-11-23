@@ -59,7 +59,9 @@ test('start runs `agent mcp login <id>` with no browser and answers the link', a
   assert.deepEqual([s.cmd, s.args], ['bash', ['-lc', "agent mcp login 'cursor-teams'"]]);
   assert.equal(s.opts.cwd, '/home/x');
   assert.equal(s.opts.env.BROWSER, 'true');
-  assert.deepEqual(L.status('cursor-teams'), { status: 'waiting', url: LINK, port: '8787' });
+  const { startedAt, ...st } = L.status('cursor-teams');
+  assert.deepEqual(st, { status: 'waiting', url: LINK, port: '8787' });
+  assert.equal(typeof startedAt, 'number');
   L.cancel('cursor-teams');
 });
 
@@ -163,4 +165,32 @@ test('cursorTools: signed out, signed in, or failing', async () => {
 test('scrub never repeats a code, a state or a query string', () => {
   assert.equal(scrub('see http://localhost:8787/callback?code=abc&state=def now'), 'see http://localhost:8787/callback now');
   assert.equal(scrub('code=abc&state=def'), 'code=…&state=…');
+});
+
+test('a CLI that stops waiting before anything is pasted is not a sign-in: the card and Finish both say why', async () => {
+  const cli = fakeCli();
+  let t = 1000000;
+  const L = createCursorLogins({ spawn: cli.spawn, home: '/h', now: () => t });
+  await L.start('cursor-teams');
+  t += 5 * 60 * 1000;
+  cli.spawned[0].child.stdout.write('Timed out waiting for the OAuth callback\n');
+  await new Promise((r) => setImmediate(r));
+  cli.spawned[0].child.finish(0); // exits cleanly, but nobody signed in
+  const s = L.status('cursor-teams');
+  assert.equal(s.status, 'failed');
+  assert.match(s.error, /stopped waiting for Microsoft after 5 minutes \(Timed out waiting for the OAuth callback\)\. Select Sign in to start again\./);
+  await assert.rejects(() => L.finish('cursor-teams', BACK), (e) => e.message === s.error);
+});
+
+test('Finish with nothing waiting says VaultOS may have restarted', async () => {
+  const L = createCursorLogins({ spawn: fakeCli().spawn, home: '/h' });
+  await assert.rejects(() => L.finish('cursor-teams', BACK), /may have restarted since you selected Sign in/);
+});
+
+test('status while waiting says when it started', async () => {
+  const cli = fakeCli();
+  const L = createCursorLogins({ spawn: cli.spawn, home: '/h', now: () => 42 });
+  await L.start('cursor-teams');
+  assert.equal(L.status('cursor-teams').startedAt, 42);
+  L.cancel('cursor-teams');
 });

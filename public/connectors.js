@@ -594,6 +594,7 @@
   const STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
   const SIGN_IN = ['atlassian', 'vantage']; // connectors with a browser sign-in
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
+  const CURSOR_GIVE_UP_MS = 16 * 60 * 1000; // VaultOS stops a Cursor sign-in after 15 minutes
 
   function mountConnectors(el, ui) {
     const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, teamschats: null, outlookmail: null, outlookcalendar: null, cuPaste: {}, options: {}, canTerm: true, installing: null };
@@ -602,6 +603,7 @@
     let busy = false;
     let atlTimer = null, azTimer = null, instTimer = null;
     const msTimers = {}; // app sign-in connector id -> its status poll
+    const cuTimers = {}; // Cursor's own connector id -> its status poll while the Cursor CLI waits
     let atlUntil = 0;
     const active = () => (ui.active ? ui.active() : true);
 
@@ -648,6 +650,11 @@
       if (az) {
         if (az.state === 'connecting' && !azTimer) startAzPoll();
         if (az.state !== 'connecting') { st.azure = null; stopAzPoll(); }
+      }
+      // A Cursor sign-in waits on the Cursor CLI, which can give up or stop: watch it, so the card says why at once.
+      for (const row of list.filter((c) => BODIES[c.id] === cursorBody)) {
+        if (row.state === 'connecting' && !cuTimers[row.id]) startCuPoll(row.id);
+        if (row.state !== 'connecting') stopCuPoll(row.id);
       }
       for (const [mid, ma] of Object.entries(MSAPP)) {
         const row = list.find((c) => c.id === mid);
@@ -733,6 +740,18 @@
       }, AZURE_POLL_MS);
     }
     function stopMsPoll(id) { if (msTimers[id]) { clearInterval(msTimers[id]); msTimers[id] = null; } }
+    function startCuPoll(id) {
+      stopCuPoll(id);
+      const until = Date.now() + CURSOR_GIVE_UP_MS;
+      cuTimers[id] = setInterval(async () => {
+        if (!active() || Date.now() > until) { stopCuPoll(id); return; }
+        try {
+          const s = (await ui.api('GET', `/api/connectors/${encodeURIComponent(id)}/status`)) || {};
+          if (s.status !== 'waiting') { stopCuPoll(id); await refresh(); }
+        } catch (e) { /* the next tick tries again */ }
+      }, AZURE_POLL_MS);
+    }
+    function stopCuPoll(id) { if (cuTimers[id]) { clearInterval(cuTimers[id]); cuTimers[id] = null; } }
     // After Install the terminal runs on its own: look for the tools every 3 s.
     function startInstPoll() {
       stopInstPoll();
@@ -740,7 +759,7 @@
       instTimer = setInterval(() => { if (!active() || Date.now() > until) stopInstPoll(); else pollRefresh(); }, AZURE_POLL_MS);
     }
     function stopInstPoll() { if (instTimer) { clearInterval(instTimer); instTimer = null; } }
-    function stop() { stopAtlPoll(); stopAzPoll(); for (const id of Object.keys(MSAPP)) stopMsPoll(id); stopInstPoll(); }
+    function stop() { stopAtlPoll(); stopAzPoll(); for (const id of Object.keys(MSAPP)) stopMsPoll(id); for (const id of Object.keys(cuTimers)) stopCuPoll(id); stopInstPoll(); }
 
     // The approve tab says it is done over a same-origin channel (it has no opener); polling is the fallback.
     if (typeof BroadcastChannel !== 'undefined') {
@@ -886,7 +905,7 @@
       if (act === 'azure-cancel') {
         return run('azure', async () => { await call('POST', '/api/connectors/azure/cancel'); st.azure = null; stopAzPoll(); await refresh(); });
       }
-      if (act === 'cu-start') return run('cu', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/start`); await refresh(); });
+      if (act === 'cu-start') return run('cu', async () => { st.cuPaste[id] = ''; await call('POST', `/api/connectors/${encodeURIComponent(id)}/start`); await refresh(); });
       if (act === 'cu-finish') {
         return run('cu', async () => {
           await call('POST', `/api/connectors/${encodeURIComponent(id)}/finish`, { url: ((st.cuPaste || {})[id] || '').trim() });

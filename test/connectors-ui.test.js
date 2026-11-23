@@ -940,3 +940,35 @@ test("Cursor's own: Turn on, paste and Finish post to its own routes", async () 
   assert.deepEqual(calls.find((c) => c[1].endsWith('/finish')), ['POST', '/api/connectors/cursor-teams/finish', { url: 'http://localhost:8787/callback?code=a&state=b' }]);
   assert.match(html, /Signed in through Cursor/);
 });
+
+test("Cursor's own: while it waits the card watches the sign-in, and shows why when the Cursor CLI stops", async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const calls = []; let html = ''; const handlers = {};
+  let row = { state: 'connecting', login: { url: 'https://login.microsoftonline.com/x', port: '8787' } };
+  let status = { status: 'waiting' };
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url) => {
+    calls.push([method, url]);
+    if (url.endsWith('/cursor-teams/status')) return status;
+    return cuView(row);
+  }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  handlers.input({ target: { id: 'cu-paste', value: 'http://localhost:8787/callback?code=half' } });
+  t.mock.timers.tick(3000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.ok(calls.some((c) => c[1] === '/api/connectors/cursor-teams/status'));
+  assert.match(html, /id="cu-paste"/, 'still waiting: the paste box stays');
+  status = { status: 'failed', error: 'The Cursor CLI stopped waiting for Microsoft after 5 minutes. Select Sign in to start again.' };
+  row = { state: 'not-signed-in', error: status.error };
+  t.mock.timers.tick(3000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.doesNotMatch(html, /id="cu-paste"/);
+  assert.match(html, /stopped waiting for Microsoft after 5 minutes/);
+  assert.match(html, /data-act="cu-start"[^>]*>Sign in</);
+  const polls = calls.filter((c) => c[1].endsWith('/status')).length;
+  t.mock.timers.tick(9000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.equal(calls.filter((c) => c[1].endsWith('/status')).length, polls, 'the poll stops once it ended');
+  m.stop && m.stop();
+});
