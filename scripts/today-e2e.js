@@ -487,7 +487,7 @@ SCEN.T3 = async () => {
   check('T3 idle: #td-go reads Start, chip hidden, Reset disabled', await ev(p, () => document.getElementById('td-go').textContent.trim() === 'Start'
     && document.getElementById('today-chip').classList.contains('hidden') && document.getElementById('td-reset').disabled) === true);
   check('T3 idle clock reads 00:25 (spm 1)', await text(p, '#td-clock') === '00:25', await text(p, '#td-clock'));
-  check('T3 #segTodaySound defaults to on', await ev(p, () => document.querySelector('#segTodaySound button.on').dataset.v) === 'on');
+  check('T3 #today-sound defaults to on', await ev(p, () => document.getElementById('today-sound').checked) === true);
   check('T3 ▶ on today\'s open task, Focus link on goal habits only', await ev(p, () => !!document.querySelector('#td-tasks .td-trow .td-tfocus')
     && document.querySelectorAll('#td-habits .td-hfocus').length === 3 && !document.querySelector('.td-hrow[data-id="wake"] .td-hfocus')) === true);
 
@@ -607,16 +607,16 @@ SCEN.T3 = async () => {
 
   // The sound setting: Off is stored as 'off', On as 'on'.
   await tap(p, '#setbtn');
-  await tap(p, '#ss-nav button[data-sec="look"]');
+  await tap(p, '#ss-nav button[data-sec="terms"]');
   check('T3 Settings: Today sound row after Agent sound', await ev(p, () => {
-    const r = document.getElementById('segTodaySound').closest('.row');
-    return r.previousElementSibling && r.previousElementSibling.contains(document.getElementById('segTermSound'));
+    const r = document.getElementById('today-sound-row');
+    return r.previousElementSibling && r.previousElementSibling.contains(document.getElementById('term-sound'));
   }) === true);
-  await tap(p, '#segTodaySound button[data-v="off"]');
+  await tap(p, '#today-sound');
   check('T3 sound Off → localStorage off', await ev(p, () => localStorage.getItem('vaultboard.today.sound')) === 'off'
-    && await ev(p, () => document.querySelector('#segTodaySound button.on').dataset.v) === 'off');
+    && await ev(p, () => document.getElementById('today-sound').checked) === false);
   await shot(p, `t3-${themeTag()}-${sizeTag()}-settings`);
-  await tap(p, '#segTodaySound button[data-v="on"]');
+  await tap(p, '#today-sound');
   check('T3 sound On → localStorage on', await ev(p, () => localStorage.getItem('vaultboard.today.sound')) === 'on');
   await tap(p, '#ss-close');
   check('T3 no horizontal scroll', await ev(p, () => document.documentElement.scrollWidth <= window.innerWidth), await ev(p, () => [document.documentElement.scrollWidth, window.innerWidth]));

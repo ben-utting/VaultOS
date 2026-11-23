@@ -1336,12 +1336,9 @@ for (const b of document.querySelectorAll('#segTermWhere button')) b.addEventLis
   lsSet(TERM_WHERE_KEY, b.dataset.v);
   segSet('segTermWhere', b.dataset.v);
 });
-// Agent sound: a chime when an agent needs you or finishes (read by termui).
-segSet('segTermSound', lsGet('vaultboard.term.sound', false) ? 'on' : 'off');
-for (const b of document.querySelectorAll('#segTermSound button')) b.addEventListener('click', () => {
-  lsSet('vaultboard.term.sound', b.dataset.v === 'on');
-  segSet('segTermSound', b.dataset.v);
-});
+// Agent sound: a chime when an agent needs you or finishes (read by termui). Settings → Terminals and sounds.
+$('term-sound').checked = !!lsGet('vaultboard.term.sound', false);
+$('term-sound').addEventListener('change', (e) => lsSet('vaultboard.term.sound', e.target.checked));
 
 // window.open('', name) returns the existing Terminals window without
 // reloading it, or a blank new one. Must run synchronously inside the click,

@@ -647,7 +647,7 @@ function stepExtras() {
         today),
       tz.wrap, tzList,
       h('div', { class: 'su-field' }, h('span', { class: 'su-label', id: 'su-theme-l', text: 'Theme' }),
-        seg('theme', 'dark', [['dark', 'Dark'], ['light', 'Sepia']], 'su-theme-l')),
+        seg('theme', 'dark', [['dark', 'Dark'], ['light', 'Light']], 'su-theme-l')),
       h('div', { class: 'su-field' }, h('span', { class: 'su-label', id: 'su-font-l', text: 'Reading font' }),
         seg('font', 'dyslexic', [['system', 'Standard'], ['dyslexic', 'OpenDyslexic']], 'su-font-l'),
         h('p', { class: 'su-hint', text: 'For Knowledge Base articles. Theme and font are saved in this browser.' })),

@@ -2,15 +2,20 @@
 
 const $ = (id) => document.getElementById(id);
 
-// Column visibility is remembered per workspace (one board's chosen columns
-// shouldn't hide/show columns on another, and vice versa). One-time
-// migration below carries an existing global preference into whichever
-// workspace was last active, then drops the old key.
+// Columns are automatic: one shows when it has cards and hides when it's empty. The only choice left is whether
+// Done shows, remembered per workspace. It used to be a tick per column (hiddenColumns); the first read carries
+// only a hidden Done across and drops the old list, since a column with cards now always shows.
 function hiddenColsKey(wsKey) { return 'vaultboard.hiddenColumns.' + wsKey; }
-function loadHiddenColumns(wsKey) {
-  const raw = localStorage.getItem(hiddenColsKey(wsKey));
-  try { return new Set(raw != null ? JSON.parse(raw) : ['done']); }
-  catch { return new Set(['done']); }
+function hideDoneKey(wsKey) { return 'vaultboard.hideDone.' + wsKey; }
+function loadHideDone(wsKey) {
+  const v = localStorage.getItem(hideDoneKey(wsKey));
+  if (v != null) return v === '1';
+  let hide = true;   // Done was hidden unless someone ticked it back on
+  const legacy = localStorage.getItem(hiddenColsKey(wsKey));
+  if (legacy != null) { try { hide = JSON.parse(legacy).includes('done'); } catch { hide = true; } }
+  localStorage.setItem(hideDoneKey(wsKey), hide ? '1' : '0');
+  localStorage.removeItem(hiddenColsKey(wsKey));
+  return hide;
 }
 // Subtask visibility is remembered the same way, per workspace: a board whose work
 // is fanned out into batches wants them collapsed; one with none doesn't
@@ -34,7 +39,7 @@ let STATE = {
   kb: { collections: [], articles: [], collectionFilter: new Set(), query: '', article: null, loaded: false,
     sidebarOpen: localStorage.getItem('vaultboard.kbSidebarOpen') === '1' },
 };
-STATE.hiddenColumns = loadHiddenColumns(STATE.workspace);
+STATE.hideDone = loadHideDone(STATE.workspace);
 STATE.hideSubtasks = loadHideSubtasks(STATE.workspace);
 let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped by whichever is open
 let DRAG = null;
@@ -271,26 +276,35 @@ new ResizeObserver(() => {
 // Workspace, folder filter, columns and appearance used to be four header
 // popovers that could open on top of each other. Now one modal sheet with a
 // section per popover; only one section is ever showing.
-let SHEET_SEC = 'ws';
+let SHEET_SEC = 'look';
 const sheetOpen = () => !$('setsheet').classList.contains('hidden');
 const secOpen = (sec) => sheetOpen() && SHEET_SEC === sec;
-// Folders mean nothing in Files mode or on Today, columns only exist on the Board. The agent runs in the
+// Every section is always listed (Folders says when the current mode has none to filter). The agent runs in the
 // terminal. Changing settings needs a real session, which a same-box read doesn't have.
 const secAvailable = (sec) => {
-  if (sec === 'folders') return STATE.mode === 'board' || STATE.mode === 'kb';
-  if (sec === 'cols') return STATE.mode === 'board';
+  if (sec === 'terms') return !$('term-where-row').classList.contains('hidden') || !$('term-sound-row').classList.contains('hidden') || !$('today-sound-row').classList.contains('hidden');
   if (sec === 'agent') return termOn() && !ME.localRead;
   if (sec === 'features' || sec === 'password' || sec === 'connectors') return !ME.localRead;
   if (sec === 'learn') return learnOn() && !ME.localRead;
   return true;
 };
 function showSection(sec) {
-  if (!secAvailable(sec)) sec = 'ws';
+  if (!secAvailable(sec)) sec = 'look';
   SHEET_SEC = sec;
-  for (const b of $('ss-nav').querySelectorAll('button')) b.classList.toggle('active', b.dataset.sec === sec);
+  $('setsheet').dataset.view = 'pane';   // a phone shows one section at a time, with a way back to the list
+  for (const b of $('ss-nav').querySelectorAll('button[data-sec]')) {
+    b.classList.toggle('active', b.dataset.sec === sec);
+    if (b.dataset.sec === sec) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
   for (const p of document.querySelectorAll('.ss-pane')) p.classList.toggle('active', p.dataset.sec === sec);
+  $('ss-panes').scrollTop = 0;
   if (sec === 'ws') { renderWsList(); loadBoardSettings(); }
-  else if (sec === 'folders') { FILTER_SEARCH = ''; $('filter-search').value = ''; renderFilterList(); }
+  else if (sec === 'folders') {
+    const has = STATE.mode === 'board' || STATE.mode === 'kb';
+    $('folders-off').classList.toggle('hidden', has);
+    $('folders-on').classList.toggle('hidden', !has);
+    if (has) { FILTER_SEARCH = ''; $('filter-search').value = ''; renderFilterList(); }
+  }
   else if (sec === 'cols') { renderColsList(); renderSubtaskToggle(); }
   else if (sec === 'features') loadFeatures();
   else if (sec === 'learn' && window.Learn) Learn.openSettings();
@@ -360,25 +374,40 @@ $('skills-list').addEventListener('click', (e) => {
   const d = e.target.closest('.sk-desc');
   if (d) d.classList.toggle('open');
 });
-function openSheet(sec = SHEET_SEC) {
+// Settings is a page beside the sidebar, not a dialog: the mode underneath keeps its state, and choosing a mode in
+// the sidebar closes it. On a phone it starts on the section list unless a section was asked for.
+const phoneSheet = () => window.matchMedia('(max-width: 700px)').matches;
+function openSheet(sec) {
   for (const b of $('ss-nav').querySelectorAll('button[data-sec]')) b.classList.toggle('hidden', !secAvailable(b.dataset.sec));
+  for (const g of $('ss-nav').querySelectorAll('.ss-group')) g.classList.toggle('hidden', !g.querySelector('button[data-sec]:not(.hidden)'));
   $('setsheet').classList.remove('hidden');
-  $('ss-scrim').classList.remove('hidden');
-  showSection(sec);
-  $('ss-close').focus();
-  if (sec !== 'connectors') cxCheck();
+  document.body.classList.add('settings-open');
+  $('setbtn').classList.add('active');
+  $('setbtn').setAttribute('aria-current', 'page');
+  showSection(sec || SHEET_SEC);
+  if (!sec && phoneSheet()) $('setsheet').dataset.view = 'index';
+  if (!phoneSheet()) $('ss-close').focus();
+  if ((sec || SHEET_SEC) !== 'connectors') cxCheck();
 }
 function closeSheet() {
   if (!sheetOpen()) return;
   $('setsheet').classList.add('hidden');
-  $('ss-scrim').classList.add('hidden');
+  document.body.classList.remove('settings-open');
+  $('setbtn').classList.remove('active');
+  $('setbtn').removeAttribute('aria-current');
   if (CX.pane) CX.pane.stop();
-  $('setbtn').focus();
+  if (!phoneSheet()) $('setbtn').focus();
 }
 $('setbtn').addEventListener('click', () => (sheetOpen() ? closeSheet() : openSheet()));
 $('ss-close').addEventListener('click', closeSheet);
-$('ss-scrim').addEventListener('click', closeSheet);
-$('ss-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-sec]'); if (b) showSection(b.dataset.sec); });
+$('ss-back').addEventListener('click', (e) => { $('setsheet').dataset.view = 'index'; const b = $('ss-nav').querySelector('button.active'); if (b && e.detail === 0) b.focus(); });
+// From the keyboard (detail 0) focus follows into the section; a tap leaves no focus ring behind.
+$('ss-nav').addEventListener('click', (e) => { const b = e.target.closest('button[data-sec]'); if (b) { showSection(b.dataset.sec); if (phoneSheet() && e.detail === 0) $('ss-back').focus(); } });
+// Choosing a mode in the sidebar (or the phone's tab bar) leaves Settings for it.
+for (const b of document.querySelectorAll('#sidebar .mode, #mobile-nav [data-for]')) b.addEventListener('click', closeSheet);
+// A change that only takes effect on a reload (Features) shows the bar; Reload does it.
+function needReload() { $('ss-reload').classList.remove('hidden'); }
+$('ss-reload-btn').addEventListener('click', () => location.reload());
 // Window capture runs before the drawer/viewer listeners on document, so one
 // Escape closes the sheet and nothing behind it.
 window.addEventListener('keydown', (e) => {
@@ -464,25 +493,28 @@ $('filter-none').addEventListener('click', () => {
   if (STATE.mode === 'kb') renderKB(); else render();
 });
 
-// ---------- Column visibility popover (Board only) ----------
-// Separate from the folder filter above: this hides whole status columns rather
-// than filtering cards within them (e.g. Done, once a task has its write-up and
-// no longer needs a board slot). Persisted so the choice survives a reload.
+// ---------- Columns (Settings → Board) ----------
+// A column shows when it has cards and hides when it's empty (render() decides). The section keeps the two choices
+// that are left: Hide Done and folding subtasks into their parent, both per workspace, plus a read-only list of
+// what is on the board now.
 const STATUS_LABELS = {
   backlog: 'Backlog', scheduled: 'Scheduled', 'in-progress': 'In Progress',
   blocked: 'Blocked', 'needs-decision': 'Needs Decision', review: 'Review', done: 'Done',
 };
-function saveHiddenColumns() {
-  localStorage.setItem(hiddenColsKey(STATE.workspace), JSON.stringify([...STATE.hiddenColumns]));
-}
-// The badge counts everything this popover is keeping off the board — hidden columns plus
-// the subtask toggle — so a collapsed board never looks like a board that's simply empty.
+// The badge counts what these choices keep off the board, so a folded board never looks like one that's simply empty.
 function updateColsBadge() {
   const badge = $('cols-badge');
-  const n = STATE.hiddenColumns.size + (STATE.hideSubtasks ? 1 : 0);
+  const n = (STATE.hideDone ? 1 : 0) + (STATE.hideSubtasks ? 1 : 0);
   badge.textContent = n;
   badge.classList.toggle('hidden', n === 0);
   updateSetDot();
+}
+function setHideDone(on) {
+  STATE.hideDone = on;
+  localStorage.setItem(hideDoneKey(STATE.workspace), on ? '1' : '0');
+  updateColsBadge();
+  renderColsList();
+  render();
 }
 function setHideSubtasks(on) {
   STATE.hideSubtasks = on;
@@ -491,50 +523,27 @@ function setHideSubtasks(on) {
   renderSubtaskToggle();
   render();
 }
-// The count is of collapsible children, not of cards currently hidden: it stays truthful
-// while a search or a batch filter is temporarily showing them again.
-// Checked means "on the board", same as every column box below it in the popover — so the
-// row is labelled Subtasks and unticking is what hides them, rather than a lone box whose
-// tick means the opposite of its neighbours'.
+// The hint counts collapsible children, not cards currently hidden: it stays truthful while a search or a batch
+// filter is temporarily showing them again.
 function renderSubtaskToggle() {
   const n = collapsibleCount();
-  $('show-subtasks').checked = !STATE.hideSubtasks;
-  const count = $('subtasks-count');
-  count.textContent = n;
-  count.classList.toggle('hidden', n === 0);
-  $('subtasks-row').classList.toggle('muted-row', n === 0);
-  $('subtasks-row').title = n
-    ? `${n} subtask card${n === 1 ? '' : 's'} on this board can fold into ${n === 1 ? 'its parent' : 'their parents'}`
-    : 'No subtasks on this board yet';
+  $('fold-subtasks').checked = STATE.hideSubtasks;
+  $('subtasks-d').textContent = n
+    ? `${n} subtask card${n === 1 ? '' : 's'} on this board. The parent keeps a subtasks chip; select it to bring them back.`
+    : 'No subtasks on this board yet. When there are, the parent keeps a subtasks chip; select it to bring them back.';
 }
-$('show-subtasks').addEventListener('change', (e) => setHideSubtasks(!e.target.checked));
+$('fold-subtasks').addEventListener('change', (e) => setHideSubtasks(e.target.checked));
+$('hide-done').addEventListener('change', (e) => setHideDone(e.target.checked));
 function renderColsList() {
-  const n = (s) => STATE.tasks.filter((t) => t.status === s).length;   // an empty column hides itself, ticked or not
-  $('cols-list').innerHTML = STATE.statuses.map((s) => `
-    <label class="filter-item">
-      <input type="checkbox" data-s="${esc(s)}" ${STATE.hiddenColumns.has(s) ? '' : 'checked'}>
-      <span>${esc(STATUS_LABELS[s] || s)}</span>
-      <span class="n" title="${n(s) ? '' : 'Empty columns stay hidden until a card arrives'}">${n(s)}</span>
-    </label>`).join('');
-  for (const el of $('cols-list').querySelectorAll('input[type=checkbox]')) {
-    el.addEventListener('change', () => {
-      if (el.checked) STATE.hiddenColumns.delete(el.dataset.s); else STATE.hiddenColumns.add(el.dataset.s);
-      saveHiddenColumns();
-      updateColsBadge();
-      render();
-    });
-  }
+  $('hide-done').checked = STATE.hideDone;
+  const n = (s) => STATE.tasks.filter((t) => t.status === s).length;
+  $('cols-list').innerHTML = STATE.statuses.map((s) => {
+    const count = n(s);
+    const why = s === 'done' && STATE.hideDone ? 'Hidden' : count ? 'Shown' : 'Hidden (empty)';
+    return `<li class="ss-col${why === 'Shown' ? '' : ' off'}"><span class="dot" style="background: var(--${esc(s)})" aria-hidden="true"></span>`
+      + `<span class="ss-col-n">${esc(STATUS_LABELS[s] || s)}</span><span class="ss-col-c">${count}</span><span class="ss-col-w">${why}</span></li>`;
+  }).join('');
 }
-$('cols-all').addEventListener('click', () => {
-  STATE.hiddenColumns.clear();
-  saveHiddenColumns();
-  STATE.hideSubtasks = false;        // "Show all" means all — it clears the badge it reads from
-  localStorage.setItem(hideSubtasksKey(STATE.workspace), '0');
-  updateColsBadge();
-  renderColsList();
-  renderSubtaskToggle();
-  render();
-});
 
 // ========================================================================
 // Board view
@@ -788,7 +797,7 @@ function render() {
   }
   $('clear-filters').classList.toggle('hidden', STATE.mode !== 'board' || !anyFilterActive());
 
-  const statuses = STATE.statuses.filter((s) => !STATE.hiddenColumns.has(s));
+  const statuses = STATE.statuses.filter((s) => !(s === 'done' && STATE.hideDone));
   // An empty column is hidden (it comes back while a card is dragged), but not when every column is empty: a search
   // with no hits or an empty workspace would be a blank board with nothing saying why, so it shows "No tasks".
   const allEmpty = !statuses.some((s) => tasks.some((t) => t.status === s));
@@ -2131,7 +2140,7 @@ $('search-btn').addEventListener('click', () => { if (window.SearchPanel) window
 {
   const mac = /Mac|iPhone|iPad/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
   // The header's Search button names the shortcut in its tooltip and label; Settings → Appearance names all the keys.
-  for (const k of document.querySelectorAll('.ss-keys .kbd')) k.textContent = (mac ? '⌘' : 'Ctrl ') + ({ k: 'K', j: 'J' }[k.dataset.key] || 'F');
+  for (const k of document.querySelectorAll('.ss-keys-list .kbd[data-key]')) k.textContent = (mac ? '⌘' : 'Ctrl ') + ({ k: 'K', j: 'J', b: 'B' }[k.dataset.key] || 'F');
   // The sidebar's Search and New thought buttons show their keys (the rail's tooltips name them too, sidebar.js).
   $('search-btn').setAttribute('aria-label', `Search (${mac ? '⌘F' : 'Ctrl+F'})`);
   $('search-kbd').textContent = mac ? '⌘F' : 'Ctrl F';
@@ -2303,26 +2312,16 @@ async function loadWorkspaces() {
   if (fallback) {
     STATE.workspace = fallback.key;
     localStorage.setItem('vaultboard.workspace', fallback.key);
-    STATE.hiddenColumns = loadHiddenColumns(fallback.key);
+    STATE.hideDone = loadHideDone(fallback.key);
     STATE.hideSubtasks = loadHideSubtasks(fallback.key);
   }
   renderWorkspaceSwitcher();
 }
 
+// Switching workspaces is the sidebar's (and the phone's More sheet's); Settings only manages the list. Belt and
+// braces: if the list never arrived (failed fetch, or a login path that skipped it), fetch it now.
 function renderWsList() {
-  // Belt and braces: if the list never arrived (failed fetch, or a login path
-  // that skipped it), fetch it now rather than show an empty section.
-  if (!WORKSPACE_LIST.length) { loadWorkspaces().then(() => { if (WORKSPACE_LIST.length && secOpen('ws')) renderWsList(); }); }
-  // One pick, radio-style: the whole row (circle or name) switches straight to that
-  // board. Only the visible boards are listed; hiding is in the list below it.
-  $('ws-list').innerHTML = WORKSPACE_LIST.map((w) => `
-    <label class="filter-item ws-row${w.key === STATE.workspace ? ' active' : ''}">
-      <input type="radio" name="ws-pick" value="${esc(w.key)}" ${w.key === STATE.workspace ? 'checked' : ''}>
-      <span class="ws-pick">${esc(w.label)}</span>
-    </label>`).join('');
-  for (const el of $('ws-list').querySelectorAll('input[type=radio]')) {
-    el.addEventListener('change', () => { closeSheet(); setWorkspace(el.value); });
-  }
+  if (!WORKSPACE_LIST.length) loadWorkspaces();
 }
 function setWorkspace(key) {
   if (key === STATE.workspace) return;
@@ -2332,7 +2331,7 @@ function setWorkspace(key) {
 
   // Fresh start in the new workspace: drop cached tasks/KB state and any open drawer/article.
   stopReadTracker();
-  STATE.hiddenColumns = loadHiddenColumns(key); // this board's own remembered column set
+  STATE.hideDone = loadHideDone(key);            // this board's own answer on Done
   STATE.hideSubtasks = loadHideSubtasks(key);   // …and its own answer on collapsing batches
   STATE.projectFilter = new Set();
   STATE.batchFilter = '';   // batch values are workspace-scoped; carrying one over empties the board
@@ -2547,20 +2546,24 @@ async function loadFeatures() {
   } catch (err) { $('ft-err').textContent = settingsMsg(err); }
 }
 $('ft-tz').addEventListener('input', () => fieldErr('ft-tz', ''));
-$('ft-save').addEventListener('click', async () => {
+// Every switch saves at once (and the time zone when it's left), and the Reload bar says when it takes effect.
+// Saves go in order; only the newest answer's error is shown.
+let FT_SAVING = 0;
+async function saveFeatures() {
   const timezone = $('ft-tz').value.trim();
-  if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return $('ft-tz').focus(); }
+  if (!validTz(timezone)) { fieldErr('ft-tz', 'Unknown time zone. Use a name like Asia/Tokyo'); return; }
   $('ft-err').textContent = '';
   const body = { today: $('ft-today').checked, morningRead: $('ft-morning').checked, notes: $('ft-notes').checked, learn: $('ft-learn').checked, calendar: $('ft-cal').checked, timezone, ...(TERMINAL_ALLOWED ? { terminal: $('ft-term').checked, automations: $('ft-auto').checked } : {}) };
-  $('ft-save').disabled = true;
+  const mine = ++FT_SAVING;
   try {
     await api('/api/settings/features', { method: 'POST', body: JSON.stringify(body) });
-    location.reload();
+    if (mine === FT_SAVING) needReload();
   } catch (err) {
-    $('ft-err').textContent = settingsMsg(err);
-    $('ft-save').disabled = false;
+    if (mine === FT_SAVING) $('ft-err').textContent = settingsMsg(err);
   }
-});
+}
+for (const id of ['ft-today', 'ft-morning', 'ft-notes', 'ft-learn', 'ft-cal', 'ft-auto', 'ft-term']) $(id).addEventListener('change', saveFeatures);
+$('ft-tz').addEventListener('change', saveFeatures);
 
 // ---------- Agent ----------
 // Setup's step 4 again: the agent tiles, the detail panel and the Other fields are AgentForm's (agent-form.js),

@@ -1722,8 +1722,8 @@ SCEN.S5 = async () => {
   // Sound key.
   await p.bringToFront();
   check('S5 the sound key is absent by default', await ev(p, () => localStorage.getItem('vaultboard.term.sound')) === null);
-  await ev(p, () => document.querySelector('#segTermSound button[data-v="on"]').click());
-  check('S5 #segTermSound On stores JSON true', await ev(p, () => localStorage.getItem('vaultboard.term.sound')) === 'true');
+  await ev(p, () => document.getElementById('term-sound').click());
+  check('S5 #term-sound on stores JSON true', await ev(p, () => localStorage.getItem('vaultboard.term.sound')) === 'true');
   const w = await page('/terminal.html', { context: p.browserContext() });
   await ev(w, () => document.querySelector('.tw-side .tw-side-menu').click());
   const item = await ev(w, () => { const b = [...document.querySelectorAll('.tw-menu button')].find((x) => x.textContent.startsWith('Sound')); return b ? b.textContent : null; });

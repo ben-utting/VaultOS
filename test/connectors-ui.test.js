@@ -972,3 +972,48 @@ test("Cursor's own: while it waits the card watches the sign-in, and shows why w
   assert.equal(calls.filter((c) => c[1].endsWith('/status')).length, polls, 'the poll stops once it ended');
   m.stop && m.stop();
 });
+
+// ---- grouping and search (Settings revamp) ----
+const GROUPED = { connectors: [
+  { id: 'atlassian', label: 'Atlassian', by: 'Jira · Confluence', state: 'connected', agents: [] },
+  { id: 'github', label: 'GitHub', by: 'Repos', state: 'not-connected', agents: [] },
+  { id: 'teamschats', label: 'Teams chats', by: 'Your chats', state: 'not-connected', agents: [] },
+  { id: 'cursor-teams', label: 'Teams (Cursor)', by: "Cursor's own", state: 'not-connected', agents: [] },
+  { id: 'azure', label: 'Azure', by: 'Subscriptions', state: 'not-installed', agents: [] },
+  { id: 'newthing', label: 'New thing', by: 'Something new', state: 'not-connected', agents: [] },
+], planned: [{ id: 'notion', label: 'Notion', by: 'Pages', mono: 'N' }] };
+
+test('tiles come in groups: Connected first, then Microsoft 365, Cursor only, Developer and cloud, Other', () => {
+  const html = C.paneHtml({ view: GROUPED });
+  const heads = [...html.matchAll(/<h3 class="ap-h">([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(heads, ['Connected', 'Microsoft 365', 'Cursor only', 'Developer and cloud', 'Other', 'Planned ']);
+  assert.deepEqual(C.tileOrder({ view: GROUPED }), ['atlassian', 'teamschats', 'cursor-teams', 'github', 'azure', 'newthing']);
+  assert.doesNotMatch(html, /cx-title|Connect a service once/, 'the section header says it now');
+  assert.match(html, /class="cx-layout"[\s\S]*class="cx-list"[\s\S]*class="cx-side"/);
+});
+
+test('search narrows every group by name or description and hides Planned; no match says so', () => {
+  let html = C.paneHtml({ view: GROUPED, q: 'teams' });
+  assert.deepEqual([...html.matchAll(/data-id="([^"]+)" role="radio"/g)].map((m) => m[1]), ['teamschats', 'cursor-teams']);
+  assert.doesNotMatch(html, /Planned/);
+  assert.match(html, /id="cx-search"[^>]*value="teams"/);
+  html = C.paneHtml({ view: GROUPED, q: 'jira' });
+  assert.deepEqual([...html.matchAll(/data-id="([^"]+)" role="radio"/g)].map((m) => m[1]), ['atlassian']);
+  html = C.paneHtml({ view: GROUPED, q: 'zzz<b>' });
+  assert.match(html, /No connector matches zzz&lt;b&gt;\./);
+});
+
+test('arrow keys move through the tiles in the order shown', async () => {
+  let html = ''; const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async () => GROUPED, openTerm() {}, openTab() {} });
+  await m.refresh();
+  const key = (k) => handlers.keydown({ key: k, target: { id: '', closest: (s) => (s.includes('.ap-tile') ? {} : null) }, preventDefault() {} });
+  assert.match(html, /data-id="atlassian" role="radio" aria-checked="true"/);
+  key('ArrowDown');
+  assert.match(html, /data-id="teamschats" role="radio" aria-checked="true"/);
+  key('End');
+  assert.match(html, /data-id="newthing" role="radio" aria-checked="true"/);
+  m.stop && m.stop();
+});

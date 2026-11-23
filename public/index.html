@@ -104,35 +104,137 @@
     <!-- Settings sheet: one screen for everything the header used to carry as
          separate popovers (which could stack on top of each other). Sections
          reuse the old popovers' ids, so their render code is unchanged. -->
-    <div class="ss-scrim hidden" id="ss-scrim"></div>
-    <div class="setsheet hidden" id="setsheet" role="dialog" aria-modal="true" aria-labelledby="ss-title">
+    <!-- Settings: a full-height page beside the sidebar (the whole screen on a phone, where the section list comes
+         first and a section opens on its own with a back button). Sections are grouped by where a setting is saved:
+         this browser, this browser's board view, this VaultOS for everyone who uses it, and the agents. Ids from the
+         old popovers are kept, so their render code is unchanged. -->
+    <section class="setpage hidden" id="setsheet" aria-labelledby="ss-title" data-view="index">
       <div class="ss-head">
+        <button type="button" class="ss-back" id="ss-back" aria-label="All settings"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
         <h2 id="ss-title">Settings</h2>
+        <div class="ss-reload hidden" id="ss-reload" role="status">
+          <span>Changes take effect when VaultOS reloads.</span>
+          <button type="button" class="su-btn primary su-sm" id="ss-reload-btn">Reload</button>
+        </div>
         <button type="button" class="ss-close" id="ss-close" aria-label="Close settings"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <div class="ss-body">
         <nav class="ss-nav" id="ss-nav" aria-label="Settings sections">
-          <button type="button" data-sec="ws">Workspaces<span class="ss-sub" id="ws-current"></span></button>
-          <button type="button" data-sec="folders" id="ssn-folders">Filter by folder<span id="filter-badge" class="n hidden"></span></button>
-          <button type="button" data-sec="cols" id="ssn-cols">Columns<span id="cols-badge" class="n hidden"></span></button>
-          <button type="button" data-sec="look">Appearance</button>
-          <button type="button" data-sec="features">Features</button>
-          <button type="button" data-sec="learn" id="ssn-learn">Learn</button>
-          <button type="button" data-sec="agent">Agent</button>
-          <button type="button" data-sec="connectors" id="ssn-connectors">Connectors</button>
-          <button type="button" data-sec="skills">Skills</button>
-          <button type="button" data-sec="password">Password</button>
+          <div class="ss-group"><h3 class="ss-gh">This browser</h3>
+            <button type="button" data-sec="look">Appearance</button>
+            <button type="button" data-sec="terms" id="ssn-terms">Terminals and sounds</button>
+            <button type="button" data-sec="keys">Shortcuts</button>
+          </div>
+          <div class="ss-group"><h3 class="ss-gh">Board</h3>
+            <button type="button" data-sec="cols" id="ssn-cols">Columns<span id="cols-badge" class="n hidden"></span></button>
+            <button type="button" data-sec="folders" id="ssn-folders">Folders<span id="filter-badge" class="n hidden"></span></button>
+          </div>
+          <div class="ss-group"><h3 class="ss-gh">This VaultOS</h3>
+            <button type="button" data-sec="ws">Workspaces<span class="ss-sub" id="ws-current"></span></button>
+            <button type="button" data-sec="features">Features</button>
+            <button type="button" data-sec="learn" id="ssn-learn">Learn</button>
+            <button type="button" data-sec="password">Password</button>
+          </div>
+          <div class="ss-group"><h3 class="ss-gh">Agents</h3>
+            <button type="button" data-sec="agent">Default agent</button>
+            <button type="button" data-sec="connectors" id="ssn-connectors">Connectors</button>
+            <button type="button" data-sec="skills">Skills</button>
+          </div>
+          <button type="button" id="logout-sheet" class="ss-signout">Sign out</button>
         </nav>
-        <div class="ss-panes">
-          <!-- Workspaces: the switcher (visible workspaces, from /api/workspaces), then the
-               managing list (every workspace, from /api/settings). app.js fills both. -->
-          <section class="ss-pane ss-boards" data-sec="ws">
-      <div class="filter-actions">
-        <span class="lbl">Switch to</span>
+        <div class="ss-panes" id="ss-panes">
+          <section class="ss-pane ss-form" data-sec="look">
+      <div class="ss-ph"><h3>Appearance</h3><p class="ss-scope">Only this browser.</p></div>
+      <div class="su-row">
+        <div class="su-row-t"><span class="su-label" id="lb-theme">Theme</span></div>
+        <div class="seg" id="segTheme" role="group" aria-labelledby="lb-theme">
+          <button type="button" data-v="dark">Dark</button>
+          <button type="button" data-v="light">Light</button>
+        </div>
       </div>
-      <div id="ws-list" class="filter-list"></div>
+      <div class="su-row">
+        <div class="su-row-t"><span class="su-label" id="lb-font">Reading font</span>
+          <p class="su-hint">For articles and task notes. Menus and buttons keep the standard font.</p></div>
+        <div class="seg" id="segFont" role="group" aria-labelledby="lb-font">
+          <button type="button" data-v="system">Standard</button>
+          <button type="button" data-v="dyslexic">OpenDyslexic</button>
+        </div>
+      </div>
+      <div class="su-row">
+        <div class="su-row-t"><span class="su-label" id="lb-size">Text size</span>
+          <p class="su-hint">For articles and task notes.</p></div>
+        <div class="stepper" role="group" aria-labelledby="lb-size">
+          <button type="button" id="fsDown" aria-label="Smaller text">A−</button>
+          <span class="val" id="fsVal">100%</span>
+          <button type="button" id="fsUp" aria-label="Larger text">A+</button>
+        </div>
+      </div>
+          </section>
+          <section class="ss-pane ss-form" data-sec="terms">
+      <div class="ss-ph"><h3>Terminals and sounds</h3><p class="ss-scope">Only this browser.</p></div>
+      <!-- Where a terminal button opens a shell. Hidden on a phone, where a second window is just another tab. -->
+      <div class="su-row" id="term-where-row">
+        <div class="su-row-t"><span class="su-label" id="lb-where">Terminals open in</span>
+          <p class="su-hint">A window of its own, or a dock along the bottom of this page.</p></div>
+        <div class="seg" id="segTermWhere" role="group" aria-labelledby="lb-where">
+          <button type="button" data-v="window">Window</button>
+          <button type="button" data-v="dock">Dock</button>
+        </div>
+      </div>
+      <div class="su-row" id="term-sound-row">
+        <div class="su-row-t"><label class="su-label" for="term-sound">Agent sound</label>
+          <p class="su-hint" id="term-sound-d">A chime when an agent in a terminal finishes or needs you.</p></div>
+        <input type="checkbox" class="su-switch" id="term-sound" role="switch" aria-describedby="term-sound-d">
+      </div>
+      <div class="su-row" id="today-sound-row">
+        <div class="su-row-t"><label class="su-label" for="today-sound">Focus timer sound</label>
+          <p class="su-hint" id="today-sound-d">A chime on Today when a focus session ends.</p></div>
+        <input type="checkbox" class="su-switch" id="today-sound" role="switch" aria-describedby="today-sound-d">
+      </div>
+          </section>
+          <section class="ss-pane ss-form" data-sec="keys">
+      <div class="ss-ph"><h3>Shortcuts</h3><p class="ss-scope">The same in every browser.</p></div>
+      <!-- The header's Search button opens the same panel; the shortcuts are named here. -->
+      <dl class="ss-keys-list">
+        <div class="ss-key"><dt>Search</dt><dd><kbd class="kbd" data-key="find">Ctrl F</kbd> or <kbd class="kbd" data-key="k">Ctrl K</kbd></dd></div>
+        <div class="ss-key"><dt>Find in an open file</dt><dd><kbd class="kbd" data-key="find">Ctrl F</kbd></dd></div>
+        <div class="ss-key" id="capture-keys-row"><dt>New thought</dt><dd><kbd class="kbd" data-key="j">Ctrl J</kbd></dd></div>
+        <div class="ss-key"><dt>Show or hide the sidebar</dt><dd><kbd class="kbd" data-key="b">Ctrl B</kbd></dd></div>
+        <div class="ss-key"><dt>Close a panel or this page</dt><dd><kbd class="kbd">Esc</kbd></dd></div>
+      </dl>
+          </section>
+          <section class="ss-pane ss-form" data-sec="cols">
+      <div class="ss-ph"><h3>Columns</h3><p class="ss-scope">Only this browser, for each workspace on its own.</p></div>
+      <p class="su-hint ss-lead">A column shows when it has cards and hides when it's empty. It comes back as soon as a card moves into it.</p>
+      <div class="su-row">
+        <div class="su-row-t"><label class="su-label" for="hide-done">Hide Done</label>
+          <p class="su-hint" id="hide-done-d">Finished cards stay in their files; only the column is hidden.</p></div>
+        <input type="checkbox" class="su-switch" id="hide-done" role="switch" aria-describedby="hide-done-d">
+      </div>
+      <div class="su-row" id="subtasks-row">
+        <div class="su-row-t"><label class="su-label" for="fold-subtasks">Fold subtasks into their parent</label>
+          <p class="su-hint" id="subtasks-d">The parent card keeps a subtasks chip; select it to bring them back.</p></div>
+        <input type="checkbox" class="su-switch" id="fold-subtasks" role="switch" aria-describedby="subtasks-d">
+      </div>
+      <h4 class="ss-sh">On this board now</h4>
+      <ul id="cols-list" class="ss-cols"></ul>
+          </section>
+          <section class="ss-pane ss-form" data-sec="folders">
+      <div class="ss-ph"><h3>Folders</h3><p class="ss-scope">Only this browser, until you reload or switch workspace.</p></div>
+      <p class="su-hint hidden" id="folders-off">Open the Board or the Knowledge Base to filter its folders.</p>
+      <div id="folders-on" class="ss-folders">
+      <input type="search" id="filter-search" placeholder="Search folders…">
+      <div class="filter-actions">
+        <button id="filter-all" class="linklike">Select all</button>
+        <button id="filter-none" class="linklike">Clear</button>
+      </div>
+      <div id="filter-list" class="filter-list"></div>
+      </div>
+          </section>
+          <!-- Workspaces: the managing list (every workspace, from /api/settings). Switching lives in the sidebar. -->
+          <section class="ss-pane ss-form ss-boards" data-sec="ws">
+      <div class="ss-ph"><h3>Workspaces</h3><p class="ss-scope">For everyone who uses this VaultOS.</p></div>
       <div id="bd-manage" class="bd-manage">
-        <div class="filter-actions"><span class="lbl">Your workspaces</span></div>
         <p class="su-hint">Rename, reorder or hide a workspace. VaultOS opens on the first one that isn't hidden.</p>
         <div id="bd-list" class="bd-list"></div>
         <p class="su-err" id="bd-err" aria-live="polite"></p>
@@ -156,87 +258,10 @@
         </form>
       </div>
           </section>
-          <section class="ss-pane" data-sec="folders">
-      <input type="search" id="filter-search" placeholder="Search folders…">
-      <div class="filter-actions">
-        <button id="filter-all" class="linklike">Select all</button>
-        <button id="filter-none" class="linklike">Clear</button>
-      </div>
-      <div id="filter-list" class="filter-list"></div>
-          </section>
-          <section class="ss-pane" data-sec="cols">
-      <div class="filter-actions">
-        <span class="lbl">On the board</span>
-        <button id="cols-all" class="linklike">Show all</button>
-      </div>
-      <label class="filter-item" id="subtasks-row">
-        <input type="checkbox" id="show-subtasks" checked>
-        <span>Subtasks</span>
-        <span class="n" id="subtasks-count"></span>
-      </label>
-      <p class="pop-hint">Untick to fold them into their parent, which keeps its <b>N subtasks</b> chip — click that chip to bring the batch back.</p>
-      <div class="filter-actions"><span class="lbl">Columns</span></div>
-      <div id="cols-list" class="filter-list"></div>
-          </section>
-          <section class="ss-pane ss-look" data-sec="look">
-      <div class="row">
-        <div class="lbl">Theme</div>
-        <div class="seg" id="segTheme">
-          <button data-v="dark">Dark</button>
-          <button data-v="light">Sepia</button>
-        </div>
-      </div>
-      <div class="row">
-        <div class="lbl">Reading font</div>
-        <div class="seg" id="segFont">
-          <button data-v="system">Standard</button>
-          <button data-v="dyslexic">OpenDyslexic</button>
-        </div>
-      </div>
-      <div class="row">
-        <div class="lbl">Text size</div>
-        <div class="stepper">
-          <button id="fsDown" aria-label="Smaller text">A−</button>
-          <span class="val" id="fsVal">100%</span>
-          <button id="fsUp" aria-label="Larger text">A+</button>
-        </div>
-      </div>
-      <!-- Where a terminal button opens a shell. Hidden on a phone, where a
-           second window is just another browser tab: there it's always the dock. -->
-      <!-- The header's Search button opens the same panel; the shortcuts are named here. -->
-      <div class="row">
-        <div class="lbl">Search</div>
-        <div class="ss-keys"><kbd class="kbd" data-key="find">Ctrl F</kbd> or <kbd class="kbd" data-key="k">Ctrl K</kbd><span class="ss-keys-note">In an open file, <kbd class="kbd" data-key="find">Ctrl F</kbd> finds in the page</span></div>
-      </div>
-      <div class="row" id="capture-keys-row">
-        <div class="lbl">New thought</div>
-        <div class="ss-keys"><kbd class="kbd" data-key="j">Ctrl J</kbd></div>
-      </div>
-      <div class="row" id="term-where-row">
-        <div class="lbl">Terminals open in</div>
-        <div class="seg" id="segTermWhere">
-          <button data-v="window">Window</button>
-          <button data-v="dock">Dock</button>
-        </div>
-      </div>
-      <div class="row" id="term-sound-row">
-        <div class="lbl">Agent sound</div>
-        <div class="seg" id="segTermSound">
-          <button data-v="off">Off</button>
-          <button data-v="on">On</button>
-        </div>
-      </div>
-      <div class="row" id="today-sound-row">
-        <div class="lbl">Today: sound when a session ends</div>
-        <div class="seg" id="segTodaySound">
-          <button data-v="off">Off</button>
-          <button data-v="on">On</button>
-        </div>
-      </div>
-          </section>
           <!-- Features: Today, the morning read and the terminal for everyone on this VaultOS (settings.json).
-               Saving reloads the page, which is when a change takes effect. -->
+               A change saves at once; the Reload bar appears because a reload is when it takes effect. -->
           <section class="ss-pane ss-form" data-sec="features">
+      <div class="ss-ph"><h3>Features</h3><p class="ss-scope">For everyone who uses this VaultOS. Each change saves at once and takes effect when VaultOS reloads.</p></div>
       <div class="su-row">
         <div class="su-row-t"><label class="su-label" for="ft-today">Today mode</label>
           <p class="su-hint" id="ft-today-d">A daily page with habits, the day's tasks and a focus timer.</p></div>
@@ -280,11 +305,11 @@
         <input type="checkbox" class="su-switch" id="ft-term" role="switch" aria-describedby="ft-term-d">
       </div>
       <p class="su-err" id="ft-err" aria-live="polite"></p>
-      <div class="ss-actions"><button type="button" id="ft-save" class="su-btn primary">Save and reload</button></div>
           </section>
           <!-- Learn: the Learn folder and the OpenRouter key Studio uses (learn.js). The key never comes back from the
                server: only whether one is saved, where from, and its last four characters. -->
           <section class="ss-pane ss-form" data-sec="learn">
+      <div class="ss-ph"><h3>Learn</h3><p class="ss-scope">For everyone who uses this VaultOS.</p></div>
       <div class="lr-block"><label class="su-label" for="lr-dir">Learn folder</label>
         <p class="su-hint">A folder in your vault. Each folder inside it is a notebook.</p>
         <div class="lr-row"><input id="lr-dir" class="su-input" autocomplete="off" spellcheck="false"><button type="button" id="lr-dir-save" class="su-btn">Save and reload</button></div>
@@ -297,28 +322,8 @@
         <p class="su-hint" id="lr-key-msg" aria-live="polite"></p>
         <p class="su-hint">Studio uses it to make images, and OpenRouter picks the model. Create a key at openrouter.ai/keys.</p></div>
           </section>
-          <!-- Agent: the same agent picker as setup step 4 (AgentForm.mountPicker in agent-form.js).
-               Install and Sign in open an ordinary VaultOS terminal. -->
-          <section class="ss-pane ss-form" data-sec="agent">
-      <p class="su-hint">Start agent on a card opens your default agent in a terminal in the card's folder, to brief you on where the task stands.</p>
-      <div class="ap" id="ag-picker"></div>
-      <p class="su-err" id="ag-err" aria-live="polite"></p>
-      <div class="su-custom" id="ag-custom">
-        <div class="su-custom-foot"><button type="button" class="su-btn" id="ag-custom-save">Save agent</button><p class="su-err" id="ag-custom-err" aria-live="polite"></p></div>
-      </div>
-          </section>
-          <!-- Connectors: Atlassian and Azure, connected once and added to every agent (connectors.js; app.js mounts it
-               the first time the section opens). -->
-          <section class="ss-pane ss-form" data-sec="connectors"><div class="ap cx" id="cx-pane"></div></section>
-          <!-- What Claude in a VaultOS terminal can use, read live from disk
-               (/api/skills) plus a fixed list of Claude Code's own commands. -->
-          <section class="ss-pane ss-skills" data-sec="skills">
-      <input type="search" id="skills-search" placeholder="Search skills…">
-      <div id="skills-list"></div>
-          </section>
-          <!-- Password: the one this VaultOS signs in with. The session secret stays, so
-               other signed-in browsers stay signed in. -->
           <section class="ss-pane ss-form" data-sec="password">
+      <div class="ss-ph"><h3>Password</h3><p class="ss-scope">The one password this VaultOS signs in with.</p></div>
       <form id="pw-form" novalidate>
         <div class="su-field">
           <label for="pw-cur">Current password</label>
@@ -341,12 +346,32 @@
         <div class="ss-actions"><button type="submit" class="su-btn primary">Change password</button></div>
       </form>
           </section>
+          <!-- Agent: the same agent picker as setup step 4 (AgentForm.mountPicker in agent-form.js).
+               Install and Sign in open an ordinary VaultOS terminal. -->
+          <section class="ss-pane ss-wide" data-sec="agent">
+      <div class="ss-ph"><h3>Default agent</h3><p class="ss-scope">For everyone who uses this VaultOS. Start agent on a card opens it in a terminal in the card&#39;s folder.</p></div>
+      <div class="ap" id="ag-picker"></div>
+      <p class="su-err" id="ag-err" aria-live="polite"></p>
+      <div class="su-custom" id="ag-custom">
+        <div class="su-custom-foot"><button type="button" class="su-btn" id="ag-custom-save">Save agent</button><p class="su-err" id="ag-custom-err" aria-live="polite"></p></div>
+      </div>
+          </section>
+          <!-- Connectors: connected once and added to every agent (connectors.js; app.js mounts it the first time the
+               section opens). -->
+          <section class="ss-pane ss-wide" data-sec="connectors">
+      <div class="ss-ph"><h3>Connectors</h3><p class="ss-scope">Signed in once on this VaultOS, then added to every agent it can set up. Your agents never see a password or token.</p></div>
+      <div class="ap cx" id="cx-pane"></div>
+          </section>
+          <!-- What an agent in a VaultOS terminal can use, read live from disk (/api/skills) plus a fixed list of
+               Claude Code's own commands. -->
+          <section class="ss-pane ss-skills" data-sec="skills">
+      <div class="ss-ph"><h3>Skills</h3><p class="ss-scope">What your agents can use, read from disk.</p></div>
+      <input type="search" id="skills-search" placeholder="Search skills…">
+      <div id="skills-list"></div>
+          </section>
         </div>
       </div>
-      <div class="ss-foot">
-        <button type="button" id="logout-sheet" class="ghost">Sign out</button>
-      </div>
-    </div>
+    </section>
 
     <!-- ---------- Today view (today.js builds it) ---------- -->
     <div id="today-view"></div>

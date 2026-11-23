@@ -546,7 +546,7 @@
       return `<ul class="ap-facts">${facts[0]}</ul>`
         + '<ol class="cx-steps">'
         + `<li>${open ? `<a class="su-btn primary" href="${esc(open.href)}" target="_blank" rel="noopener noreferrer">Open Microsoft sign-in</a>` : 'Open the sign-in link from Cursor.'}</li>`
-        + `<li>Sign in. Your browser then lands on a page that doesn't load, at <code>localhost:${port}</code>. That's expected.</li>`
+        + `<li>Sign in. Your browser then lands on a page that doesn't load, at <code>localhost:${port}</code>. That's expected. VaultOS keeps this sign-in open for 15 minutes.</li>`
         + '<li><label for="cu-paste">Copy that page\'s whole address and paste it here</label>'
         + `<input id="cu-paste" class="su-input" type="text" autocomplete="off" spellcheck="false" placeholder="http://localhost:${port}/callback?code=…" value="${esc((st.cuPaste && st.cuPaste[c.id]) || '')}"></li>`
         + '</ol>'
@@ -567,6 +567,27 @@
   const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: msappBody, teamschats: msappBody, outlookmail: msappBody, outlookcalendar: msappBody,
     'cursor-teams': cursorBody, 'cursor-outlook': cursorBody, 'cursor-outlook-calendar': cursorBody };
 
+  // The tiles in groups: what is connected first, then the rest by kind. A search narrows every group.
+  const GROUPS = [
+    ['Microsoft 365', ['entra', 'transcripts', 'teamschats', 'outlookmail', 'outlookcalendar']],
+    ['Cursor only', ['cursor-teams', 'cursor-outlook', 'cursor-outlook-calendar']],
+    ['Developer and cloud', ['atlassian', 'vantage', 'azure', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']],
+  ];
+  const isOn = (c) => c.state !== 'not-connected' && c.state !== 'not-installed';
+  function tileGroups(st) {
+    const list = (st.view && st.view.connectors) || [];
+    const q = String(st.q || '').trim().toLowerCase();
+    const hit = (c) => !q || `${c.label} ${c.by}`.toLowerCase().includes(q);
+    const used = new Set();
+    const out = [];
+    const take = (title, cs) => { const keep = cs.filter((c) => !used.has(c.id) && hit(c)); keep.forEach((c) => used.add(c.id)); if (keep.length) out.push([title, keep]); };
+    take('Connected', list.filter(isOn));
+    for (const [title, ids] of GROUPS) take(title, list.filter((c) => ids.includes(c.id)));
+    take('Other', list);
+    return out;
+  }
+  const tileOrder = (st) => tileGroups(st).flatMap(([, cs]) => cs.map((c) => c.id));
+
   function paneHtml(st, now = Date.now()) {
     st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, teamschats: null, outlookmail: null, outlookcalendar: null, cuPaste: {}, ...st };
     const list = (st.view && st.view.connectors) || [];
@@ -581,13 +602,18 @@
     const hint = picked && picked.id === 'atlassian' && picked.state !== 'connected' && picked.state !== 'error'
       ? 'Either way, VaultOS holds the sign-in and adds Atlassian to Cursor CLI and Claude Code.'
       : 'Installing another agent later? VaultOS adds your connectors to it straight away.';
-    return '<h3 class="cx-title">Connectors</h3>'
-      + '<p class="su-hint">Connect a service once. VaultOS adds it to every agent it can set up, so it works in every folder. Your agents never see your passwords or tokens.</p>'
-      + (st.view && st.view.reset ? "<p class=\"cx-reset\" role=\"status\">Your connector sign-ins couldn't be read, so they were reset. Connect again.</p>" : '')
-      + '<div class="ap-tiles"><h3 class="ap-h">Ready</h3>'
-      + `<div class="ap-grid cx-ready" role="radiogroup" aria-label="Connectors">${list.map((c) => tileHtml(c, s2)).join('')}</div>`
-      + `${planned.length ? `<h3 class="ap-h">Planned <span>· not built yet</span></h3><div class="ap-grid cx-planned">${planned.map(plannedHtml).join('')}</div>` : ''}</div>`
-      + detail + `<p class="ap-foot cx-hint">${esc(hint)}</p>`;
+    const groups = tileGroups(st);
+    const q = String(st.q || '');
+    return (st.view && st.view.reset ? "<p class=\"cx-reset\" role=\"status\">Your connector sign-ins couldn't be read, so they were reset. Connect again.</p>" : '')
+      + '<div class="cx-layout"><div class="cx-list">'
+      + `<input type="search" id="cx-search" class="cx-search" placeholder="Search connectors" aria-label="Search connectors" autocomplete="off" spellcheck="false" value="${esc(q)}">`
+      + '<div class="ap-tiles cx-ready" role="radiogroup" aria-label="Connectors">'
+      + (groups.length ? groups.map(([title, cs]) => `<h3 class="ap-h">${esc(title)}</h3><div class="ap-grid">${cs.map((c) => tileHtml(c, s2)).join('')}</div>`).join('')
+        : `<p class="cx-muted">${esc(`No connector matches ${q.trim()}.`)}</p>`)
+      + '</div>'
+      + `${planned.length && !q.trim() ? `<div class="ap-tiles"><h3 class="ap-h">Planned <span>· not built yet</span></h3><div class="ap-grid cx-planned">${planned.map(plannedHtml).join('')}</div></div>` : ''}`
+      + '</div>'
+      + `<div class="cx-side">${detail}<p class="ap-foot cx-hint">${esc(hint)}</p></div></div>`;
   }
 
   // ---- the mounted pane ---------------------------------------------------------
@@ -612,7 +638,7 @@
       st.canTerm = ui.canTerm ? !!ui.canTerm() : true;
       // The pane redraws only when something it shows changed: a poll answering the same view must not replace a
       // field that is being typed in. Typed text is kept in st and the focus is put back.
-      const key = JSON.stringify([st.view, st.picked, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], Object.keys(MSAPP).map((id) => st[id] && [st[id].code, minutesLeft(st[id].expiresAt, now)]), st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
+      const key = JSON.stringify([st.view, st.picked, st.q, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], Object.keys(MSAPP).map((id) => st[id] && [st[id].code, minutesLeft(st[id].expiresAt, now)]), st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
       if (!force && key === lastKey) return;
       lastKey = key;
       const had = el.ownerDocument && el.ownerDocument.activeElement;
@@ -939,7 +965,14 @@
 
     el.addEventListener('click', (e) => {
       const tile = e.target.closest('.cx-ready .ap-tile');
-      if (tile) { st.picked = tile.dataset.id; render(); const t = el.querySelector(`.ap-tile[data-id="${tile.dataset.id}"]`); if (t) t.focus(); return; }
+      if (tile) {
+        st.picked = tile.dataset.id; render();
+        const t = el.querySelector(`.ap-tile[data-id="${tile.dataset.id}"]`); if (t) t.focus({ preventScroll: true });
+        // stacked (narrow): the card is below the list, so bring it into view
+        const side = el.querySelector('.cx-side');
+        if (side && side.scrollIntoView && el.clientWidth < 820) side.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+        return;
+      }
       const b = e.target.closest('[data-act]');
       if (b) onAct(b.dataset.act, b);
     });
@@ -949,6 +982,7 @@
       else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
       else if (msappField(e.target.id)) st[msappField(e.target.id)] = e.target.value;
       else if (e.target.id === 'cu-paste') st.cuPaste[st.picked] = e.target.value;
+      else if (e.target.id === 'cx-search') { st.q = e.target.value; render(); }
       else if (Object.hasOwn(LM_INPUTS, e.target.id)) st[LM_INPUTS[e.target.id]] = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });
@@ -979,7 +1013,7 @@
       if (e.key === 'Enter' && (e.target.id === 'cx-email' || e.target.id === 'cx-token')) { e.preventDefault(); onAct('token'); return; }
       const tile = e.target.closest && e.target.closest('.cx-ready .ap-tile');
       if (!tile || !st.view) return;
-      const ids = st.view.connectors.map((c) => c.id);
+      const ids = tileOrder(st);
       let next = null;
       if (e.key === 'Home') next = ids[0];
       else if (e.key === 'End') next = ids[ids.length - 1];
@@ -995,5 +1029,5 @@
     return { refresh, stop };
   }
 
-  return { esc, stateChip, agentChip, minutesLeft, hostPath, signInUrl, atlassianStep, signInStep, paneHtml, mountConnectors };
+  return { esc, stateChip, agentChip, minutesLeft, hostPath, signInUrl, atlassianStep, signInStep, paneHtml, mountConnectors, tileOrder };
 });

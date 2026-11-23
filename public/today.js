@@ -1065,11 +1065,10 @@ const Today = (() => {
     $('td-focus').addEventListener('click', onFocusClick);
     $('td-focus').addEventListener('change', onPickerChange);
     $('today-chip').addEventListener('click', () => setMode('today'));
-    // Settings → Appearance: the chime when a session ends (on unless set to 'off').
-    segSet('segTodaySound', soundOn() ? 'on' : 'off');
-    for (const b of document.querySelectorAll('#segTodaySound button')) b.addEventListener('click', () => {
-      try { localStorage.setItem(SOUND_KEY, b.dataset.v); } catch { /* private mode */ }
-      segSet('segTodaySound', b.dataset.v);
+    // Settings → Terminals and sounds: the chime when a session ends (on unless set to 'off').
+    $('today-sound').checked = soundOn();
+    $('today-sound').addEventListener('change', (e) => {
+      try { localStorage.setItem(SOUND_KEY, e.target.checked ? 'on' : 'off'); } catch { /* private mode */ }
     });
     setInterval(poll, POLL_MS);
     setInterval(() => { if (shown && document.visibilityState === 'visible') loadComing(); }, POLL_MS);   // with Today's own poll

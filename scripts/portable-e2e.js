@@ -251,8 +251,10 @@ SCEN.F3 = async () => {
     .some((h) => h.textContent.trim() === 'Welcome to VaultOS'), 8000), await texts(P, '.col-body[data-status="backlog"] .card h3'));
   check('F3 no Today button', await visible(P, '#mode-today') === false, await visible(P, '#mode-today'));
   await tap(P, '#setbtn');
-  await waitFor(P, () => document.querySelectorAll('#ws-list .ws-pick').length >= 2);
-  check('F3 the switcher lists Work and Home', same(await texts(P, '#ws-list .ws-pick'), ['Work', 'Home']), await texts(P, '#ws-list .ws-pick'));
+  await tap(P, '#ss-nav button[data-sec="ws"]');
+  const wsNames = () => ev(P, () => [...document.querySelectorAll('#bd-list .bd-label')].map((i) => i.value));
+  await waitFor(P, () => document.querySelectorAll('#bd-list .bd-label').length >= 2);
+  check('F3 Workspaces lists Work and Home', same(await wsNames(), ['Work', 'Home']), await wsNames());
   await shot(P, 'f3-switcher');
   await tap(P, '#ss-close');
   await shot(P, 'f3-board');
@@ -281,7 +283,8 @@ SCEN.F5 = async () => {
     await ev(P, () => [document.getElementById('ft-tz').value, document.getElementById('ft-today').checked]));
   await tap(P, '#ft-today');
   check('F5 the Today switch is on', await ev(P, () => document.getElementById('ft-today').checked) === true);
-  await tapAndLoad(P, '#ft-save');
+  check('F5 the switch saved at once: Reload appears', await waitFor(P, () => !document.getElementById('ss-reload').classList.contains('hidden'), 8000));
+  await tapAndLoad(P, '#ss-reload-btn');
   check('F5 after the reload the Today button shows', await waitFor(P, () => !document.getElementById('app').classList.contains('hidden')
     && document.getElementById('mode-today').getClientRects().length > 0, 15000), await visible(P, '#mode-today'));
   if (!await ev(P, () => document.getElementById('mode-today').classList.contains('active'))) await tap(P, '#mode-today');
@@ -299,8 +302,8 @@ SCEN.F6 = async () => {
   check('F6 Boards lists the two boards', await waitFor(P, () => document.querySelectorAll('#bd-list .bd-row').length === 2), await ev(P, () => document.querySelectorAll('#bd-list .bd-row').length));
   await fill(P, '#bd-add-name', 'Notes');
   await tap(P, '#bd-add button[type=submit]');
-  check('F6 Notes is in the switcher', await waitFor(P, () => [...document.querySelectorAll('#ws-list .ws-pick')].some((e) => e.textContent.trim() === 'Notes'), 8000),
-    [await texts(P, '#ws-list .ws-pick'), await text(P, '#bd-add-name-err')]);
+  check('F6 Notes is in Workspaces', await waitFor(P, () => [...document.querySelectorAll('#bd-list .bd-label')].some((e) => e.value === 'Notes'), 8000),
+    [await ev(P, () => [...document.querySelectorAll('#bd-list .bd-label')].map((i) => i.value)), await text(P, '#bd-add-name-err')]);
   const line = '- **Notes** → `Notes/`';
   const agents = await until(() => { const t = vaultFile('AGENTS.md'); return t && t.split('\n').includes(line) ? t : null; }, 5000);
   check('F6 AGENTS.md lists Notes', !!agents, ((vaultFile('AGENTS.md') || '').match(/<!-- vaultos:boards -->[\s\S]*?<!-- \/vaultos:boards -->/) || [null])[0]);
