@@ -471,9 +471,7 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
    While a card is being dragged (body.board-dragging) every column comes back as a full drop target.
    .col-landing is the column a card was just dropped on: it stays open until the render() after the save. */
 body:not(.board-dragging) #board .col.col-empty:not(.col-landing) { display: none; }
-/* A column whose cards are all folded into a parent card elsewhere still shows, with this line in its body. */
-.col-folded { margin: 4px 2px 2px; font-size: var(--t-xs); line-height: 1.45; color: var(--muted); }
-.col-folded .col-unfold { font-size: inherit; }
+
 .board {
   display: grid;
   grid-auto-flow: column;
@@ -718,6 +716,10 @@ body:not(.board-dragging) #board .col.col-empty:not(.col-landing) { display: non
    eye-off after the count. Brand-toned, like the layers icon — this is the app telling
    you what it's holding back, not a second thing to click. */
 .batch-chip.is-parent.is-collapsed { border-style: dashed; }
+/* The parent card's line for its folded subtasks: a dot in each status's colour and a count. */
+.batch-status { display: flex; flex-wrap: wrap; gap: 3px 12px; margin-top: 6px; font-size: var(--t-xs); color: var(--muted); }
+.batch-status .bs { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.batch-status .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .batch-chip.is-parent.is-collapsed .icon:last-child { color: var(--brand); opacity: .85; margin-left: 1px; }
 .batch-chip.is-child {
   background: transparent; border: 1px dashed var(--line); color: var(--muted);
