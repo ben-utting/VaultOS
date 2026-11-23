@@ -1640,13 +1640,17 @@ app.post('/api/connectors/azure/start', settingsGuard, async (req, res) => {
 });
 app.get('/api/connectors/azure/status', settingsGuard, connectorRoute('read the Azure sign-in', () => connectors.azureStatus()));
 app.post('/api/connectors/azure/cancel', settingsGuard, connectorRoute('cancel the Azure sign-in', () => connectors.azureCancel()));
-app.post('/api/connectors/transcripts/start', settingsGuard, connectorRoute('start the Teams transcripts sign-in', (req) => {
-  const { tenantId, clientId } = req.body || {};
-  return connectors.msappStart('transcripts', { tenantId, clientId });
-}));
-app.get('/api/connectors/transcripts/status', settingsGuard, connectorRoute('read the Teams transcripts sign-in', () => connectors.msappStatus('transcripts')));
-app.post('/api/connectors/transcripts/cancel', settingsGuard, connectorRoute('cancel the Teams transcripts sign-in', () => connectors.msappCancel('transcripts')));
-// Browser sign-in for any connector that offers one (Atlassian, Vantage). After the azure and transcripts routes, so
+// Sign-in through the person's own app registration (Teams transcripts, Teams chats): a device code, then polling.
+for (const [id, c] of Object.entries(CONNECTORS)) {
+  if (!c.signIn.includes('msapp')) continue;
+  app.post(`/api/connectors/${id}/start`, settingsGuard, connectorRoute(`start the ${c.label} sign-in`, (req) => {
+    const { tenantId, clientId } = req.body || {};
+    return connectors.msappStart(id, { tenantId, clientId });
+  }));
+  app.get(`/api/connectors/${id}/status`, settingsGuard, connectorRoute(`read the ${c.label} sign-in`, () => connectors.msappStatus(id)));
+  app.post(`/api/connectors/${id}/cancel`, settingsGuard, connectorRoute(`cancel the ${c.label} sign-in`, () => connectors.msappCancel(id)));
+}
+// Browser sign-in for any connector that offers one (Atlassian, Vantage). After the azure and app sign-in routes, so
 // their own /start and /cancel win. The callback is the page the service sends the person back to. The server sets no
 // Content-Security-Policy on HTML, so the one inline line (tell the Settings tab over a same-origin BroadcastChannel;
 // it also polls) needs no nonce. Nothing on the page names a token.

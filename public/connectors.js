@@ -428,45 +428,79 @@
       + note;
   }
 
-  // Teams transcripts: the person's own app registration, signed in with a device code.
-  const TR_SCOPES = ['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read'];
-  function transcriptsBody(c, st, now) {
-    const intro = '<li>Teams meeting transcripts, through an app registration you own</li>';
+  // Teams transcripts and Teams chats: the person's own app registration, signed in with a device code. One card,
+  // per-connector words; `pre` names its fields, actions and error region (tr-tenant, tc-start, st.err.tc, ...).
+  const codes = (xs) => xs.map((x) => `<code>${x}</code>`).join(', ');
+  const MSAPP = {
+    transcripts: {
+      pre: 'tr',
+      intro: 'Teams meeting transcripts, through an app registration you own',
+      need: [
+        'Allow public client flows (device code sign-in needs this). No client secret.',
+        `Delegated permissions: ${codes(['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read'])}`,
+        'Granted with admin consent.',
+      ],
+    },
+    teamschats: {
+      pre: 'tc',
+      intro: 'Your Teams chats, read-only, through an app registration you own',
+      // static copy, no server text: it may hold markup
+      need: [
+        'Registered in your own tenant (Entra admin center → App registrations). Single tenant is simplest; any account type works.',
+        `Authentication: the Mobile and desktop applications platform with redirect URIs ${codes(['http://localhost', 'https://login.microsoftonline.com/common/oauth2/nativeclient'])}, and Allow public client flows turned on. No client secret.`,
+        `Microsoft Graph delegated permissions: ${codes(['User.Read', 'Chat.Read', 'offline_access'])}, and nothing more.`,
+        "Chat.Read doesn't need admin consent, but your organisation may block user consent. If Microsoft's page asks for admin approval, ask an admin to grant consent for Chat.Read on your app.",
+      ],
+      can: "Agents can list your chats and read their messages. They can't send, edit or delete anything, and channel posts aren't included.",
+    },
+  };
+  const MSAPP_ACTS = {}; // 'tc-start' -> { id, step: 'start' }
+  for (const [id, m] of Object.entries(MSAPP)) for (const step of ['start', 'cancel']) MSAPP_ACTS[`${m.pre}-${step}`] = { id, step };
+  // 'tc-tenant' -> 'tcTenant': where a typed ID is kept in the pane's state until a sign-in succeeds
+  const msappField = (elId) => {
+    const hit = /^([a-z]+)-(tenant|client)$/.exec(String(elId || ''));
+    return hit && Object.values(MSAPP).some((m) => m.pre === hit[1]) ? hit[1] + (hit[2] === 'tenant' ? 'Tenant' : 'Client') : null;
+  };
+
+  function msappBody(c, st, now) {
+    const m = MSAPP[c.id];
+    const intro = `<li>${m.intro}</li>`;
     const tested = testedLine(c, now, c.label);
     const err = c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
     // a failed sign-in's reason comes back on the row and from the status poll: show it once
-    const trErr = st.err && st.err.tr && st.err.tr !== c.error ? errP(st, 'tr') : '';
+    const ownErr = st.err && st.err[m.pre] && st.err[m.pre] !== c.error ? errP(st, m.pre) : '';
+    const can = m.can ? `<li>${m.can}</li>` : ''; // static copy
     if (c.state === 'connecting') {
       return `<ul class="ap-facts">${intro}<li>Sign in with the code below.</li></ul>`
-        + codePanelHtml(st, now, { code: st.transcripts, start: 'tr-start', cancel: 'tr-cancel', err: 'tr' });
+        + codePanelHtml(st, now, { code: st[c.id], start: `${m.pre}-start`, cancel: `${m.pre}-cancel`, err: m.pre });
     }
     if (c.state === 'connected' || c.state === 'error') {
-      return `<ul class="ap-facts">${intro}<li>${esc(c.account ? `Signed in as ${c.account}` : 'Signed in')}</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
+      return `<ul class="ap-facts">${intro}<li>${esc(c.account ? `Signed in as ${c.account}` : 'Signed in')}</li>${can}${tested ? `<li>${esc(tested)}</li>` : ''}</ul>`
         + err + agentRowsHtml(c)
-        + `<div class="ap-btns">${btn('test', 'Test')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${trErr}`;
+        + `<div class="ap-btns">${btn('test', 'Test')}${btn('disconnect', 'Sign out', ' danger')}</div>${errP(st, 'actions')}${ownErr}`;
     }
     const again = c.state === 'needs-sign-in';
-    const tenant = st.trTenant != null ? st.trTenant : (c.tenantId || '');
-    const client = st.trClient != null ? st.trClient : (c.clientId || '');
-    return `<ul class="ap-facts">${intro}<li>Sign in with a code you type on Microsoft's page.</li></ul>`
+    const typed = (k) => st[m.pre + k];
+    const tenant = typed('Tenant') != null ? typed('Tenant') : (c.tenantId || '');
+    const client = typed('Client') != null ? typed('Client') : (c.clientId || '');
+    return `<ul class="ap-facts">${intro}<li>Sign in with a code you type on Microsoft's page.</li>${can}</ul>`
       + (again ? '<p class="su-err cx-err" role="alert">Your Microsoft sign-in has run out. Sign in again.</p>' : '')
       + err
-      + '<div class="su-field"><label for="tr-tenant">Directory (tenant) ID</label>'
-      + `<input id="tr-tenant" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(tenant)}"></div>`
-      + '<div class="su-field"><label for="tr-client">Application (client) ID</label>'
-      + `<input id="tr-client" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(client)}"></div>`
+      + `<div class="su-field"><label for="${m.pre}-tenant">Directory (tenant) ID</label>`
+      + `<input id="${m.pre}-tenant" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(tenant)}"></div>`
+      + `<div class="su-field"><label for="${m.pre}-client">Application (client) ID</label>`
+      + `<input id="${m.pre}-client" class="su-input" type="text" autocomplete="off" spellcheck="false" value="${esc(client)}"></div>`
       + '<details class="cx-need"><summary>What the app registration needs</summary><ul class="ap-facts">'
-      + '<li>Allow public client flows (device code sign-in needs this). No client secret.</li>'
-      + `<li>Delegated permissions: ${TR_SCOPES.map((x) => `<code>${x}</code>`).join(', ')}</li>`
-      + '<li>Granted with admin consent.</li></ul></details>'
+      + m.need.map((x) => `<li>${x}</li>`).join('')
+      + '</ul></details>'
       + (again ? agentRowsHtml(c) : '')
-      + `<div class="ap-btns">${btn('tr-start', again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${trErr}${errP(st, 'actions')}`;
+      + `<div class="ap-btns">${btn(`${m.pre}-start`, again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${ownErr}${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: transcriptsBody };
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: msappBody, teamschats: msappBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, teamschats: null, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -494,11 +528,12 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, options: {}, canTerm: true, installing: null };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, teamschats: null, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
-    let atlTimer = null, azTimer = null, trTimer = null, instTimer = null;
+    let atlTimer = null, azTimer = null, instTimer = null;
+    const msTimers = {}; // app sign-in connector id -> its status poll
     let atlUntil = 0;
     const active = () => (ui.active ? ui.active() : true);
 
@@ -507,7 +542,7 @@
       st.canTerm = ui.canTerm ? !!ui.canTerm() : true;
       // The pane redraws only when something it shows changed: a poll answering the same view must not replace a
       // field that is being typed in. Typed text is kept in st and the focus is put back.
-      const key = JSON.stringify([st.view, st.picked, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], st.transcripts && [st.transcripts.code, minutesLeft(st.transcripts.expiresAt, now)], st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
+      const key = JSON.stringify([st.view, st.picked, st.err, st.waiting, st.azure && [st.azure.code, minutesLeft(st.azure.expiresAt, now)], Object.keys(MSAPP).map((id) => st[id] && [st[id].code, minutesLeft(st[id].expiresAt, now)]), st.options, st.canTerm, st.view && st.view.connectors.map((c) => c.lastTest && ago(c.lastTest.at, now))]);
       if (!force && key === lastKey) return;
       lastKey = key;
       const had = el.ownerDocument && el.ownerDocument.activeElement;
@@ -546,11 +581,12 @@
         if (az.state === 'connecting' && !azTimer) startAzPoll();
         if (az.state !== 'connecting') { st.azure = null; stopAzPoll(); }
       }
-      const tr = list.find((c) => c.id === 'transcripts');
-      if (tr) {
-        if (tr.state === 'connecting' && !trTimer) startTrPoll();
-        if (tr.state === 'connected') { st.trTenant = null; st.trClient = null; } // finished (also when no poll saw it)
-        if (tr.state !== 'connecting') { st.transcripts = null; stopTrPoll(); }
+      for (const [mid, ma] of Object.entries(MSAPP)) {
+        const row = list.find((c) => c.id === mid);
+        if (!row) continue;
+        if (row.state === 'connecting' && !msTimers[mid]) startMsPoll(mid);
+        if (row.state === 'connected') { st[`${ma.pre}Tenant`] = null; st[`${ma.pre}Client`] = null; } // finished (also when no poll saw it)
+        if (row.state !== 'connecting') { st[mid] = null; stopMsPoll(mid); }
       }
       const inst = st.installing && list.find((c) => c.id === st.installing);
       if (!inst || inst.state !== 'not-installed') { st.installing = null; stopInstPoll(); }
@@ -609,25 +645,26 @@
       }, AZURE_POLL_MS);
     }
     function stopAzPoll() { if (azTimer) { clearInterval(azTimer); azTimer = null; } }
-    // Teams transcripts: the same loop, on its own status route.
-    function startTrPoll() {
-      stopTrPoll();
+    // Teams transcripts and Teams chats: the same loop, each on its own status route.
+    function startMsPoll(id) {
+      stopMsPoll(id);
+      const pre = MSAPP[id].pre;
       const until = Date.now() + GIVE_UP_MS;
-      trTimer = setInterval(async () => {
-        if (!active() || Date.now() > until) { stopTrPoll(); return; }
+      msTimers[id] = setInterval(async () => {
+        if (!active() || Date.now() > until) { stopMsPoll(id); return; }
         try {
           // ui.api, not call(): a failed sign-in answers { status: 'failed', error }, and call() would throw on that error
-          const s = (await ui.api('GET', '/api/connectors/transcripts/status')) || {};
-          if (s.status === 'failed') { st.err.tr = s.error || 'The sign-in did not finish.'; st.transcripts = null; stopTrPoll(); await refresh(); return; }
+          const s = (await ui.api('GET', `/api/connectors/${id}/status`)) || {};
+          if (s.status === 'failed') { st.err[pre] = s.error || 'The sign-in did not finish.'; st[id] = null; stopMsPoll(id); await refresh(); return; }
           if (s.status === 'done' || s.status === 'idle') {
-            if (s.status === 'done') { st.trTenant = null; st.trClient = null; } // typed IDs are kept until a sign-in succeeds
-            st.transcripts = null; stopTrPoll(); await refresh(); return;
+            if (s.status === 'done') { st[`${pre}Tenant`] = null; st[`${pre}Client`] = null; } // typed IDs are kept until a sign-in succeeds
+            st[id] = null; stopMsPoll(id); await refresh(); return;
           }
           render();
         } catch (e) { /* the next tick tries again */ }
       }, AZURE_POLL_MS);
     }
-    function stopTrPoll() { if (trTimer) { clearInterval(trTimer); trTimer = null; } }
+    function stopMsPoll(id) { if (msTimers[id]) { clearInterval(msTimers[id]); msTimers[id] = null; } }
     // After Install the terminal runs on its own: look for the tools every 3 s.
     function startInstPoll() {
       stopInstPoll();
@@ -635,7 +672,7 @@
       instTimer = setInterval(() => { if (!active() || Date.now() > until) stopInstPoll(); else pollRefresh(); }, AZURE_POLL_MS);
     }
     function stopInstPoll() { if (instTimer) { clearInterval(instTimer); instTimer = null; } }
-    function stop() { stopAtlPoll(); stopAzPoll(); stopTrPoll(); stopInstPoll(); }
+    function stop() { stopAtlPoll(); stopAzPoll(); for (const id of Object.keys(MSAPP)) stopMsPoll(id); stopInstPoll(); }
 
     // The approve tab says it is done over a same-origin channel (it has no opener); polling is the fallback.
     if (typeof BroadcastChannel !== 'undefined') {
@@ -751,7 +788,7 @@
       if (act === 'switch') { st.options.atlassian = true; st.err.actions = ''; render(); return; }
       if (act === 'keep') { delete st.options.atlassian; render(); return; }
       if (act === 'test') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/test`); await refresh(); });
-      if (act === 'disconnect') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/disconnect`); st.azure = null; st.transcripts = null; await refresh(); });
+      if (act === 'disconnect') return run('actions', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/disconnect`); st.azure = null; for (const mid of Object.keys(MSAPP)) st[mid] = null; await refresh(); });
       if (act === 'install') {
         const c = st.view.connectors.find((x) => x.id === id);
         if (c && c.install) { ui.openTerm(c.install); st.installing = id; startInstPoll(); }
@@ -781,22 +818,24 @@
       if (act === 'azure-cancel') {
         return run('azure', async () => { await call('POST', '/api/connectors/azure/cancel'); st.azure = null; stopAzPoll(); await refresh(); });
       }
-      if (act === 'tr-start') {
-        return run('tr', async () => {
-          const cur = st.view.connectors.find((x) => x.id === 'transcripts') || {};
-          const tenantId = (st.trTenant != null ? st.trTenant : (cur.tenantId || '')).trim();
-          const clientId = (st.trClient != null ? st.trClient : (cur.clientId || '')).trim();
-          const r = await call('POST', '/api/connectors/transcripts/start', { tenantId, clientId });
-          st.transcripts = { url: r.url, code: r.code, expiresAt: r.expiresAt };
-          startTrPoll();
+      const ms = Object.hasOwn(MSAPP_ACTS, act) ? MSAPP_ACTS[act] : null;
+      if (ms && ms.step === 'start') {
+        const pre = MSAPP[ms.id].pre;
+        return run(pre, async () => {
+          const cur = st.view.connectors.find((x) => x.id === ms.id) || {};
+          const tenantId = (st[`${pre}Tenant`] != null ? st[`${pre}Tenant`] : (cur.tenantId || '')).trim();
+          const clientId = (st[`${pre}Client`] != null ? st[`${pre}Client`] : (cur.clientId || '')).trim();
+          const r = await call('POST', `/api/connectors/${ms.id}/start`, { tenantId, clientId });
+          st[ms.id] = { url: r.url, code: r.code, expiresAt: r.expiresAt };
+          startMsPoll(ms.id);
           await refresh();
         });
       }
-      if (act === 'tr-cancel') {
-        return run('tr', async () => { await call('POST', '/api/connectors/transcripts/cancel'); st.transcripts = null; stopTrPoll(); await refresh(); });
+      if (ms && ms.step === 'cancel') {
+        return run(MSAPP[ms.id].pre, async () => { await call('POST', `/api/connectors/${ms.id}/cancel`); st[ms.id] = null; stopMsPoll(ms.id); await refresh(); });
       }
       if (act === 'copy') {
-        const code = st.picked === 'transcripts' ? st.transcripts : st.azure;
+        const code = Object.hasOwn(MSAPP, st.picked) ? st[st.picked] : st.azure;
         const ok = code && ui.copy ? await ui.copy(code.code) : false;
         if (b) { const t = b.textContent; b.textContent = ok ? 'Copied' : "Couldn't copy"; setTimeout(() => { if (b.isConnected) b.textContent = t; }, 1500); }
       }
@@ -812,8 +851,7 @@
       if (e.target.id === 'cx-email') st.email = e.target.value;
       else if (e.target.id === 'cx-token') st.token = e.target.value;
       else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
-      else if (e.target.id === 'tr-tenant') st.trTenant = e.target.value;
-      else if (e.target.id === 'tr-client') st.trClient = e.target.value;
+      else if (msappField(e.target.id)) st[msappField(e.target.id)] = e.target.value;
       else if (Object.hasOwn(LM_INPUTS, e.target.id)) st[LM_INPUTS[e.target.id]] = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });

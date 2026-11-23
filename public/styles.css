@@ -3666,6 +3666,8 @@ body.su::before {
 .cx-anm { flex: 1; min-width: 0; font-size: var(--t-sm); font-weight: 600; overflow-wrap: anywhere; }
 .cx-anote { flex-basis: 100%; font-size: var(--t-xs); color: var(--muted); overflow-wrap: anywhere; }
 .cx-muted { margin: 0; font-size: var(--t-xs); color: var(--muted); }
+.cx-need { min-width: 0; }
+.cx-need code { overflow-wrap: anywhere; }   /* a redirect URI must wrap at phone width, not widen the card */
 .cx-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }   /* two across when the sheet is wide enough, else stacked */
 .cx-opt { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius-lg); }
 .cx-opt.main { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }

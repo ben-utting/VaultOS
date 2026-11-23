@@ -772,3 +772,80 @@ test('markup in the vantage account is escaped', () => {
   assert.match(html, /Signed in as &lt;img src=x onerror=alert\(1\)&gt;/);
   assert.ok(plain(html).includes(VT_FACTS), 'the Vantage card, not a fallback');
 });
+
+// ---- Teams chats card (the same app sign-in card as transcripts, its own fields and routes) ----
+const tcView = (c, more = []) => ({ connectors: [{ id: 'teamschats', label: 'Teams chats', by: 'Your chats, read-only, from an app you register', state: 'not-connected', agents: [], ...c }, ...more], planned: [] });
+
+test('teamschats: signed out shows its own two IDs, the registration it needs and Sign in', () => {
+  const html = C.paneHtml({ view: tcView({ tenantId: TR_T, clientId: TR_C }), picked: 'teamschats' });
+  assert.match(html, /id="tc-tenant"[^>]*value="11111111-2222-3333-4444-555555555555"/);
+  assert.match(html, /id="tc-client"[^>]*value="66666666-7777-8888-9999-000000000000"/);
+  assert.match(html, /<details[^>]*>[\s\S]*What the app registration needs/);
+  for (const s of ['User.Read', 'Chat.Read', 'offline_access', 'http://localhost', 'https://login.microsoftonline.com/common/oauth2/nativeclient']) assert.ok(html.includes(s), s);
+  assert.match(html, /public client flows/i);
+  assert.match(html, /ask an admin to grant consent for Chat\.Read/i);
+  assert.doesNotMatch(html, /ReadWrite|Read\.All|client secret:/);
+  assert.match(html, /data-act="tc-start"[^>]*>Sign in</);
+  assert.doesNotMatch(html, /tr-start|OnlineMeeting/);
+});
+
+test('teamschats: connecting shows its code with its own Cancel', () => {
+  const html = C.paneHtml({ view: tcView({ state: 'connecting' }), picked: 'teamschats', teamschats: { url: 'https://microsoft.com/devicelogin', code: 'CHAT1234', expiresAt: 10 * 60 * 1000 } }, 0);
+  assert.match(html, /CHAT1234/);
+  assert.match(html, /data-act="tc-cancel"[^>]*>Cancel</);
+  assert.doesNotMatch(html, /tr-cancel|azure-cancel|id="tc-tenant"/);
+});
+
+test('teamschats: connected says what agents can and cannot do, with Test and Sign out', () => {
+  const html = C.paneHtml({ view: tcView({ state: 'connected', account: 'alex@example.com', agents: [{ id: 'cursor', label: 'Cursor CLI', chip: 'Added' }] }), picked: 'teamschats' });
+  assert.match(html, /Signed in as alex@example\.com/);
+  assert.match(html, /can't send, edit or delete/);
+  assert.match(html, /data-act="test"/);
+  assert.match(html, /data-act="disconnect"[^>]*>Sign out</);
+  assert.doesNotMatch(html, /id="tc-tenant"/);
+});
+
+test('teamschats: Sign in posts its IDs to its own route, polls its own status, and the code is the one copied', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  const calls = []; let state = 'not-connected', status = 'waiting';
+  let html = ''; const handlers = {}; const copied = [];
+  const tr = { id: 'transcripts', label: 'Teams transcripts', by: 'x', state: 'not-connected', agents: [] };
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url, body) => {
+    calls.push([method, url, body]);
+    if (url.endsWith('/teamschats/start')) { state = 'connecting'; return { url: 'https://microsoft.com/devicelogin', code: 'CHAT1234', expiresAt: Date.now() + 600000 }; }
+    if (url.endsWith('/teamschats/status')) { if (status === 'done') state = 'connected'; return { status }; }
+    return tcView({ state, account: 'alex@example.com' }, [tr]);
+  }, copy: async (s) => { copied.push(s); return true; }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  const act = (a) => handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: a } } : null) } });
+  handlers.input({ target: { id: 'tr-tenant', value: '99999999-2222-3333-4444-555555555555' } }); // the other card's field
+  handlers.input({ target: { id: 'tc-tenant', value: TR_T } });
+  handlers.input({ target: { id: 'tc-client', value: TR_C } });
+  act('tc-start');
+  await tick(); await tick(); await tick();
+  assert.deepEqual(calls.find((c) => c[1].endsWith('/teamschats/start')), ['POST', '/api/connectors/teamschats/start', { tenantId: TR_T, clientId: TR_C }]);
+  assert.ok(!calls.some((c) => c[1].includes('/transcripts/')));
+  assert.match(html, /CHAT1234/);
+  act('copy');
+  await tick();
+  assert.deepEqual(copied, ['CHAT1234']);
+  status = 'done';
+  t.mock.timers.tick(3000);
+  for (let i = 0; i < 10; i++) await tick();
+  assert.ok(calls.some((c) => c[0] === 'GET' && c[1] === '/api/connectors/teamschats/status'));
+  assert.match(html, /Signed in as alex@example\.com/);
+  m.stop && m.stop();
+});
+
+test('teamschats: Cancel posts to its own cancel route', async () => {
+  const calls = []; let html = ''; const handlers = {};
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url) => { calls.push([method, url]); return tcView({}); }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: 'tc-cancel' } } : null) } });
+  await tick(); await tick();
+  assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === '/api/connectors/teamschats/cancel'));
+});

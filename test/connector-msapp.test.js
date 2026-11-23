@@ -28,14 +28,15 @@ function make(script, over = {}) {
   const app = M.createMsApp({
     fetch, now: () => clock.t, sleep: async (ms) => { sleeps.push(ms); },
     onRefreshToken: over.onRefreshToken || (async (rt) => { saved.push(rt); }),
+    ...(over.scopes ? { scopes: over.scopes } : {}), ...(over.consent ? { consent: over.consent } : {}),
   });
   return { app, calls, sleeps, saved, clock };
 }
 const tok = (at = 'at1', rt = 'rt1', exp = 3600) => reply(200, { access_token: at, refresh_token: rt, expires_in: exp });
 const err = (error, error_description, status = 400) => reply(status, { error, error_description });
 
-async function failWith(response) {
-  const { app } = make([reply(200, DEVICE), response]);
+async function failWith(response, over) {
+  const { app } = make([reply(200, DEVICE), response], over);
   await app.start({ tenantId: TENANT, clientId: CLIENT });
   await wait(() => app.status().status !== 'waiting');
   return app.status();
@@ -301,4 +302,48 @@ test('cancel while the finished sign-in is being saved is too late: it finishes'
   await wait(() => app.status().status === 'done');
   assert.equal(app.status().status, 'done');
   assert.equal(await app.accessToken(), 'at1');
+});
+
+// ---- consent (a tenant that blocks user consent, or a person who declines) ----
+test('consent problems name the permission, say to ask an admin, and stay kind refused', () => {
+  const o = { consent: 'Chat.Read' };
+  for (const d of [
+    'AADSTS65001: The user or administrator has not consented to use the application with ID x.\r\nTrace ID: t',
+    'AADSTS90094: The grant requires admin permission.',
+    'AADSTS90095: Admin consent is required for the permissions requested by this application.',
+  ]) {
+    const c = M.classify(400, { error: 'invalid_grant', error_description: d }, o);
+    assert.equal(c.kind, 'refused', d);
+    assert.match(c.message, /ask an admin/i, d);
+    assert.match(c.message, /Chat\.Read/, d);
+    assert.doesNotMatch(c.message, /AADSTS|Trace ID/, d);
+  }
+  assert.match(M.classify(400, { error: 'consent_required', error_description: 'x' }, o).message, /ask an admin.*Chat\.Read/i);
+  const declined = M.classify(400, { error: 'authorization_declined', error_description: 'x' }, o);
+  assert.equal(declined.kind, 'refused');
+  assert.match(declined.message, /declined/i);
+  assert.match(declined.message, /admin.*Chat\.Read/i);
+  const user = M.classify(400, { error: 'invalid_grant', error_description: 'AADSTS65004: User declined to consent to access the app.' }, o);
+  assert.equal(user.kind, 'refused');
+  assert.match(user.message, /declined/i);
+  // without a hint the sentence still reads
+  assert.match(M.classify(400, { error: 'invalid_grant', error_description: 'AADSTS65001: x' }).message, /ask an admin to grant consent for its permissions/i);
+});
+
+test('a consent block during the device-code poll fails the sign-in with the admin sentence', async () => {
+  const s = await failWith(err('invalid_grant', 'AADSTS65001: The user or administrator has not consented.\r\nTrace ID: t'), { consent: 'Chat.Read' });
+  assert.equal(s.status, 'failed');
+  assert.match(s.error, /ask an admin to grant consent for Chat\.Read/i);
+});
+
+test('scopes are passed through to devicecode and refresh as given', async () => {
+  const scopes = 'User.Read Chat.Read offline_access';
+  const { app, calls } = make([reply(200, DEVICE)], { scopes });
+  await app.start({ tenantId: TENANT, clientId: CLIENT });
+  assert.equal(calls[0].body.scope, scopes);
+  app.cancel();
+  const r = make([tok()], { scopes });
+  r.app.restore({ tenantId: TENANT, clientId: CLIENT, refreshToken: 'rt0' });
+  await r.app.accessToken();
+  assert.equal(r.calls[0].body.scope, scopes);
 });

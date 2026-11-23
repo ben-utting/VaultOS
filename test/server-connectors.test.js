@@ -83,11 +83,11 @@ test('connectors need a session', async (t) => {
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/start')).status, 401);
 });
 
-test('GET /api/connectors lists the ten connectors not connected, and six planned', async (t) => {
+test('GET /api/connectors lists the eleven connectors not connected, and six planned', async (t) => {
   const s = await ready(t);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'not-connected');
   assert.notEqual(r.body.connectors.find((c) => c.id === 'azure').state, 'connected');
   assert.equal(r.body.planned.length, 6);
@@ -285,10 +285,22 @@ test('the vantage callback page names Vantage, and the row is connected', async 
   assert.equal((await vantageRow(s)).state, 'connected');
 });
 
-test('azure and transcripts keep their own start routes', async (t) => {
+test('azure, transcripts and teamschats keep their own start routes', async (t) => {
   const s = await ready(t);
   const tr = await call(s.base, 'POST', '/api/connectors/transcripts/start', { cookie: s.cookie, body: {} });
   assert.notEqual(tr.body && tr.body.error, "Teams transcripts doesn't sign in with a browser.");
+  const tc = await call(s.base, 'POST', '/api/connectors/teamschats/start', { cookie: s.cookie, body: {} });
+  assert.equal(tc.status, 400);
+  assert.match(tc.body.error, /Directory \(tenant\) ID/);
+});
+
+test('Teams chats sign-in routes need a session (401), and a fresh one is idle', async (t) => {
+  const s = await ready(t);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/teamschats/start', { body: { tenantId: 'x', clientId: 'y' } })).status, 401);
+  assert.equal((await call(s.base, 'GET', '/api/connectors/teamschats/status')).status, 401);
+  assert.equal((await call(s.base, 'POST', '/api/connectors/teamschats/cancel')).status, 401);
+  assert.deepEqual((await call(s.base, 'GET', '/api/connectors/teamschats/status', { cookie: s.cookie })).body, { status: 'idle' });
+  assert.equal((await call(s.base, 'POST', '/api/connectors/teamschats/enable', { cookie: s.cookie })).body.error, 'Sign in first.');
 });
 
 test('vantage settings stores allowChanges', async (t) => {
@@ -305,4 +317,49 @@ test('vantage settings without a sign-in is refused', async (t) => {
   const r = await call(s.base, 'POST', '/api/connectors/vantage/settings', { cookie: s.cookie, body: { allowChanges: true } });
   assert.equal(r.status, 400);
   assert.equal(r.body.error, "Vantage isn't connected yet.");
+});
+
+// ----- Teams chats end to end over HTTP: the real routes and relay, a fake Microsoft (scripts/fake-msapp.js) -----
+test('Teams chats: sign in with a device code, then an agent lists chats and reads one thread through /mcp/teamschats', async (t) => {
+  const { startFake: startMs, CHAT_ID } = require('../scripts/fake-msapp');
+  const ms = await startMs();
+  t.after(() => ms.stop());
+  const up = `http://127.0.0.1:${ms.port}`;
+  const s = await ready(t, { env: { CONNECTOR_UPSTREAM_TEAMSCHATS_LOGIN: up, CONNECTOR_UPSTREAM_TEAMSCHATS_GRAPH: up } });
+  const ids = { tenantId: '11111111-2222-3333-4444-555555555555', clientId: '66666666-7777-8888-9999-000000000000' };
+  const st = await call(s.base, 'POST', '/api/connectors/teamschats/start', { cookie: s.cookie, body: ids });
+  assert.equal(st.status, 200);
+  assert.equal(st.body.code, 'FAKE1234');
+  assert.deepEqual(ms.state.scopes, ['User.Read', 'Chat.Read', 'offline_access']);
+  assert.deepEqual([...ms.state.tenants], [ids.tenantId]);
+  ms.state.approved = true; // the person entered the code on Microsoft's page
+  let status;
+  for (let i = 0; i < 100; i++) {
+    status = (await call(s.base, 'GET', '/api/connectors/teamschats/status', { cookie: s.cookie })).body.status;
+    if (status !== 'waiting') break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(status, 'done');
+  const view = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
+  const row = view.body.connectors.find((c) => c.id === 'teamschats');
+  assert.equal(row.state, 'connected');
+  assert.equal(row.account, 'alex@example.com');
+  const stored = JSON.parse(fs.readFileSync(path.join(s.home, '.vaultos', 'connectors.json'), 'utf8')).connectors.teamschats;
+  assert.match(stored.refreshToken, /^rt-/);
+  assert.ok(!view.text.includes(stored.refreshToken));
+
+  const mcp = (body) => call(s.base, 'POST', '/mcp/teamschats', { body: { jsonrpc: '2.0', id: 1, ...body }, headers: { 'x-vaultos-key': storeKey(s) } });
+  const tools = await mcp({ method: 'tools/list' });
+  assert.deepEqual(tools.body.result.tools.map((x) => x.name), ['chats_list', 'chat_get', 'chats_help']);
+  const list = await mcp({ method: 'tools/call', params: { name: 'chats_list', arguments: {} } });
+  assert.match(list.body.result.content[0].text, new RegExp(`Release plan · group · id=${CHAT_ID.replace(/\./g, '\\.')}`));
+  const thread = await mcp({ method: 'tools/call', params: { name: 'chat_get', arguments: { chatId: CHAT_ID } } });
+  const text = thread.body.result.content[0].text;
+  assert.match(text, /^Chat: Release plan \(group\)/);
+  assert.match(text, /Sam Sample: @Alex Example thanks 👍\n.*Alex Example: Yes\. Shipping Thursday & the notes follow\.\n.*Sam Sample: Is the build green\?/);
+  const other = await mcp({ method: 'tools/call', params: { name: 'chat_get', arguments: { chatId: '19:notmine@thread.v2' } } });
+  assert.equal(other.body.result.isError, true);
+  assert.match(other.body.result.content[0].text, /aren't in it/);
+  assert.equal(ms.state.unauthorised, 0);
+  assert.equal((await call(s.base, 'POST', '/mcp/teamschats', { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 403, 'no key, no relay');
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// A fake Microsoft for the Teams transcripts connector: the device-code login endpoints and the few Graph v1.0
-// calls the connector makes, on one port, plus a small control port. node:http only, so it runs inside the image.
+// A fake Microsoft for the app sign-in connectors (Teams transcripts, Teams chats): the device-code login endpoints and
+// the few Graph v1.0 calls they make, on one port, plus a small control port. node:http only, so it runs inside the image.
 //
 //   node scripts/fake-msapp.js --port 5557 --control 5558 [--state /tmp/fake-msapp.json]
 //
@@ -9,6 +9,8 @@
 //          refresh tokens rotate, and a spent one is refused with invalid_grant like the real thing).
 // Graph:   GET /v1.0/me, /v1.0/users/{id}/onlineMeetings/getAllTranscripts(...), /v1.0/me/onlineMeetings/{m},
 //          /v1.0/me/onlineMeetings/{m}/transcripts/{t} and .../content?$format=text/vtt. One meeting, one transcript.
+//          /v1.0/me/chats, /v1.0/me/chats/{c}, .../members and .../messages: one group chat with three messages; any other
+//          chat id answers 403, as for a chat the person isn't in. Anything but GET is refused.
 // Control: GET /approve (the pending device code is entered), /refuse-refresh (the next refresh answers invalid_grant),
 //          /forget-access (every issued access token stops working until a refresh), /state (counters), /reset.
 // Only made-up IDs and alex@example.com.
@@ -25,6 +27,16 @@ const LINES = [
   ['Sam Sample', 'The migration is on track for Thursday.'],
   ['Alex Example', 'Good. Please send the notes round afterwards.'],
 ];
+const CHAT_ID = '19:fakechat0001@thread.v2';
+const CHAT_TOPIC = 'Release plan';
+const chatMessages = (now) => [
+  ['Sam Sample', '<p>Is the build green?</p>', 30],
+  ['Alex Example', '<p>Yes. Shipping <b>Thursday</b> &amp; the notes follow.</p>', 20],
+  ['Sam Sample', '<p><at id="0">Alex Example</at> thanks <emoji id="1f44d_thumbsup" alt="👍" title="Thumbs up"></emoji></p>', 10],
+].map(([who, html, minsAgo], i) => ({
+  id: String(1000 + i), messageType: 'message', createdDateTime: new Date(now - minsAgo * 60000).toISOString(),
+  from: { user: { displayName: who } }, body: { contentType: 'html', content: html }, attachments: [],
+}));
 const vtt = () => {
   const t = (s) => `00:00:${String(s).padStart(2, '0')}.000`;
   const cues = LINES.map(([who, text], i) => `${'aaaa1111-0000-0000-0000-00000000000'}${i}/1-0\n${t(i * 5 + 1)} --> ${t(i * 5 + 4)}\n<v ${who}>${text}</v>`);
@@ -107,6 +119,13 @@ function startFake({ port = 0, control = 0, host = '127.0.0.1', statePath = '' }
     if (path === `/me/onlineMeetings/${MEETING_ID}`) return send(res, 200, { id: MEETING_ID, subject: SUBJECT, startDateTime: created, endDateTime: ended });
     if (path === `/me/onlineMeetings/${MEETING_ID}/transcripts/${TRANSCRIPT_ID}`) return send(res, 200, { id: TRANSCRIPT_ID, createdDateTime: created, endDateTime: ended });
     if (path === `/me/onlineMeetings/${MEETING_ID}/transcripts/${TRANSCRIPT_ID}/content`) return send(res, 200, vtt(), 'text/vtt');
+    const msgs = chatMessages(now);
+    const chat = { id: CHAT_ID, topic: CHAT_TOPIC, chatType: 'group', createdDateTime: created, lastUpdatedDateTime: msgs[2].createdDateTime };
+    if (path === '/me/chats') return send(res, 200, { value: [{ ...chat, lastMessagePreview: { ...msgs[2], isDeleted: false } }] });
+    if (path === `/me/chats/${CHAT_ID}`) return send(res, 200, chat);
+    if (path === `/me/chats/${CHAT_ID}/messages`) return send(res, 200, { value: [...msgs].reverse() });
+    if (path === `/me/chats/${CHAT_ID}/members`) return send(res, 200, { value: [{ userId: ME.id, displayName: 'Alex Example' }, { userId: 'bbbbbbbb-1111-2222-3333-444444444444', displayName: 'Sam Sample' }] });
+    if (path.startsWith('/me/chats/')) return send(res, 403, { error: { code: 'Forbidden', message: 'Forbidden' } });
     return send(res, 404, { error: { code: 'NotFound', message: 'Not found.' } });
   }
 
@@ -132,12 +151,12 @@ function startFake({ port = 0, control = 0, host = '127.0.0.1', statePath = '' }
   });
   const listen = (s, p) => new Promise((ok, fail) => { s.once('error', fail); s.listen(p, host, () => ok(s.address().port)); });
   return Promise.all([listen(server, port), listen(ctl, control)]).then(([pp, cp]) => ({
-    port: pp, controlPort: cp, state, MEETING_ID, TRANSCRIPT_ID, SUBJECT, LINES,
+    port: pp, controlPort: cp, state, MEETING_ID, TRANSCRIPT_ID, SUBJECT, LINES, CHAT_ID, CHAT_TOPIC,
     stop: () => Promise.all([server, ctl].map((s) => new Promise((done) => { s.close(() => done()); s.closeAllConnections(); }))),
   }));
 }
 
-module.exports = { startFake, MEETING_ID, TRANSCRIPT_ID, SUBJECT, ME };
+module.exports = { startFake, MEETING_ID, TRANSCRIPT_ID, SUBJECT, ME, CHAT_ID, CHAT_TOPIC };
 
 if (require.main === module) {
   const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };

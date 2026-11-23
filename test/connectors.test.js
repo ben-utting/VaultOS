@@ -9,7 +9,7 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
 });
 
 test('PLANNED has the six ids in order', () => {
@@ -94,8 +94,33 @@ test('context7 is relayed, takes a pasted key, and points agents at the loopback
 test('transcripts is a builtin that signs in with an app, and gets the relay entry', () => {
   assert.deepEqual(CONNECTORS.transcripts, {
     id: 'transcripts', label: 'Teams transcripts', by: 'Meeting transcripts from an app you register', kind: 'builtin', signIn: ['msapp'],
+    scopes: ['OnlineMeetingTranscript.Read.All', 'OnlineMeetings.Read', 'Calendars.Read', 'User.Read', 'offline_access'],
   });
+  assert.equal(CONNECTORS.transcripts.scopes.join(' '), require('../lib/connector-msapp').SCOPES);
   assert.deepEqual(entryFor('transcripts', { port: 7684, key: 'k' }), {
     kind: 'http', url: 'http://127.0.0.1:7684/mcp/transcripts', headers: { 'X-VaultOS-Key': 'k' },
   });
+});
+
+test('teamschats is a builtin app sign-in with exactly User.Read, Chat.Read and offline_access, and gets the relay entry', () => {
+  assert.deepEqual(CONNECTORS.teamschats, {
+    id: 'teamschats', label: 'Teams chats', by: 'Your chats, read-only, from an app you register', kind: 'builtin', signIn: ['msapp'],
+    scopes: ['User.Read', 'Chat.Read', 'offline_access'], consent: 'Chat.Read',
+  });
+  assert.deepEqual(entryFor('teamschats', { port: 8080, key: 'k' }), {
+    kind: 'http', url: 'http://127.0.0.1:8080/mcp/teamschats', headers: { 'X-VaultOS-Key': 'k' },
+  });
+});
+
+test('no app sign-in asks for a write, an all-users or an application permission', () => {
+  const never = /ReadWrite|\.All$|^ChatMessage\.|^ChannelMessage\.|\.default$/;
+  for (const c of Object.values(CONNECTORS).filter((x) => x.signIn.includes('msapp'))) {
+    for (const scope of c.scopes) {
+      if (c.id === 'transcripts' && scope === 'OnlineMeetingTranscript.Read.All') continue; // delegated, admin-consented; reads only meetings you organised
+      assert.doesNotMatch(scope, never, `${c.id}: ${scope}`);
+    }
+  }
+  for (const s of ['Chat.ReadWrite', 'Chat.ReadWrite.All', 'Chat.Read.All', 'ChatMessage.Read.All', 'ChannelMessage.Read.All']) {
+    assert.ok(!CONNECTORS.teamschats.scopes.includes(s), s);
+  }
 });
