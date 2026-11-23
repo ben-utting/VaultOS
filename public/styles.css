@@ -471,6 +471,9 @@ button.refresh-done .icon { animation: refresh-pop var(--dur-long) var(--ease-ou
    While a card is being dragged (body.board-dragging) every column comes back as a full drop target.
    .col-landing is the column a card was just dropped on: it stays open until the render() after the save. */
 body:not(.board-dragging) #board .col.col-empty:not(.col-landing) { display: none; }
+/* A column whose cards are all folded into a parent card elsewhere still shows, with this line in its body. */
+.col-folded { margin: 4px 2px 2px; font-size: var(--t-xs); line-height: 1.45; color: var(--muted); }
+.col-folded .col-unfold { font-size: inherit; }
 .board {
   display: grid;
   grid-auto-flow: column;
@@ -953,7 +956,7 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .ss-key dd { margin: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: var(--t-sm); }
 .ss-key.hidden { display: none; }
 .ss-cols { margin: 0; padding: 0; list-style: none; }
-.ss-col { display: grid; grid-template-columns: 10px 1fr auto 8.5em; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: var(--t-sm); }
+.ss-col { display: grid; grid-template-columns: 10px 1fr auto 9.5em; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); font-size: var(--t-sm); }
 .ss-col .dot { width: 8px; height: 8px; border-radius: 50%; }
 .ss-col-c { font-variant-numeric: tabular-nums; color: var(--muted); text-align: right; }
 .ss-col-w { color: var(--muted); }

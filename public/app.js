@@ -537,10 +537,13 @@ $('hide-done').addEventListener('change', (e) => setHideDone(e.target.checked));
 function renderColsList() {
   $('hide-done').checked = STATE.hideDone;
   const n = (s) => STATE.tasks.filter((t) => t.status === s).length;
+  const folding = subtasksCollapsed();
+  const nFolded = (s) => (folding ? STATE.tasks.filter((t) => t.status === s && isCollapsibleChild(t)).length : 0);
   $('cols-list').innerHTML = STATE.statuses.map((s) => {
     const count = n(s);
-    const why = s === 'done' && STATE.hideDone ? 'Hidden' : count ? 'Shown' : 'Hidden (empty)';
-    return `<li class="ss-col${why === 'Shown' ? '' : ' off'}"><span class="dot" style="background: var(--${esc(s)})" aria-hidden="true"></span>`
+    const f = nFolded(s);
+    const why = s === 'done' && STATE.hideDone ? 'Hidden' : !count ? 'Hidden (empty)' : f ? `Shown, ${f} folded` : 'Shown';
+    return `<li class="ss-col${why.startsWith('Shown') ? '' : ' off'}"><span class="dot" style="background: var(--${esc(s)})" aria-hidden="true"></span>`
       + `<span class="ss-col-n">${esc(STATUS_LABELS[s] || s)}</span><span class="ss-col-c">${count}</span><span class="ss-col-w">${why}</span></li>`;
   }).join('');
 }
@@ -604,9 +607,10 @@ function collapsibleCount() {
   return STATE.tasks.filter(isCollapsibleChild).length;
 }
 
-function visibleTasks() {
+// fold: false keeps folded subtasks in, so a column can tell it has cards even when all of them are folded away.
+function visibleTasks({ fold = true } = {}) {
   const q = STATE.query.trim().toLowerCase();
-  const collapse = subtasksCollapsed();
+  const collapse = fold && subtasksCollapsed();
   return STATE.tasks.filter((t) => {
     if (collapse && isCollapsibleChild(t)) return false;
     // A batch filter narrows to that batch's children plus its parent card. Still separate
@@ -800,12 +804,22 @@ function render() {
   const statuses = STATE.statuses.filter((s) => !(s === 'done' && STATE.hideDone));
   // An empty column is hidden (it comes back while a card is dragged), but not when every column is empty: a search
   // with no hits or an empty workspace would be a blank board with nothing saying why, so it shows "No tasks".
-  const allEmpty = !statuses.some((s) => tasks.some((t) => t.status === s));
+  // A column whose cards are all folded into a parent card elsewhere isn't empty: it shows, and says so.
+  const unfolded = tasks.length === STATE.tasks.length ? tasks : visibleTasks({ fold: false });
+  const allEmpty = !statuses.some((s) => unfolded.some((t) => t.status === s));
   $('board').innerHTML = statuses.map((s) => {
     const inCol = tasks
       .filter((t) => t.status === s)
       .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
-    const hide = !inCol.length && !allEmpty;
+    // Folded cards whose parent sits in another column: nothing in this column stands for them, so the line does.
+    // (When the parent is here, its subtasks chip already says it.)
+    const shown = new Set(inCol);
+    const folded = unfolded.filter((t) => t.status === s && !shown.has(t)
+      && !((BATCH_INDEX.get(t.batch) || {}).parent && BATCH_INDEX.get(t.batch).parent.status === s)).length;
+    const hide = !inCol.length && !folded && !allEmpty;
+    const foldNote = folded
+      ? `<p class="col-folded">${folded} card${folded === 1 ? '' : 's'} folded into ${folded === 1 ? 'its parent' : 'their parents'} in another column. <button type="button" class="linklike col-unfold">Show subtasks</button></p>`
+      : '';
     return `
       <section class="col${hide ? ' col-empty' : ''}">
         <div class="col-head">
@@ -814,10 +828,11 @@ function render() {
           <span class="n">${inCol.length}</span>
         </div>
         <div class="col-body" data-status="${esc(s)}">
-          ${inCol.length ? inCol.map(card).join('') : '<div class="empty">No tasks</div>'}
+          ${inCol.length ? inCol.map(card).join('') : folded ? '' : '<div class="empty">No tasks</div>'}${foldNote}
         </div>
       </section>`;
   }).join('');
+  for (const b of $('board').querySelectorAll('.col-unfold')) b.addEventListener('click', () => setHideSubtasks(false));
 
   for (const el of $('board').querySelectorAll('.card')) {
     el.addEventListener('click', () => openTask(el.dataset.path));
