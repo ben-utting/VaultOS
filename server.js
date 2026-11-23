@@ -876,7 +876,7 @@ app.get('/health', (req, res) => {
 });
 // The connector relay: agents in this container call it with the relay key. It needs a loopback peer and the
 // key (not the Host allowlist or a session), and it reads the raw body itself, so it sits before the JSON parser.
-const CONNECTOR_AGENTS = ['claude', 'cursor', 'pi'];
+const CONNECTOR_AGENTS = ['claude', 'cursor', 'codex', 'copilot', 'opencode', 'kilo', 'antigravity', 'pi']; // pi: shown, takes no MCP
 const connectors = createConnectorService({
   home: process.env.HOME || os.homedir(),
   port: PORT,
@@ -1649,6 +1649,18 @@ for (const [id, c] of Object.entries(CONNECTORS)) {
   }));
   app.get(`/api/connectors/${id}/status`, settingsGuard, connectorRoute(`read the ${c.label} sign-in`, () => connectors.msappStatus(id)));
   app.post(`/api/connectors/${id}/cancel`, settingsGuard, connectorRoute(`cancel the ${c.label} sign-in`, () => connectors.msappCancel(id)));
+}
+// Cursor's own servers (Teams, Outlook, Outlook calendar): VaultOS runs the Cursor CLI's sign-in, shows Microsoft's link,
+// and hands the address the browser ended on (pasted by the person) to the CLI waiting inside this container.
+for (const [id, c] of Object.entries(CONNECTORS)) {
+  if (c.kind !== 'cursor') continue;
+  app.post(`/api/connectors/${id}/start`, settingsGuard, connectorRoute(`start the ${c.label} sign-in`, () => connectors.cursorStart(id)));
+  app.get(`/api/connectors/${id}/status`, settingsGuard, connectorRoute(`read the ${c.label} sign-in`, () => connectors.cursorStatus(id)));
+  app.post(`/api/connectors/${id}/finish`, settingsGuard, connectorRoute(`finish the ${c.label} sign-in`, (req) => {
+    const { url } = req.body || {};
+    return connectors.cursorFinish(id, { url: typeof url === 'string' ? url : '' });
+  }));
+  app.post(`/api/connectors/${id}/cancel`, settingsGuard, connectorRoute(`cancel the ${c.label} sign-in`, () => connectors.cursorCancel(id)));
 }
 // Browser sign-in for any connector that offers one (Atlassian, Vantage). After the azure and app sign-in routes, so
 // their own /start and /cancel win. The callback is the page the service sends the person back to. The server sets no

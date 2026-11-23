@@ -849,3 +849,94 @@ test('teamschats: Cancel posts to its own cancel route', async () => {
   await tick(); await tick();
   assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === '/api/connectors/teamschats/cancel'));
 });
+
+// ---- Outlook cards (the app sign-in card) and Cursor's own connectors ----
+test('outlook mail and calendar use the app sign-in card with their own one read permission', () => {
+  for (const [id, pre, scope] of [['outlookmail', 'om', 'Mail.Read'], ['outlookcalendar', 'oc', 'Calendars.Read']]) {
+    const view = { connectors: [{ id, label: id, by: 'x', state: 'not-connected', agents: [], cursorAltLabel: 'Outlook (Cursor)', cursorAltOn: false }], planned: [] };
+    const html = C.paneHtml({ view, picked: id });
+    assert.match(html, new RegExp(`id="${pre}-tenant"`));
+    assert.match(html, new RegExp(`data-act="${pre}-start"`));
+    assert.ok(html.includes(`<code>${scope}</code>`), scope);
+    assert.doesNotMatch(html, /ReadWrite|Mail\.Send/);
+    assert.match(html, /The Cursor CLI gets it too, until you turn on Outlook \(Cursor\)\./);
+  }
+});
+
+test('a second app sign-in offers the IDs the first one uses; its own saved IDs win', () => {
+  const chats = { id: 'teamschats', label: 'Teams chats', by: 'x', state: 'connected', tenantId: TR_T, clientId: TR_C, agents: [] };
+  const mail = { id: 'outlookmail', label: 'Outlook mail', by: 'x', state: 'not-connected', agents: [] };
+  let html = C.paneHtml({ view: { connectors: [chats, mail], planned: [] }, picked: 'outlookmail' });
+  assert.match(html, /id="om-tenant"[^>]*value="11111111-2222-3333-4444-555555555555"/);
+  assert.match(html, /id="om-client"[^>]*value="66666666-7777-8888-9999-000000000000"/);
+  html = C.paneHtml({ view: { connectors: [chats, { ...mail, tenantId: '22222222-2222-3333-4444-555555555555', clientId: TR_C }], planned: [] }, picked: 'outlookmail' });
+  assert.match(html, /id="om-tenant"[^>]*value="22222222-2222-3333-4444-555555555555"/);
+});
+
+test('the Teams chats card says when Cursor uses its own instead', () => {
+  const view = { connectors: [{ id: 'teamschats', label: 'Teams chats', by: 'x', state: 'connected', account: 'a@example.com', agents: [], cursorAltLabel: 'Teams (Cursor)', cursorAltOn: true }], planned: [] };
+  assert.match(C.paneHtml({ view, picked: 'teamschats' }), /The Cursor CLI uses Teams \(Cursor\) instead\./);
+});
+
+const CU = { id: 'cursor-teams', label: 'Teams (Cursor)', by: "Cursor's own", state: 'not-connected', agents: [], insteadOf: 'Teams chats', sends: 'post in your chats and channels', scopes: ['Chat.Read', 'ChatMessage.Send'] };
+const cuView = (c) => ({ connectors: [{ ...CU, ...c }], planned: [] });
+
+test("Cursor's own, off: says it's Cursor only, not read-only, what it asks for, and offers Turn on", () => {
+  const html = C.paneHtml({ view: cuView({}), picked: 'cursor-teams' });
+  assert.match(html, /for the Cursor CLI only\. While it&#39;s on, Cursor uses it instead of Teams chats\./);
+  assert.match(html, /class="cx-warn">Not read-only: agents in Cursor can post in your chats and channels as you\./);
+  assert.match(html, /<code>ChatMessage\.Send<\/code>/);
+  assert.match(html, /data-act="cu-start"[^>]*>Turn on and sign in</);
+  assert.doesNotMatch(html, /data-act="disconnect"/);
+});
+
+test("Cursor's own, signing in: the Microsoft link, the localhost hint, the paste box and Finish", () => {
+  const html = C.paneHtml({ view: cuView({ state: 'connecting', login: { url: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?x=1', port: '8787' } }), picked: 'cursor-teams', cuPaste: { 'cursor-teams': 'http://localhost:8787/callback?code=a' } });
+  assert.match(html, /href="https:\/\/login\.microsoftonline\.com\/common\/oauth2\/v2\.0\/authorize\?x=1"[^>]*>Open Microsoft sign-in</);
+  assert.match(html, /<code>localhost:8787<\/code>/);
+  assert.match(html, /id="cu-paste"[^>]*value="http:\/\/localhost:8787\/callback\?code=a"/);
+  assert.match(html, /data-act="cu-finish"[^>]*>Finish sign-in</);
+  assert.match(html, /data-act="cu-cancel"/);
+  const bad = C.paneHtml({ view: cuView({ state: 'connecting', login: { url: 'javascript:alert(1)', port: '8787' } }), picked: 'cursor-teams' });
+  assert.doesNotMatch(bad, /javascript:/);
+});
+
+test("Cursor's own, on but not signed in, and signed in", () => {
+  let html = C.paneHtml({ view: cuView({ state: 'not-signed-in' }), picked: 'cursor-teams' });
+  assert.match(html, /Added to Cursor, not signed in yet\./);
+  assert.match(html, /data-act="cu-start"[^>]*>Sign in</);
+  assert.match(html, /data-act="disconnect"[^>]*>Turn off</);
+  assert.match(html, /Not signed in/);
+  html = C.paneHtml({ view: cuView({ state: 'connected', lastTest: { at: new Date(0).toISOString(), ok: true, tools: null }, agents: [{ id: 'cursor', label: 'Cursor CLI', chip: 'Added' }] }), picked: 'cursor-teams' }, 30000);
+  assert.match(html, /Signed in through Cursor/);
+  assert.match(html, /Tested just now: Teams \(Cursor\) answered</);
+  assert.doesNotMatch(html, /null tools/);
+  assert.match(html, /Cursor keeps its own sign-in/);
+  html = C.paneHtml({ view: cuView({ needsCursor: true }), picked: 'cursor-teams' });
+  assert.match(html, /Install the Cursor CLI first/);
+  assert.doesNotMatch(html, /data-act="cu-start"/);
+});
+
+test("Cursor's own: Turn on, paste and Finish post to its own routes", async () => {
+  const calls = []; let html = ''; const handlers = {};
+  let row = { state: 'not-connected' };
+  const el = { addEventListener: (n, f) => { handlers[n] = f; }, querySelector() { return null; }, contains() { return false; },
+    get innerHTML() { return html; }, set innerHTML(v) { html = v; } };
+  const m = C.mountConnectors(el, { api: async (method, url, body) => {
+    calls.push([method, url, body]);
+    if (url.endsWith('/start')) { row = { state: 'connecting', login: { url: 'https://login.microsoftonline.com/x', port: '8787' } }; return { url: 'https://login.microsoftonline.com/x' }; }
+    if (url.endsWith('/finish')) { row = { state: 'connected' }; return { ok: true }; }
+    return cuView(row);
+  }, openTerm() {}, openTab() {} });
+  await m.refresh();
+  const act = (a) => handlers.click({ target: { closest: (s) => (s === '[data-act]' ? { dataset: { act: a } } : null) } });
+  act('cu-start');
+  await tick(); await tick(); await tick();
+  assert.ok(calls.some((c) => c[0] === 'POST' && c[1] === '/api/connectors/cursor-teams/start'));
+  assert.match(html, /id="cu-paste"/);
+  handlers.input({ target: { id: 'cu-paste', value: '  http://localhost:8787/callback?code=a&state=b ' } });
+  act('cu-finish');
+  await tick(); await tick(); await tick();
+  assert.deepEqual(calls.find((c) => c[1].endsWith('/finish')), ['POST', '/api/connectors/cursor-teams/finish', { url: 'http://localhost:8787/callback?code=a&state=b' }]);
+  assert.match(html, /Signed in through Cursor/);
+});

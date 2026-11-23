@@ -83,11 +83,11 @@ test('connectors need a session', async (t) => {
   assert.equal((await call(s.base, 'POST', '/api/connectors/atlassian/start')).status, 401);
 });
 
-test('GET /api/connectors lists the eleven connectors not connected, and six planned', async (t) => {
+test('GET /api/connectors lists the sixteen connectors not connected, and six planned', async (t) => {
   const s = await ready(t);
   const r = await call(s.base, 'GET', '/api/connectors', { cookie: s.cookie });
   assert.equal(r.status, 200);
-  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(r.body.connectors.map((c) => c.id), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'outlookmail', 'outlookcalendar', 'cursor-teams', 'cursor-outlook', 'cursor-outlook-calendar', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
   assert.equal(r.body.connectors.find((c) => c.id === 'atlassian').state, 'not-connected');
   assert.notEqual(r.body.connectors.find((c) => c.id === 'azure').state, 'connected');
   assert.equal(r.body.planned.length, 6);
@@ -362,4 +362,21 @@ test('Teams chats: sign in with a device code, then an agent lists chats and rea
   assert.match(other.body.result.content[0].text, /aren't in it/);
   assert.equal(ms.state.unauthorised, 0);
   assert.equal((await call(s.base, 'POST', '/mcp/teamschats', { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } })).status, 403, 'no key, no relay');
+});
+
+test("Outlook and Cursor's own connectors have their sign-in routes, behind a session", async (t) => {
+  const s = await ready(t);
+  for (const [m, route] of [['POST', 'outlookmail/start'], ['GET', 'outlookcalendar/status'], ['POST', 'cursor-teams/start'], ['POST', 'cursor-outlook/finish'], ['GET', 'cursor-outlook-calendar/status'], ['POST', 'cursor-teams/cancel']]) {
+    assert.equal((await call(s.base, m, `/api/connectors/${route}`, { body: m === 'POST' ? {} : undefined })).status, 401, route);
+  }
+  const om = await call(s.base, 'POST', '/api/connectors/outlookmail/start', { cookie: s.cookie, body: { tenantId: 'x', clientId: 'y' } });
+  assert.equal(om.status, 400);
+  assert.match(om.body.error, /Directory \(tenant\) ID/);
+  assert.deepEqual((await call(s.base, 'GET', '/api/connectors/cursor-teams/status', { cookie: s.cookie })).body, { status: 'idle' });
+  const cu = await call(s.base, 'POST', '/api/connectors/cursor-teams/start', { cookie: s.cookie });
+  assert.equal(cu.status, 400);
+  assert.match(cu.body.error, /Install the Cursor CLI first/); // the test home has no Cursor CLI
+  const fin = await call(s.base, 'POST', '/api/connectors/cursor-teams/finish', { cookie: s.cookie, body: { url: 'http://localhost:8787/callback?code=x&state=y' } });
+  assert.equal(fin.status, 400);
+  assert.ok(!fin.text.includes('code=x'));
 });

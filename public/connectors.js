@@ -29,6 +29,7 @@
     connecting: { text: 'Connecting…', tone: 'plain' },
     connected: { text: 'Connected', tone: 'ok' },
     'needs-sign-in': { text: 'Sign in again', tone: 'warn' },
+    'not-signed-in': { text: 'Not signed in', tone: 'warn' },
     error: { text: 'Error', tone: 'warn' },
   };
   const stateChip = (state) => STATE_CHIP[state] || STATE_CHIP['not-connected'];
@@ -286,7 +287,9 @@
 
   function testedLine(c, now, who) {
     const t = c.lastTest;
-    return t ? (t.ok ? `Tested ${ago(t.at, now)}: ${who} answered with ${t.tools} tools` : `Tested ${ago(t.at, now)}: it didn't answer`) : '';
+    if (!t) return '';
+    if (!t.ok) return `Tested ${ago(t.at, now)}: it didn't answer`;
+    return typeof t.tools === 'number' ? `Tested ${ago(t.at, now)}: ${who} answered with ${t.tools} tools` : `Tested ${ago(t.at, now)}: ${who} answered`;
   }
 
   function keyedBody(c, st, now) {
@@ -453,6 +456,28 @@
       ],
       can: "Agents can list your chats and read their messages. They can't send, edit or delete anything, and channel posts aren't included.",
     },
+    outlookmail: {
+      pre: 'om',
+      intro: 'Your Outlook mail, read-only, through an app registration you own',
+      need: [
+        'Registered in your own tenant (Entra admin center → App registrations). Single tenant is simplest; any account type works.',
+        `Authentication: the Mobile and desktop applications platform with redirect URIs ${codes(['http://localhost', 'https://login.microsoftonline.com/common/oauth2/nativeclient'])}, and Allow public client flows turned on. No client secret.`,
+        `Microsoft Graph delegated permissions: ${codes(['User.Read', 'Mail.Read', 'offline_access'])}, and nothing more.`,
+        "Mail.Read doesn't need admin consent, but your organisation may block user consent. If Microsoft's page asks for admin approval, ask an admin to grant consent for Mail.Read on your app.",
+      ],
+      can: "Agents can list, search and read your mail. They can't send, reply, move or delete anything, and attachments aren't opened.",
+    },
+    outlookcalendar: {
+      pre: 'oc',
+      intro: 'Your Outlook calendar, read-only, through an app registration you own',
+      need: [
+        'Registered in your own tenant (Entra admin center → App registrations). Single tenant is simplest; any account type works.',
+        `Authentication: the Mobile and desktop applications platform with redirect URIs ${codes(['http://localhost', 'https://login.microsoftonline.com/common/oauth2/nativeclient'])}, and Allow public client flows turned on. No client secret.`,
+        `Microsoft Graph delegated permissions: ${codes(['User.Read', 'Calendars.Read', 'offline_access'])}, and nothing more.`,
+        "Calendars.Read doesn't need admin consent, but your organisation may block user consent. If Microsoft's page asks for admin approval, ask an admin to grant consent for Calendars.Read on your app.",
+      ],
+      can: "Agents can list your events and read one in full. They can't create, accept, decline or change anything.",
+    },
   };
   const MSAPP_ACTS = {}; // 'tc-start' -> { id, step: 'start' }
   for (const [id, m] of Object.entries(MSAPP)) for (const step of ['start', 'cancel']) MSAPP_ACTS[`${m.pre}-${step}`] = { id, step };
@@ -469,7 +494,8 @@
     const err = c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
     // a failed sign-in's reason comes back on the row and from the status poll: show it once
     const ownErr = st.err && st.err[m.pre] && st.err[m.pre] !== c.error ? errP(st, m.pre) : '';
-    const can = m.can ? `<li>${m.can}</li>` : ''; // static copy
+    const can = (m.can ? `<li>${m.can}</li>` : '') // static copy
+      + (c.cursorAltLabel ? `<li>${esc(c.cursorAltOn ? `The Cursor CLI uses ${c.cursorAltLabel} instead.` : `The Cursor CLI gets it too, until you turn on ${c.cursorAltLabel}.`)}</li>` : '');
     if (c.state === 'connecting') {
       return `<ul class="ap-facts">${intro}<li>Sign in with the code below.</li></ul>`
         + codePanelHtml(st, now, { code: st[c.id], start: `${m.pre}-start`, cancel: `${m.pre}-cancel`, err: m.pre });
@@ -481,8 +507,10 @@
     }
     const again = c.state === 'needs-sign-in';
     const typed = (k) => st[m.pre + k];
-    const tenant = typed('Tenant') != null ? typed('Tenant') : (c.tenantId || '');
-    const client = typed('Client') != null ? typed('Client') : (c.clientId || '');
+    // one app registration can carry every permission: offer the IDs another app sign-in already uses
+    const other = !c.tenantId && ((st.view && st.view.connectors) || []).find((x) => Object.hasOwn(MSAPP, x.id) && x.id !== c.id && x.tenantId && x.clientId);
+    const tenant = typed('Tenant') != null ? typed('Tenant') : (c.tenantId || (other ? other.tenantId : ''));
+    const client = typed('Client') != null ? typed('Client') : (c.clientId || (other ? other.clientId : ''));
     return `<ul class="ap-facts">${intro}<li>Sign in with a code you type on Microsoft's page.</li>${can}</ul>`
       + (again ? '<p class="su-err cx-err" role="alert">Your Microsoft sign-in has run out. Sign in again.</p>' : '')
       + err
@@ -497,10 +525,50 @@
       + `<div class="ap-btns">${btn(`${m.pre}-start`, again ? 'Sign in again' : 'Sign in', ' primary')}${again ? btn('disconnect', 'Sign out', ' danger') : ''}</div>${ownErr}${errP(st, 'actions')}`;
   }
 
-  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: msappBody, teamschats: msappBody };
+  // Cursor's own Microsoft 365 servers: the entry goes to the Cursor CLI only, and the CLI signs in with Cursor's own
+  // Microsoft app. Its sign-in waits on localhost inside VaultOS, so the person pastes back the address their browser
+  // ended on. Not read-only: the card says what agents can change.
+  function cursorBody(c, st, now) {
+    const on = c.state !== 'not-connected';
+    const facts = [
+      `<li>${esc(`Cursor's own connector, for the Cursor CLI only${c.insteadOf ? `. While it's on, Cursor uses it instead of ${c.insteadOf}` : ''}.`)}</li>`,
+      "<li>Cursor signs in with its own Microsoft app, so you don't register one. Your organisation has to allow that app.</li>",
+      `<li class="cx-warn">${esc(`Not read-only: agents in Cursor can ${c.sends || 'change things'} as you.`)}</li>`,
+    ];
+    const asks = `<details class="cx-need"><summary>What Cursor asks Microsoft for</summary><ul class="ap-facts"><li>${codes((c.scopes || []).map(esc))}</li></ul></details>`;
+    const err = c.error ? `<p class="su-err cx-err" role="alert">${esc(c.error)}</p>` : '';
+    if (c.needsCursor) {
+      return `<ul class="ap-facts">${facts.join('')}<li>Install the Cursor CLI first, in Settings → Agent.</li></ul>${asks}`;
+    }
+    if (c.state === 'connecting' && c.login) {
+      const open = httpsUrl(c.login.url);
+      const port = esc(c.login.port || '');
+      return `<ul class="ap-facts">${facts[0]}</ul>`
+        + '<ol class="cx-steps">'
+        + `<li>${open ? `<a class="su-btn primary" href="${esc(open.href)}" target="_blank" rel="noopener noreferrer">Open Microsoft sign-in</a>` : 'Open the sign-in link from Cursor.'}</li>`
+        + `<li>Sign in. Your browser then lands on a page that doesn't load, at <code>localhost:${port}</code>. That's expected.</li>`
+        + '<li><label for="cu-paste">Copy that page\'s whole address and paste it here</label>'
+        + `<input id="cu-paste" class="su-input" type="text" autocomplete="off" spellcheck="false" placeholder="http://localhost:${port}/callback?code=…" value="${esc((st.cuPaste && st.cuPaste[c.id]) || '')}"></li>`
+        + '</ol>'
+        + `<div class="ap-btns">${btn('cu-finish', 'Finish sign-in', ' primary')}${btn('cu-cancel', 'Cancel')}</div>${errP(st, 'cu')}${err}`;
+    }
+    if (c.state === 'connected' || c.state === 'error') {
+      const tested = testedLine(c, now, c.label);
+      return `<ul class="ap-facts">${facts.join('')}<li>Signed in through Cursor</li>${tested ? `<li>${esc(tested)}</li>` : ''}</ul>${asks}`
+        + err + agentRowsHtml(c)
+        + `<div class="ap-btns">${btn('test', 'Test')}${btn('cu-start', 'Sign in again')}${btn('disconnect', 'Turn off', ' danger')}</div>${errP(st, 'actions')}${errP(st, 'cu')}`
+        + `<p class="cx-muted">${esc("Turning it off takes it out of Cursor's config. Cursor keeps its own sign-in.")}</p>`;
+    }
+    return `<ul class="ap-facts">${facts.join('')}${on ? '<li>Added to Cursor, not signed in yet.</li>' : ''}</ul>${asks}${err}`
+      + (on ? agentRowsHtml(c) : '')
+      + `<div class="ap-btns">${btn('cu-start', on ? 'Sign in' : 'Turn on and sign in', ' primary')}${on ? btn('disconnect', 'Turn off', ' danger') : ''}</div>${errP(st, 'cu')}${errP(st, 'actions')}`;
+  }
+
+  const BODIES = { atlassian: atlassianBody, azure: azureBody, entra: entraBody, azuredevops: adoBody, logicmonitor: lmBody, vantage: vantageBody, github: keyedBody, mslearn: mslearnBody, context7: keyedBody, transcripts: msappBody, teamschats: msappBody, outlookmail: msappBody, outlookcalendar: msappBody,
+    'cursor-teams': cursorBody, 'cursor-outlook': cursorBody, 'cursor-outlook-calendar': cursorBody };
 
   function paneHtml(st, now = Date.now()) {
-    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, teamschats: null, ...st };
+    st = { err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, options: {}, azure: null, transcripts: null, teamschats: null, outlookmail: null, outlookcalendar: null, cuPaste: {}, ...st };
     const list = (st.view && st.view.connectors) || [];
     const planned = (st.view && st.view.planned) || [];
     const picked = list.find((c) => c.id === st.picked) || list[0];
@@ -528,7 +596,7 @@
   const ATLASSIAN_POLL_MS = 2000, AZURE_POLL_MS = 3000, GIVE_UP_MS = 10 * 60 * 1000;
 
   function mountConnectors(el, ui) {
-    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, teamschats: null, options: {}, canTerm: true, installing: null };
+    const st = { view: null, picked: null, err: {}, email: '', token: '', ghToken: '', c7Key: '', vtKey: '', waitingFor: undefined, lmPortal: '', lmToken: '', lmId: '', lmKey: '', adoOrg: null, waiting: false, azure: null, transcripts: null, teamschats: null, outlookmail: null, outlookcalendar: null, cuPaste: {}, options: {}, canTerm: true, installing: null };
     let lastKey = '';
     let seq = 0;
     let busy = false;
@@ -818,6 +886,15 @@
       if (act === 'azure-cancel') {
         return run('azure', async () => { await call('POST', '/api/connectors/azure/cancel'); st.azure = null; stopAzPoll(); await refresh(); });
       }
+      if (act === 'cu-start') return run('cu', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/start`); await refresh(); });
+      if (act === 'cu-finish') {
+        return run('cu', async () => {
+          await call('POST', `/api/connectors/${encodeURIComponent(id)}/finish`, { url: ((st.cuPaste || {})[id] || '').trim() });
+          st.cuPaste[id] = '';
+          await refresh();
+        });
+      }
+      if (act === 'cu-cancel') return run('cu', async () => { await call('POST', `/api/connectors/${encodeURIComponent(id)}/cancel`); st.cuPaste[id] = ''; await refresh(); });
       const ms = Object.hasOwn(MSAPP_ACTS, act) ? MSAPP_ACTS[act] : null;
       if (ms && ms.step === 'start') {
         const pre = MSAPP[ms.id].pre;
@@ -852,6 +929,7 @@
       else if (e.target.id === 'cx-token') st.token = e.target.value;
       else if (e.target.id === 'cx-ado-org') st.adoOrg = e.target.value;
       else if (msappField(e.target.id)) st[msappField(e.target.id)] = e.target.value;
+      else if (e.target.id === 'cu-paste') st.cuPaste[st.picked] = e.target.value;
       else if (Object.hasOwn(LM_INPUTS, e.target.id)) st[LM_INPUTS[e.target.id]] = e.target.value;
       else { const k = keyedInput(e.target.id); if (k) st[k.field] = e.target.value; }
     });

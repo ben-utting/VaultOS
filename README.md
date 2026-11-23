@@ -107,7 +107,7 @@ A work OneDrive folder is usually called `OneDrive - <Company>`; use the path Fi
 
 Windows paths, OneDrive, company proxies, environment variables and resetting a password: [docs/portable.md](docs/portable.md).
 
-Letting your agents read your own Teams chats, through an app you register in your tenant: [docs/teams-chats.md](docs/teams-chats.md).
+Letting your agents read your own Teams chats, Outlook mail and calendar, through an app you register in your tenant: [docs/microsoft-365.md](docs/microsoft-365.md).
 
 The screenshots use a made-up demo vault. Agent logos belong to their owners and appear only to name each agent.
 

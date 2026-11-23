@@ -9,7 +9,7 @@ test('every connector has id, label, by, kind and signIn', () => {
     for (const k of ['label', 'by', 'kind']) assert.equal(typeof c[k], 'string', `${id}.${k}`);
     assert.ok(Array.isArray(c.signIn) && c.signIn.length > 0, `${id}.signIn`);
   }
-  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
+  assert.deepEqual(Object.keys(CONNECTORS), ['atlassian', 'vantage', 'azure', 'entra', 'transcripts', 'teamschats', 'outlookmail', 'outlookcalendar', 'cursor-teams', 'cursor-outlook', 'cursor-outlook-calendar', 'azuredevops', 'logicmonitor', 'github', 'mslearn', 'context7']);
 });
 
 test('PLANNED has the six ids in order', () => {
@@ -105,7 +105,7 @@ test('transcripts is a builtin that signs in with an app, and gets the relay ent
 test('teamschats is a builtin app sign-in with exactly User.Read, Chat.Read and offline_access, and gets the relay entry', () => {
   assert.deepEqual(CONNECTORS.teamschats, {
     id: 'teamschats', label: 'Teams chats', by: 'Your chats, read-only, from an app you register', kind: 'builtin', signIn: ['msapp'],
-    scopes: ['User.Read', 'Chat.Read', 'offline_access'], consent: 'Chat.Read',
+    scopes: ['User.Read', 'Chat.Read', 'offline_access'], consent: 'Chat.Read', cursorAlt: 'cursor-teams',
   });
   assert.deepEqual(entryFor('teamschats', { port: 8080, key: 'k' }), {
     kind: 'http', url: 'http://127.0.0.1:8080/mcp/teamschats', headers: { 'X-VaultOS-Key': 'k' },
@@ -113,7 +113,7 @@ test('teamschats is a builtin app sign-in with exactly User.Read, Chat.Read and 
 });
 
 test('no app sign-in asks for a write, an all-users or an application permission', () => {
-  const never = /ReadWrite|\.All$|^ChatMessage\.|^ChannelMessage\.|\.default$/;
+  const never = /ReadWrite|Send|\.All$|^ChatMessage\.|^ChannelMessage\.|\.default$/;
   for (const c of Object.values(CONNECTORS).filter((x) => x.signIn.includes('msapp'))) {
     for (const scope of c.scopes) {
       if (c.id === 'transcripts' && scope === 'OnlineMeetingTranscript.Read.All') continue; // delegated, admin-consented; reads only meetings you organised
@@ -122,5 +122,29 @@ test('no app sign-in asks for a write, an all-users or an application permission
   }
   for (const s of ['Chat.ReadWrite', 'Chat.ReadWrite.All', 'Chat.Read.All', 'ChatMessage.Read.All', 'ChannelMessage.Read.All']) {
     assert.ok(!CONNECTORS.teamschats.scopes.includes(s), s);
+  }
+});
+
+test('Outlook mail and calendar are app sign-ins with one read scope each, paired with Cursor\'s own', () => {
+  assert.deepEqual(CONNECTORS.outlookmail.scopes, ['User.Read', 'Mail.Read', 'offline_access']);
+  assert.deepEqual(CONNECTORS.outlookcalendar.scopes, ['User.Read', 'Calendars.Read', 'offline_access']);
+  assert.equal(CONNECTORS.outlookmail.cursorAlt, 'cursor-outlook');
+  assert.equal(CONNECTORS.outlookcalendar.cursorAlt, 'cursor-outlook-calendar');
+  for (const id of ['outlookmail', 'outlookcalendar']) {
+    assert.equal(CONNECTORS[id].kind, 'builtin');
+    assert.deepEqual(CONNECTORS[id].signIn, ['msapp']);
+    assert.ok(!CONNECTORS[id].scopes.some((x) => /Write|Send|\.All$/.test(x)), id);
+  }
+});
+
+test("Cursor's own servers are for Cursor only, on api.cursor.com, and their entry has no VaultOS key", () => {
+  for (const [id, path] of [['cursor-teams', 'teams'], ['cursor-outlook', 'outlook'], ['cursor-outlook-calendar', 'outlook-calendar']]) {
+    const c = CONNECTORS[id];
+    assert.equal(c.kind, 'cursor');
+    assert.deepEqual(c.agents, ['cursor']);
+    assert.equal(c.url, `https://api.cursor.com/rest-mcp/${path}/mcp`);
+    assert.equal(typeof c.sends, 'string');
+    assert.deepEqual(entryFor(id, { port: 8080, key: 'k' }), { kind: 'http', url: c.url });
+    assert.ok(Object.values(CONNECTORS).some((x) => x.cursorAlt === id), `${id} replaces one of VaultOS's for Cursor`);
   }
 });
