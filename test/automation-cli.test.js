@@ -203,9 +203,9 @@ test('options lists the connectors automations can use now', async () => {
   assert.match(none.out, /^Connectors \(read-only\): none connected$/m);
 });
 
-test('show prints Reads: when an automation has connectors', async () => {
+test('show includes connectors and stays valid JSON', async () => {
   const withC = await run(['show', 'a1'], { answers: [['show', 200, { automation: { id: 'a1', connectors: ['atlassian', 'azuredevops'] } }]] });
-  assert.match(withC.out, /^Reads: atlassian, azuredevops$/m);
+  assert.deepEqual(JSON.parse(withC.out).connectors, ['atlassian', 'azuredevops']);
   const without = await run(['show', 'a1'], { answers: [['show', 200, { automation: { id: 'a1' } }]] });
-  assert.doesNotMatch(without.out, /Reads:/);
+  assert.equal('connectors' in JSON.parse(without.out), false);
 });
