@@ -28,13 +28,15 @@ const draft = (more = {}) => ({
   schedule: { repeat: 'weekdays', time: '08:00' }, section: 'Latest check-in', timeLimitMin: 10, ...more,
 });
 
-async function ready(t, { fakeOpts = {}, fakeMode, upstreamEnv = 'CONNECTOR_UPSTREAM_ATLASSIAN' } = {}) {
+async function ready(t, { fakeOpts = {}, fakeMode, upstreamEnv = 'CONNECTOR_UPSTREAM_ATLASSIAN', brokenConnectors = false } = {}) {
   const fake = await startFake(fakeOpts);
   if (fakeMode) fake.setMode(fakeMode);
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vaultos-auto-cx-'));
   const d = { vault: path.join(root, 'vault'), data: path.join(root, 'data'), home: path.join(root, 'home') };
   fs.mkdirSync(d.vault);
   fs.mkdirSync(d.home);
+  // A folder where connectors.json should be: the connectors' store can't load.
+  if (brokenConnectors) fs.mkdirSync(path.join(d.home, '.vaultos', 'connectors.json'), { recursive: true });
   seedVault(d.vault, {});
   const keyOut = path.join(root, 'key-out.txt');
   const promptOut = path.join(root, 'prompt-out.txt');
@@ -67,7 +69,7 @@ async function ready(t, { fakeOpts = {}, fakeMode, upstreamEnv = 'CONNECTOR_UPST
     assert.equal(run.state, 'finished');
     return (await as(tm, 'run', { id: run.id })).body.cards[0];
   };
-  return { ...d, base, fake, f, keyOut, promptOut, person, trial, mcpDir: path.join(d.home, '.cache', 'vaultos', 'automation-mcp') };
+  return { ...d, base, fake, f, keyOut, promptOut, person, trial, term, as, mcpDir: path.join(d.home, '.cache', 'vaultos', 'automation-mcp') };
 }
 
 const leftovers = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir) : []);
@@ -120,4 +122,24 @@ test('a run key reaching Vantage with Allow changes on still only sees read tool
   assert.ok(s.fake.state.calls.includes('query-costs'));
   assert.ok(!s.fake.state.calls.includes('create-budget'));
   assert.deepEqual(leftovers(s.mcpDir), []);
+});
+
+test("a connectors store that won't load: automations without ticks still list, save and run; a ticked one says why", { timeout: 60000 }, async (t) => {
+  const s = await ready(t, { brokenConnectors: true });
+  const list = await s.person('GET', '/api/automations');
+  assert.equal(list.status, 200, list.text);
+  assert.ok(list.body.connectors.length && list.body.connectors.every((c) => c.connected === false));
+  const saved = await s.person('POST', '/api/automations', draft());
+  assert.equal(saved.status, 200, saved.text);
+  const edited = await s.person('PUT', `/api/automations/${saved.body.automation.id}`, { ...draft(), enabled: false });
+  assert.equal(edited.status, 200, edited.text);
+  const tm = await s.term();
+  const opts = await s.as(tm, 'options');
+  assert.equal(opts.status, 200, opts.text);
+  const plain = await s.trial({});
+  assert.equal(plain.state, 'noted', JSON.stringify(plain));
+  const ticked = await s.trial({ connectors: ['atlassian'] });
+  assert.equal(ticked.state, 'failed');
+  assert.match(ticked.reason, /^couldn't set up connectors: connectors aren't available: /);
+  assert.ok(!ticked.reason.includes(s.home));
 });

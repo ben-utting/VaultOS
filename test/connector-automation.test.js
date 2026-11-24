@@ -130,3 +130,30 @@ test('clearLeftovers() removes strays but keeps the files of an access that is o
   await acc.clearLeftovers();
   assert.deepStrictEqual(fs.readdirSync(dir), []);
 });
+
+test('choices() never throws: a connected() that throws counts as not connected', (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-acc-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const acc = createAutomationAccess({ dir: path.join(home, 'd'), port: 1, home, record: () => undefined, label: (id) => CONNECTORS[id].label,
+    connected: () => { throw new TypeError("Cannot read properties of null (reading 'connectors')"); } });
+  const c = acc.choices();
+  assert.deepStrictEqual(c.map((x) => x.id), AUTOMATION_IDS);
+  assert.ok(c.every((x) => x.connected === false));
+});
+
+test('a clearLeftovers() that lands while open() writes its files never takes them', async (t) => {
+  const { dir, acc } = setup(t);
+  const realWrite = fs.promises.writeFile;
+  let swept = 0;
+  // The sweep reads the folder just after the config file is written, before open() returns.
+  fs.promises.writeFile = async (file, ...rest) => {
+    await realWrite.call(fs.promises, file, ...rest);
+    if (String(file).startsWith(dir)) { swept++; await acc.clearLeftovers(); }
+  };
+  let a;
+  try { a = await acc.open({ runId: 'r', cardPath: 'x', ids: ['atlassian'] }); } finally { fs.promises.writeFile = realWrite; }
+  assert.strictEqual(swept, 1);
+  assert.ok(fs.existsSync(a.configFile));
+  await a.revoke();
+  assert.deepStrictEqual(fs.readdirSync(dir), []);
+});

@@ -754,3 +754,50 @@ test('relayTarget for an automation always filters', async (t) => {
   assert.strictEqual(svc.relayTarget('vantage', { automation: true }).tools, vantageReadOnly);
   assert.strictEqual(svc.relayTarget('atlassian', { automation: true }).tools, atlassianReadOnly);
 });
+
+// ---------- Automations before init(), and with a store that won't load ----------
+function bare(t, prep) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-svc-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  if (prep) prep(home);
+  const svc = createConnectorService({ home, port: 7684, env: {}, run: fakeRun(), spawn: fakeSpawn(), now: () => 1000000, installedAgents: async () => [] });
+  return { home, svc };
+}
+const seedAtlassian = (home) => {
+  fs.mkdirSync(path.join(home, '.vaultos'), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(path.join(home, '.vaultos/connectors.json'), JSON.stringify({
+    version: 1, relayKey: 'r', written: {}, connectors: { atlassian: { method: 'token', key: 'k' } },
+  }), { mode: 0o600 });
+};
+
+test('automationChoices before init: every choice is not connected, and nothing throws', (t) => {
+  const { svc } = bare(t, seedAtlassian);
+  const c = svc.automationChoices();
+  assert.ok(c.length > 0);
+  assert.ok(c.every((x) => x.connected === false));
+});
+
+test('automationAccess before init waits for it, then opens', async (t) => {
+  const { svc } = bare(t, seedAtlassian);
+  let settled = false;
+  const p = svc.automationAccess({ runId: 'r', cardPath: 'x', ids: ['atlassian'] });
+  p.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.strictEqual(settled, false, 'it waits for init()');
+  await svc.init();
+  const a = await p;
+  assert.deepStrictEqual(a.ids, ['atlassian']);
+  assert.strictEqual(svc.automationChoices().find((x) => x.id === 'atlassian').connected, true);
+  await a.revoke();
+});
+
+test('a store that will not load: choices say not connected, and access refuses with a short reason', async (t) => {
+  const { home, svc } = bare(t, (h) => fs.mkdirSync(path.join(h, '.vaultos/connectors.json'), { recursive: true }));
+  const early = svc.automationAccess({ runId: 'r', cardPath: 'x', ids: ['atlassian'] });
+  early.catch(() => {});
+  await assert.rejects(svc.init());
+  const readable = (e) => /^connectors aren't available: /.test(e.message) && !e.message.includes(home) && !e.message.includes('/');
+  await assert.rejects(early, readable);
+  await assert.rejects(svc.automationAccess({ runId: 'r2', cardPath: 'x', ids: ['atlassian'] }), readable);
+  assert.ok(svc.automationChoices().every((x) => x.connected === false));
+});
