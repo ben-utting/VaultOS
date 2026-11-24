@@ -7,7 +7,8 @@
 // string come from CalendarView; titles, notes and card names reach the page
 // through its esc(). Refreshes on show, after every write, and every 60 s
 // while shown and the page is visible.
-// Uses app.js's globals: $, toast, setMode, showLogin, calendarOn, ME.
+// Uses app.js's globals: $, toast, setMode, showLogin, calendarOn, ME, and for a linked card's Open: STATE,
+// setWorkspace, openTask. more-menu.js's MoreMenu runs the panel's View menu.
 // ========================================================================
 
 (function () {
@@ -199,7 +200,33 @@
     $('ce-card-edit').classList.toggle('hidden', !c);
     $('ce-card-link').classList.toggle('hidden', !!c);
     if (c) $('ce-card-chip').textContent = c.exists === false ? `${c.title} (card not found)` : c.title;
+    $('ce-card-chip').classList.toggle('cal-chip-gone', !!c && c.exists === false);
     $('ce-card-pick').classList.add('hidden');
+    paintCardOpen();
+  }
+  // Open (and the card's name) takes you to the linked card's task. Like the Agent button it waits while the form
+  // has unsaved changes, since leaving the panel would drop them; a card that's gone can't be opened.
+  function paintCardOpen() {
+    const c = P.card;
+    if (!c) return;
+    const gone = c.exists === false;
+    const dirty = !gone && JSON.stringify(formValue()) !== P.clean;
+    const tip = gone ? 'Card not found' : dirty ? 'Save first' : `Open ${c.title}`;
+    for (const id of ['ce-card-open', 'ce-card-chip']) {
+      const b = $(id);
+      b.disabled = gone || dirty;
+      b.dataset.tip = tip;
+    }
+    $('ce-card-open').setAttribute('aria-label', gone ? 'Open: card not found' : dirty ? 'Open: save first' : `Open ${c.title}`);
+  }
+  // Over the calendar, not on the Board: closing the task brings you back here. A card on another board switches
+  // the workspace first, so the drawer's reads and writes go to that board (as Automations does).
+  function openLinkedCard() {
+    const c = P.card;
+    if (!c || $('ce-card-open').disabled) return;
+    closePanel();
+    if (c.board && typeof STATE !== 'undefined' && c.board !== STATE.workspace) setWorkspace(c.board);
+    openTask(c.path);
   }
   function clearErrors() {
     for (const f of FIELDS) { const el = $(`ce-${f}-err`); if (el) el.textContent = ''; }
@@ -255,6 +282,7 @@
     paintCard();
     P.clean = JSON.stringify(formValue());
     paintAgentBtn();
+    paintCardOpen();
   }
 
   // ---------- Links, focus and agent (the Agent button, spec 2026-11-19 §5.2) ----------
@@ -294,7 +322,26 @@
     btn.setAttribute('aria-label', dirty ? 'Agent: save first' : `Open ${a.label} on this reminder`);
   }
   let dirtyFrame = 0;
-  const checkDirty = () => { cancelAnimationFrame(dirtyFrame); dirtyFrame = requestAnimationFrame(paintAgentBtn); };
+  const checkDirty = () => {
+    cancelAnimationFrame(dirtyFrame);
+    dirtyFrame = requestAnimationFrame(() => { paintAgentBtn(); paintCardOpen(); });
+  };
+
+  // ---------- The panel's view: side panel, centred or full screen (the task drawer's three) ----------
+  // Remembered on its own, so tasks can read full screen while entries stay a side panel. A phone shows one
+  // full-screen sheet whatever is chosen, and hides the button (styles.css).
+  const PANEL_VIEW_KEY = 'vaultboard.calendar.panelView';
+  const PANEL_VIEWS = ['side', 'center', 'full'];
+  function applyPanelView(v) {
+    const view = PANEL_VIEWS.includes(v) ? v : 'side';
+    try { localStorage.setItem(PANEL_VIEW_KEY, view); } catch { /* not remembered */ }
+    for (const x of PANEL_VIEWS) $('cal-panel').classList.toggle('view-' + x, x === view);
+    for (const b of $('ce-more-menu').querySelectorAll('[data-v]')) b.setAttribute('aria-checked', String(b.dataset.v === view));
+  }
+  applyPanelView((() => { try { return localStorage.getItem(PANEL_VIEW_KEY); } catch { return null; } })());
+  for (const b of $('ce-more-menu').querySelectorAll('[data-v]')) b.addEventListener('click', () => applyPanelView(b.dataset.v));
+  const PANEL_MORE = MoreMenu.attach($('ce-more'), $('ce-more-menu'));
+
   function openPanel() {
     $('cal-panel').classList.remove('hidden');
     $('cal-scrim').classList.remove('hidden');
@@ -302,6 +349,7 @@
     $('ce-title').focus({ preventScroll: true });
   }
   function closePanel() {
+    PANEL_MORE.close({ focus: false });
     $('cal-panel').classList.add('hidden');
     $('cal-scrim').classList.add('hidden');
     P.entry = null;
@@ -468,6 +516,8 @@
   $('ce-card-link').addEventListener('click', openPicker);
   $('ce-card-change').addEventListener('click', openPicker);
   $('ce-card-remove').addEventListener('click', () => { P.card = null; paintCard(); });
+  $('ce-card-open').addEventListener('click', openLinkedCard);
+  $('ce-card-chip').addEventListener('click', openLinkedCard);
   $('ce-card-q').addEventListener('input', () => { clearTimeout(pickTimer); pickTimer = setTimeout(() => searchCards($('ce-card-q').value), 200); });
   $('ce-card-res').addEventListener('click', (e) => {
     const b = e.target.closest('.cal-pick');

@@ -4289,6 +4289,19 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .ce-until-in { display: inline-block; width: auto; min-height: 30px; padding: 2px 8px; }
 .ce-card { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: var(--t-sm); }
 .ce-card .cal-chip { font-size: var(--t-sm); padding: 3px 10px; }
+/* The linked card's name opens it, like Open beside it. Waiting (unsaved changes) it keeps its colour: it's still
+   the card's name; only a card that's gone is muted. */
+.ce-card .cal-card { cursor: pointer; }
+.ce-card .cal-card:hover:not(:disabled) { border-color: var(--muted-2); }
+.ce-card .cal-card:disabled { cursor: default; }
+.ce-card .cal-link:disabled { cursor: default; color: var(--muted); text-decoration: none; }
+/* The entry panel takes the task drawer's views (⋯ → View as). The builder's 640px width comes after view-center
+   and view-full at the same specificity, so it would win: the panel says them again. A phone keeps its one sheet. */
+@media (min-width: 701px) {
+  .drawer.cal-panel.view-center { width: min(720px, 94vw); }
+  .drawer.cal-panel.view-full { width: 100%; }
+}
+@media (max-width: 700px) { #ce-more { display: none; } }
 .ce-pick { margin-top: 8px; }
 .ce-pick-res { max-height: 240px; margin: 6px 0 0; padding: 0; overflow: auto; list-style: none; border: 1px solid var(--line); border-radius: var(--radius-md); }
 .ce-pick-res:empty { display: none; }
