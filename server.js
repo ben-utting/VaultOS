@@ -889,7 +889,8 @@ const connectors = createConnectorService({
 });
 const relayHandler = createRelay({
   getKey: () => connectors.relayKey(),
-  target: (id) => connectors.relayTarget(id),
+  runKey: (k) => connectors.runGrant(k),
+  target: (id, o) => connectors.relayTarget(id, o),
   fetch: (...a) => fetch(...a),
   log: (m) => console.log(m),
 });

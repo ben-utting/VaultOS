@@ -746,3 +746,11 @@ test('context7: Test marks a key that stopped working as needs-sign-in; a good k
   assert.equal((await svc.test('context7')).ok, true);
   assert.equal((await row(svc, 'context7')).state, 'connected');
 });
+
+test('relayTarget for an automation always filters', async (t) => {
+  const { svc } = await setup(t, { seed: () => ({ version: 1, connectors: { vantage: { method: 'token', key: 'k', allowChanges: true }, atlassian: { method: 'token', key: 'k' } }, written: {}, relayKey: 'r' }) });
+  const { vantageReadOnly, atlassianReadOnly } = require('../lib/connector-tools');
+  assert.strictEqual(svc.relayTarget('vantage').tools, undefined);
+  assert.strictEqual(svc.relayTarget('vantage', { automation: true }).tools, vantageReadOnly);
+  assert.strictEqual(svc.relayTarget('atlassian', { automation: true }).tools, atlassianReadOnly);
+});
