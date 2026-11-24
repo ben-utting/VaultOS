@@ -405,6 +405,7 @@ test('fake agent FAKE:mcp calls the server in the config file: ok, refused, unsu
     req.on('end', () => {
       const msg = JSON.parse(b);
       seen.push({ key: req.headers['x-vaultos-key'], method: msg.method, name: msg.params && msg.params.name, ct: req.headers['content-type'] });
+      if (msg.params.name === 'denied') { res.writeHead(403); res.end('no'); return; }
       const bad = msg.params.name === 'write_it';
       const body = JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'x' }], isError: bad } });
       if (bad) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`event: message\ndata: ${body}\n\n`); }
@@ -423,6 +424,25 @@ test('fake agent FAKE:mcp calls the server in the config file: ok, refused, unsu
   assert.match((await run('FAKE:mcp:atlassian:read_it')).output, /MCP:read_it:ok/);
   assert.match((await run('FAKE:mcp:atlassian:write_it')).output, /MCP:write_it:refused/);
   assert.match((await run('FAKE:mcp:azure:list')).output, /MCP:list:unsupported/);
-  assert.deepEqual(seen.map((s) => [s.key, s.method, s.name]), [['K1', 'tools/call', 'read_it'], ['K1', 'tools/call', 'write_it']]);
+  const both = (await run('FAKE:mcp:atlassian:read_it FAKE:mcp:atlassian:write_it')).output;
+  assert.match(both, /MCP:read_it:ok MCP:write_it:refused/);
+  assert.match((await run('FAKE:mcp:atlassian:denied')).output, /MCP:denied:error:403/);
+  assert.doesNotMatch((await run('FAKE:mcp:atlassian:denied')).output, /refused/);
+  assert.deepEqual(seen.slice(0, 2).map((s) => [s.key, s.method, s.name]), [['K1', 'tools/call', 'read_it'], ['K1', 'tools/call', 'write_it']]);
   assert.equal(seen[0].ct, 'application/json');
+});
+
+test('connectors with no signed-in servers (ids: []) start both agents exactly as without', async (t) => {
+  const none = { configFile: '/tmp/x/mcp.json', ids: [], entries: {} };
+  assert.equal(A.agentCommand('claude', 'report', 'P', { mcp: none }).cmd, A.agentCommand('claude', 'report', 'P').cmd);
+  assert.equal(A.agentCommand('cursor', 'report', 'P', { home: '/h', mcp: none }).cmd, A.agentCommand('cursor', 'report', 'P', { home: '/h' }).cmd);
+  const { card } = cursorTree(t);
+  const home = tmp(t);
+  const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
+  await A.prepareAgent('cursor', 'report', card, { home });
+  const plain = fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8');
+  await A.prepareAgent('cursor', 'report', card, { home, mcp: none });
+  assert.equal(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8'), plain);
+  assert.ok(plain.includes('Mcp(*:*)'));
+  assert.ok(!fs.existsSync(path.join(cur, 'mcp.json')));
 });

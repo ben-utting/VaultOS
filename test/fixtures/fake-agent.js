@@ -31,9 +31,11 @@ async function callMcp(id, tool) {
       const line = text.split(/\r?\n/).find((l) => l.startsWith('data:'));
       text = line ? line.slice(5).trim() : '';
     }
+    if (!res.ok) return `error:${res.status}`;
     const msg = JSON.parse(text);
-    return msg.result && !msg.result.isError && !msg.error ? 'ok' : 'refused';
-  } catch { return 'refused'; }
+    if (msg.error || !msg.result) return 'error';
+    return msg.result.isError ? 'refused' : 'ok';
+  } catch { return 'error'; }
 }
 
 let input = '';
@@ -43,8 +45,15 @@ process.stdin.on('end', () => {
   const marks = (input.match(/MARK:\S+/g) || []).join(' ');
   const note = (text = 'Fake note.') => `\`\`\`vaultos-note\n${text}${marks ? ` ${marks}` : ''}\n\`\`\`\n`;
   const has = (d) => input.includes(`FAKE:${d}`);
-  const mcpCall = /FAKE:mcp:([A-Za-z0-9_-]+):([A-Za-z0-9_.-]+)/.exec(input);
-  if (mcpCall) { callMcp(mcpCall[1], mcpCall[2]).then((r) => process.stdout.write(`ok\n${note(`MCP:${mcpCall[2]}:${r}`)}`)); return; }
+  const mcpCalls = [...input.matchAll(/FAKE:mcp:([A-Za-z0-9_-]+):([A-Za-z0-9_.-]+)/g)];
+  if (mcpCalls.length) {
+    (async () => {
+      const marks = [];
+      for (const [, id, tool] of mcpCalls) marks.push(`MCP:${tool}:${await callMcp(id, tool)}`);
+      process.stdout.write(`ok\n${note(marks.join(' '))}`);
+    })();
+    return;
+  }
   if (has('hang')) { process.stdout.write('thinking...\n'); setInterval(() => {}, 1e9); return; }
   if (has('slow')) { setTimeout(() => process.stdout.write(note('Slow note.')), 1200); return; }
   if (has('lines')) { process.stdout.write(note('line one\nline two')); return; }
