@@ -20,6 +20,7 @@ async function callMcp(id, tool) {
   const i = process.argv.indexOf('--mcp-config');
   const server = i > 0 ? (JSON.parse(fs.readFileSync(process.argv[i + 1], 'utf8')).mcpServers || {})[id] : null;
   if (!server || server.type !== 'http') return 'unsupported';
+  if (process.env.FAKE_KEY_OUT && server.headers && server.headers['X-VaultOS-Key']) fs.writeFileSync(process.env.FAKE_KEY_OUT, server.headers['X-VaultOS-Key']);
   try {
     const res = await fetch(server.url, {
       method: 'POST',

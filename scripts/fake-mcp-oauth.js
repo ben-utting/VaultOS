@@ -11,6 +11,11 @@ const TOOLS = [
   { name: 'atlassianUserInfo', description: 'Who is signed in', inputSchema: { type: 'object', properties: {} } },
   { name: 'getAccessibleAtlassianResources', description: 'Sites the user can reach', inputSchema: { type: 'object', properties: {} } },
 ];
+// Added to the Atlassian tool list in mode 'jira'.
+const JIRA_TOOLS = [
+  { name: 'getJiraIssue', description: 'Read a work item', inputSchema: { type: 'object', properties: {} } },
+  { name: 'editJiraIssue', description: 'Change a work item', inputSchema: { type: 'object', properties: {} } },
+];
 // Listed only when standing in for a connector with no OAuth (noAuth), so the Atlassian tool list stays at two.
 const GET_ME = { name: 'get_me', description: 'The signed-in login', inputSchema: { type: 'object', properties: {} } };
 const SCOPES = ['read:me', 'offline_access', 'read:jira:agent-interface', 'write:jira:agent-interface'];
@@ -138,18 +143,22 @@ function startFake({ port = 0, host = '127.0.0.1', publicBase = '', noAuth = fal
       return send(res, 200, reply({ content: [{ type: 'text', text: JSON.stringify(VT_DATA[name]) }] }), hdr);
     }
     if (msg.method === 'tools/list') {
+      const listed = [...(noAuth ? [...TOOLS, GET_ME] : TOOLS), ...(state.mode === 'jira' ? JIRA_TOOLS : [])];
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...hdr });
       const ev = (o) => res.write(`event: message\ndata: ${JSON.stringify(o)}\n\n`);
       if (state.mode === 'slow-sse') {
         ev({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'listing' } });
-        const t = setTimeout(() => { ev(reply({ tools: noAuth ? [...TOOLS, GET_ME] : TOOLS })); res.end(); }, 300);
+        const t = setTimeout(() => { ev(reply({ tools: listed })); res.end(); }, 300);
         res.on('close', () => clearTimeout(t));
-      } else { ev(reply({ tools: noAuth ? [...TOOLS, GET_ME] : TOOLS })); res.end(); }
+      } else { ev(reply({ tools: listed })); res.end(); }
       return;
     }
     if (msg.method === 'tools/call') {
       const name = msg.params && msg.params.name;
+      state.calls.push(name);
       const data = name === 'atlassianUserInfo' ? { email }
+        : state.mode === 'jira' && name === 'getJiraIssue' ? { key: 'ABC-1', status: 'In Progress', assignee: 'Alex' }
+        : state.mode === 'jira' && name === 'editJiraIssue' ? { edited: true }
         : name === 'get_me' ? { login: 'alex-example' }
         : name === 'getAccessibleAtlassianResources' ? [{ url: 'https://example.atlassian.net' }] : null;
       if (!data) return send(res, 200, { jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'Unknown tool' } }, hdr);
