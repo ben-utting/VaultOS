@@ -551,3 +551,126 @@ test('a card moved to Done on the board during a work run stays done', { timeout
   assert.equal((await s.lastRun()).cards[0].state, 'moved');
   assert.match(fs.readFileSync(f, 'utf8'), /^status: done$/m);
 });
+
+// ---------- Connector access per card ----------
+const cctx = { ...ctx, connectorIds: ['atlassian', 'vantage'], agentConnectors: { default: true, claude: true } };
+// A stand-in for connectors.automationAccess: records every open and revoke, returns a fake Access.
+function fakeAccess(over = {}) {
+  const log = { opened: [], revoked: 0, order: [] };
+  const fn = async (o) => {
+    log.opened.push(o);
+    if (over.fail) throw new Error(over.fail);
+    return {
+      ids: ['atlassian'], entries: { atlassian: { kind: 'http', url: 'http://x', headers: { 'X-VaultOS-Key': 'SECRETKEY' } } },
+      missing: ['vantage'], labels: { atlassian: 'Atlassian', vantage: 'Vantage' }, configFile: '/tmp/fake-mcp.json',
+      usage: async () => { log.order.push('usage'); return { lookups: { atlassian: { getIssue: 2 } }, refusedCalls: { atlassian: { editIssue: 1 } } }; },
+      revoke: async () => { log.revoked++; log.order.push('revoke'); },
+    };
+  };
+  return { log, fn };
+}
+const withConn = (s, more = {}) => s.make({ connectors: ['atlassian', 'vantage'], ...more });
+const cset = (t, o = {}, extra = {}) => {
+  const acc = fakeAccess(o);
+  const s = setup(t, { agentConnectors: () => true, connectorAccess: acc.fn, ...extra });
+  const make = (more = {}) => s.store.create({
+    name: 'Check', enabled: true, agent: 'default', template: 'blank', prompt: 'FAKE:note', level: 'report',
+    cards: { board: 'work', statuses: ['in-progress', 'blocked'], subtasks: false },
+    schedule: { repeat: 'daily', time: '08:00' }, section: 'Latest check-in', timeLimitMin: 10, ...more,
+  }, cctx).then((r) => r.value);
+  return { ...s, acc, make };
+};
+
+test('an automation without connectors never opens access', async (t) => {
+  const s = cset(t, {}, { cards: { '01-a': ['in-progress'] } });
+  const run = await runAndWait(s, await s.make());
+  assert.equal(run.state, 'finished');
+  assert.equal(s.acc.log.opened.length, 0);
+  assert.ok(!('lookups' in run.cards[0]) && !('refusedCalls' in run.cards[0]) && !('notSignedIn' in run.cards[0]));
+});
+
+test('a card with connectors: access is opened, handed to setup, the command and the prompt, then revoked', async (t) => {
+  const preps = [], cmds = [], prompts = [];
+  const s = cset(t, {}, {
+    cards: { '01-a': ['in-progress'] },
+    prepareAgent: async (id, level, dir, opts) => { preps.push(opts); return {}; },
+    agentCommand: (id, level, prompt, opts) => { cmds.push(opts); prompts.push(prompt); return A.agentCommand(id, level, prompt, opts); },
+  });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian', 'vantage'], prompt: 'FAKE:note MARK:hello' }));
+  assert.equal(run.state, 'finished');
+  assert.deepEqual(s.acc.log.opened, [{ runId: run.id, cardPath: 'Work/1. a/01-a/task.md', ids: ['atlassian', 'vantage'] }]);
+  assert.equal(preps[0].mcp.configFile, '/tmp/fake-mcp.json');
+  assert.deepEqual(preps[0].mcp.ids, ['atlassian']);
+  assert.equal(cmds[cmds.length - 1].mcp.configFile, '/tmp/fake-mcp.json');
+  const real = prompts[prompts.length - 1];
+  assert.match(real, /Connectors: you may look things up in Atlassian/);
+  assert.match(real, /Vantage is not signed in/);
+  assert.equal(s.acc.log.revoked, 1);
+  assert.deepEqual(s.acc.log.order, ['usage', 'revoke']);
+  const c = run.cards[0];
+  assert.deepEqual(c.lookups, { atlassian: { getIssue: 2 } });
+  assert.deepEqual(c.refusedCalls, { atlassian: { editIssue: 1 } });
+  assert.deepEqual(c.notSignedIn, ['vantage']);
+  const saved = JSON.stringify(run);
+  assert.ok(!saved.includes('SECRETKEY') && !saved.includes('fake-mcp.json'));
+});
+
+test('a timed-out card still revokes its connector access', async (t) => {
+  const s = cset(t, {}, { cards: { '01-a': ['in-progress'] }, timeLimitMs: 300 });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian'], prompt: 'FAKE:hang' }));
+  assert.equal(run.cards[0].state, 'timed-out');
+  assert.equal(s.acc.log.revoked, 1);
+});
+
+test('a card the setup skips revokes access and starts no agent', async (t) => {
+  const spawned = [];
+  const s = cset(t, {}, {
+    cards: { '01-a': ['in-progress'] },
+    prepareAgent: async () => ({ skip: 'nope' }),
+    spawnAgent: (o) => { spawned.push(o); return A.spawnAgent(o); },
+  });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian'] }));
+  assert.equal(run.cards[0].state, 'skipped');
+  assert.equal(spawned.length, 0);
+  assert.equal(s.acc.log.revoked, 1);
+});
+
+test('access that cannot be set up fails that card only', async (t) => {
+  let n = 0;
+  const spawned = [];
+  const acc = fakeAccess();
+  const s = cset(t, {}, {
+    cards: { '01-a': ['in-progress'], '02-b': ['in-progress'] },
+    connectorAccess: async (o) => { if (n++ === 0) throw new Error('disk full'); return acc.fn(o); },
+    spawnAgent: (o) => { spawned.push(path.basename(o.cwd)); return A.spawnAgent(o); },
+  });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian'] }));
+  assert.deepEqual(run.cards.map((c) => c.state), ['failed', 'noted']);
+  assert.equal(run.cards[0].reason, "couldn't set up connectors: disk full");
+  assert.deepEqual(spawned, ['02-b']);
+});
+
+test('a default agent that cannot use connectors fails the run before any card', async (t) => {
+  const s = cset(t, {}, {
+    cards: { '01-a': ['in-progress'] },
+    resolveAgent: () => ({ id: 'cursor', label: 'Cursor CLI' }),
+    agentConnectors: () => false,
+    agentCommand: () => ({ cmd: ['x'], input: '' }),
+  });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian'] }));
+  assert.equal(run.state, 'failed');
+  assert.equal(run.cards[0].state, 'not-run');
+  assert.equal(run.cards[0].reason, "Cursor CLI can't use connectors in automations yet");
+  assert.equal(s.acc.log.opened.length, 0);
+});
+
+test('a trial uses connectors too and writes nothing', async (t) => {
+  const s = cset(t, {}, { cards: { '01-a': ['in-progress'] } });
+  const before = s.read('01-a');
+  const run = await tryAndWait(s, await s.make({ connectors: ['atlassian'] }));
+  assert.equal(run.cards[0].state, 'noted');
+  assert.equal(s.acc.log.opened.length, 1);
+  assert.equal(s.acc.log.revoked, 1);
+  assert.deepEqual(run.cards[0].lookups, { atlassian: { getIssue: 2 } });
+  assert.equal(s.read('01-a'), before);
+});

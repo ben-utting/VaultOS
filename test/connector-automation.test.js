@@ -116,10 +116,17 @@ test('cursor-kind connectors are never usable', async (t) => {
   assert.strictEqual(acc.choices().find((c) => c.id === 'vantage').connected, false);
 });
 
-test('clearLeftovers() empties the folder', async (t) => {
+test('clearLeftovers() removes strays but keeps the files of an access that is open', async (t) => {
   const { dir, acc } = setup(t);
-  await acc.open({ runId: 'r', cardPath: 'x', ids });
+  const a = await acc.open({ runId: 'r', cardPath: 'x', ids });
+  const log = a.configFile.replace(/\.json$/, '.log');
+  fs.writeFileSync(log, 'x');
   fs.writeFileSync(path.join(dir, 'stray.log'), 'x');
+  await acc.clearLeftovers();
+  assert.ok(fs.existsSync(a.configFile) && fs.existsSync(log));
+  assert.ok(!fs.existsSync(path.join(dir, 'stray.log')));
+  await a.revoke();
+  fs.writeFileSync(path.join(dir, 'stray2.log'), 'x');
   await acc.clearLeftovers();
   assert.deepStrictEqual(fs.readdirSync(dir), []);
 });
