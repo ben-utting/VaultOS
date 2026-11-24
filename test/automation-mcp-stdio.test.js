@@ -121,7 +121,7 @@ function makeListed(id = 'azure') {
   f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'keyvault' }, { name: 'storage' }, { name: 'keyvault_secret_get' }] } }));
   return { f, logs };
 }
-const secretRefusal = (id, what) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `VaultOS doesn't let automations read Key Vault secrets, so ${what} is off.` }] } });
+const secretRefusal = (id, what) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `VaultOS doesn't let automations read secrets, so ${what} is off.` }] } });
 
 test('an azure keyvault call for a secret is refused and logged', () => {
   const { f, logs } = makeListed();
@@ -172,4 +172,41 @@ test('a non-string command counts as no command', () => {
     assert.deepEqual(f.fromAgent(line), { forward: line });
   }
   assert.deepEqual(logs.map((l) => l.tool), ['keyvault', 'keyvault', 'keyvault']);
+});
+
+test('azure refuses every read azmcp marks secret, in any namespace', () => {
+  const logs = [];
+  const f = createFilter({ id: 'azure', log: (e) => logs.push(e) });
+  f.fromAgent(listReq);
+  const names = ['keyvault', 'storage', 'azure', 'appservice', 'resiliency', 'insights', 'appconfig'];
+  f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: names.map((name) => ({ name })) } }));
+  const bad = [['storage', 'keyvault_secret_get'], ['azure', 'keyvault_secret_get'], ['appservice', 'appservice_webapp_settings_get-appsettings'],
+    ['resiliency', 'resiliency_drill_run_get-report-download-url'], ['insights', 'insights_get']];
+  for (const [n, c] of bad) {
+    const r = f.fromAgent(callArgs(2, n, { command: c }));
+    assert.equal(r.forward, undefined, c);
+    assert.deepEqual(JSON.parse(r.reply), secretRefusal(2, c));
+  }
+  for (const [n, c] of [['keyvault', 'keyvault_key_get'], ['storage', 'storage_blob_get'], ['appconfig', 'appconfig_kv_get']]) {
+    const line = callArgs(3, n, { command: c });
+    assert.deepEqual(f.fromAgent(line), { forward: line }, c);
+  }
+});
+
+test('an odd command is logged as name:?', () => {
+  const { f, logs } = makeListed();
+  const line = callArgs(2, 'storage', { command: 'x y!' });
+  assert.deepEqual(f.fromAgent(line), { forward: line });
+  const long = callArgs(3, 'storage', { command: 'a'.repeat(81) });
+  assert.deepEqual(f.fromAgent(long), { forward: long });
+  assert.deepEqual(logs.map((l) => l.tool), ['storage:?', 'storage:?']);
+});
+
+test('an unlisted tool keeps the read-only text even with a secret command', () => {
+  const { f, logs } = make();
+  f.fromAgent(listReq);
+  f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'storage' }] } }));
+  const r = f.fromAgent(callArgs(2, 'keyvault', { command: 'keyvault_secret_get' }));
+  assert.equal(JSON.parse(r.reply).result.content[0].text, 'VaultOS has azure read-only for automations, so keyvault is off.');
+  assert.deepEqual(logs, [{ id: 'azure', tool: 'keyvault:keyvault_secret_get', refused: true }]);
 });

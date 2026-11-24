@@ -252,7 +252,7 @@
     }
     if (c.refusedCalls && Object.keys(c.refusedCalls).length) {
       const n = Object.values(c.refusedCalls).reduce((sum, tools) => sum + Object.values(tools).reduce((x, y) => x + y, 0), 0);
-      warn.push(['warn', `Refused ${n} call${n === 1 ? '' : 's'} that would change something: ${Object.entries(c.refusedCalls).map(([id, tools]) => `${connLabel(id)} (${Object.keys(tools).join(', ')})`).join(', ')}`]);
+      warn.push(['warn', `Refused ${n} call${n === 1 ? '' : 's'} that would change something or read a secret: ${Object.entries(c.refusedCalls).map(([id, tools]) => `${connLabel(id)} (${Object.keys(tools).join(', ')})`).join(', ')}`]);
     }
     if (c.notSignedIn && c.notSignedIn.length) warn.push(['plain', `Not signed in: ${c.notSignedIn.map(connLabel).join(', ')}`]);
     const body = c.noteHtml ? `<div class="au-note markdown">${safeHtml(c.noteHtml)}</div>` : (c.reason ? `<p class="au-reason">${esc(c.reason)}</p>` : '');
