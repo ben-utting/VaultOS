@@ -300,3 +300,129 @@ test('agentConnectors: claude yes, cursor and pi no', () => {
   assert.equal(A.agentConnectors('pi'), false);
   assert.equal(A.agentConnectors('codex'), false);
 });
+
+// ---------- A run's MCP servers (connectors) ----------
+const MCP = (file = '/tmp/x/mcp.json') => ({
+  configFile: file,
+  ids: ['atlassian', 'azure'],
+  entries: {
+    atlassian: { kind: 'http', url: 'http://127.0.0.1:1/mcp/atlassian', headers: { 'X-VaultOS-Key': 'ONEOFFKEY' } },
+    azure: { kind: 'stdio', command: 'node', args: ['az.js'] },
+  },
+});
+
+test('claude with connectors: its own config file and only those servers allowed', () => {
+  const r = A.agentCommand('claude', 'report', 'P', { mcp: MCP() });
+  assert.ok(r.cmd.endsWith('--mcp-config /tmp/x/mcp.json --allowedTools mcp__atlassian,mcp__azure'), r.cmd);
+  assert.ok(r.cmd.includes('--strict-mcp-config'));
+  assert.ok(!r.cmd.includes('ONEOFFKEY'));
+  assert.equal(r.input, 'P');
+});
+
+test("claude without connectors: today's command exactly", () => {
+  const base = 'claude -p --output-format text --strict-mcp-config --no-session-persistence --settings \'{"disableAllHooks":true}\'';
+  assert.equal(A.agentCommand('claude', 'report', 'P').cmd, `${base} --tools Read,Grep,Glob`);
+  assert.equal(A.agentCommand('claude', 'work', 'P').cmd, `${base} --tools Read,Grep,Glob,Edit,Write --permission-mode acceptEdits`);
+  assert.equal(A.agentCommand('claude', 'work', 'P', { model: 'x' }).cmd, A.agentCommand('claude', 'work', 'P').cmd);
+});
+
+test('cursor command with connectors adds --approve-mcps; without, nothing changes', () => {
+  const plain = A.agentCommand('cursor', 'report', 'P', { home: '/h' }).cmd;
+  const withMcp = A.agentCommand('cursor', 'report', 'P', { home: '/h', mcp: MCP() }).cmd;
+  assert.ok(!plain.includes('--approve-mcps'));
+  assert.equal(withMcp, `${plain} --approve-mcps`);
+  const m = A.agentCommand('cursor', 'report', 'P', { home: '/h', model: 'gpt-5', mcp: MCP() }).cmd;
+  assert.ok(m.endsWith("--model gpt-5 --approve-mcps") || m.endsWith("--model 'gpt-5' --approve-mcps"), m);
+  assert.ok(!withMcp.includes('ONEOFFKEY'));
+});
+
+test('cursor without connectors: cli-config.json byte-for-byte as before, and no mcp.json', async (t) => {
+  const { card } = cursorTree(t);
+  const home = tmp(t);
+  const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
+  fs.mkdirSync(cur, { recursive: true });
+  fs.writeFileSync(path.join(cur, 'mcp.json'), '{"stale":1}');
+  await A.prepareAgent('cursor', 'report', card, { home });
+  const was = { version: 1, permissions: { allow: [], deny: await A.cursorRules(card) } };
+  assert.equal(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8'), `${JSON.stringify(was, null, 2)}\n`);
+  assert.deepEqual((await A.cursorRules(card)).slice(0, 4), ['Shell(*)', 'WebFetch(*)', 'Mcp(*:*)', 'Write(*)']);
+  assert.ok(!fs.existsSync(path.join(cur, 'mcp.json')), 'a stale mcp.json is removed');
+});
+
+test('cursor with connectors: mcp.json 0600 in its own home, and only Mcp(*:*) dropped from the deny list', async (t) => {
+  const { card } = cursorTree(t);
+  const home = tmp(t);
+  const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
+  assert.deepEqual(await A.prepareAgent('cursor', 'report', card, { home, mcp: MCP() }), {});
+  const file = path.join(cur, 'mcp.json');
+  assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { mcpServers: {
+    atlassian: { url: 'http://127.0.0.1:1/mcp/atlassian', headers: { 'X-VaultOS-Key': 'ONEOFFKEY' } },
+    azure: { command: 'node', args: ['az.js'] },
+  } });
+  const withRules = JSON.parse(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8')).permissions.deny;
+  const without = await A.cursorRules(card);
+  assert.deepEqual(withRules, without.filter((r) => r !== 'Mcp(*:*)'));
+  assert.deepEqual(await A.cursorRules(card, { mcp: true }), withRules);
+});
+
+test("finishAgent removes cursor's mcp.json and does nothing for other agents", async (t) => {
+  const { card } = cursorTree(t);
+  const home = tmp(t);
+  const file = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor', 'mcp.json');
+  await A.prepareAgent('cursor', 'report', card, { home, mcp: MCP() });
+  assert.ok(fs.existsSync(file));
+  await A.finishAgent('cursor', { home });
+  assert.ok(!fs.existsSync(file));
+  await A.finishAgent('cursor', { home });
+  assert.equal(await A.finishAgent('claude', { home, mcp: MCP() }), undefined);
+});
+
+test('the cursor guard still skips a card with its own .cursor/mcp.json when connectors are on', async (t) => {
+  const { card } = cursorTree(t);
+  const home = tmp(t);
+  fs.mkdirSync(path.join(card, '.cursor'));
+  fs.writeFileSync(path.join(card, '.cursor', 'mcp.json'), '{}');
+  assert.match((await A.prepareAgent('cursor', 'report', card, { home, mcp: MCP() })).skip, /mcp\.json/);
+  assert.ok(!fs.existsSync(path.join(home, '.cache')), 'nothing written for a skipped card');
+});
+
+test('test agent with connectors appends --mcp-config; without, its command is unchanged', () => {
+  process.env.AUTOMATION_TEST_AGENT = FAKE;
+  try {
+    const plain = A.agentCommand('claude', 'report', 'P').cmd;
+    assert.equal(plain, `${process.execPath} ${FAKE} report`);
+    assert.equal(A.agentCommand('claude', 'report', 'P', { mcp: MCP('/tmp/c.json') }).cmd, `${plain} --mcp-config /tmp/c.json`);
+  } finally { delete process.env.AUTOMATION_TEST_AGENT; }
+});
+
+test('fake agent FAKE:mcp calls the server in the config file: ok, refused, unsupported', async (t) => {
+  const http = require('node:http');
+  const seen = [];
+  const srv = http.createServer((req, res) => {
+    let b = '';
+    req.on('data', (d) => { b += d; });
+    req.on('end', () => {
+      const msg = JSON.parse(b);
+      seen.push({ key: req.headers['x-vaultos-key'], method: msg.method, name: msg.params && msg.params.name, ct: req.headers['content-type'] });
+      const bad = msg.params.name === 'write_it';
+      const body = JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'x' }], isError: bad } });
+      if (bad) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end(`event: message\ndata: ${body}\n\n`); }
+      else { res.writeHead(200, { 'content-type': 'application/json' }); res.end(body); }
+    });
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  t.after(() => srv.close());
+  const dir = tmp(t);
+  const cfg = path.join(dir, 'mcp.json');
+  fs.writeFileSync(cfg, JSON.stringify({ mcpServers: {
+    atlassian: { type: 'http', url: `http://127.0.0.1:${srv.address().port}/m`, headers: { 'X-VaultOS-Key': 'K1' } },
+    azure: { type: 'stdio', command: 'node', args: [] },
+  } }));
+  const run = (directive) => A.spawnAgent({ cmd: `${fakeCmd()} --mcp-config ${cfg}`, input: directive, cwd: dir, env: process.env, timeoutMs: 20000 }).done;
+  assert.match((await run('FAKE:mcp:atlassian:read_it')).output, /MCP:read_it:ok/);
+  assert.match((await run('FAKE:mcp:atlassian:write_it')).output, /MCP:write_it:refused/);
+  assert.match((await run('FAKE:mcp:azure:list')).output, /MCP:list:unsupported/);
+  assert.deepEqual(seen.map((s) => [s.key, s.method, s.name]), [['K1', 'tools/call', 'read_it'], ['K1', 'tools/call', 'write_it']]);
+  assert.equal(seen[0].ct, 'application/json');
+});
