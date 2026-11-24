@@ -143,6 +143,27 @@ test('with --allow-changes the agent sees and can call every tool', async (t) =>
   assert.equal((await p.call('repo_create_branch', {})).content[0].text, 'RAN repo_create_branch');
 });
 
+test('the wrapper keeps a large multi-byte line whole both ways', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'conn-ado-mb-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // An echoing stand-in where the server goes (it takes the org and --authentication azcli and ignores them).
+  const server = path.join(dir, 'server');
+  fs.writeFileSync(server, `#!/bin/sh\nexec "${process.execPath}" "${path.join(__dirname, 'fixtures', 'fake-stdio-mcp.js')}"\n`, { mode: 0o755 });
+  const text = '\u20ac'.repeat(60000) + 'caf\u00e9 \u{1F600}';
+  for (const extra of [[], ['--allow-changes']]) {
+    const p = spawn(process.execPath, [ado.WRAPPER, '--server', server, '--org', 'contoso', ...extra], { stdio: ['pipe', 'pipe', 'inherit'] });
+    let out = '';
+    p.stdout.setEncoding('utf8');
+    p.stdout.on('data', (c) => { out += c; });
+    const closed = new Promise((res) => p.on('close', res));
+    p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'x/echo', params: { text } }) + '\n');
+    for (let i = 0; i < 100 && !out.endsWith('\n'); i++) await new Promise((r) => setTimeout(r, 50));
+    p.stdin.end();
+    await closed;
+    assert.equal(JSON.parse(out).result.text, text, extra.join(' ') || 'read-only');
+  }
+});
+
 test('test(): projects counted; a token failure and a missing install are failures with a reason', async (t) => {
   const home = fakeHome(t);
   assert.deepEqual(await ado.test({ home, org: 'contoso', timeoutMs: 10000 }), { ok: true, tools: 3, projects: 2 });
