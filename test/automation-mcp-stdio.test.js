@@ -111,3 +111,65 @@ test('a large multi-byte line passes both ways whole', async () => {
   assert.equal(JSON.parse(out).result.text, text);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// Azure's namespace-mode tools: the agent picks a sub-command through arguments.command.
+const callArgs = (id, name, args) => JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+function makeListed(id = 'azure') {
+  const logs = [];
+  const f = createFilter({ id, log: (e) => logs.push(e) });
+  f.fromAgent(listReq);
+  f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'keyvault' }, { name: 'storage' }, { name: 'keyvault_secret_get' }] } }));
+  return { f, logs };
+}
+const secretRefusal = (id, what) => ({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text: `VaultOS doesn't let automations read Key Vault secrets, so ${what} is off.` }] } });
+
+test('an azure keyvault call for a secret is refused and logged', () => {
+  const { f, logs } = makeListed();
+  let r = f.fromAgent(callArgs(2, 'keyvault', { command: 'keyvault_secret_get', parameters: {} }));
+  assert.equal(r.forward, undefined);
+  assert.deepEqual(JSON.parse(r.reply), secretRefusal(2, 'keyvault_secret_get'));
+  r = f.fromAgent(callArgs(3, 'keyvault', { command: 'KeyVault_Secret_List' }));
+  assert.equal(r.forward, undefined);
+  assert.deepEqual(JSON.parse(r.reply), secretRefusal(3, 'KeyVault_Secret_List'));
+  assert.deepEqual(logs, [
+    { id: 'azure', tool: 'keyvault:keyvault_secret_get', refused: true },
+    { id: 'azure', tool: 'keyvault:KeyVault_Secret_List', refused: true },
+  ]);
+});
+
+test('a listed tool named like a secret read is refused', () => {
+  const { f, logs } = makeListed();
+  const r = f.fromAgent(callArgs(2, 'keyvault_secret_get', {}));
+  assert.equal(r.forward, undefined);
+  assert.deepEqual(JSON.parse(r.reply), secretRefusal(2, 'keyvault_secret_get'));
+  assert.deepEqual(logs, [{ id: 'azure', tool: 'keyvault_secret_get', refused: true }]);
+});
+
+test('other keyvault and namespace calls go through and log their sub-command', () => {
+  const { f, logs } = makeListed();
+  for (const [n, a] of [['keyvault', { command: 'keyvault_key_get' }], ['storage', { command: 'storage_blob_get' }], ['keyvault', { intent: 'x', learn: true }]]) {
+    const line = callArgs(2, n, a);
+    assert.deepEqual(f.fromAgent(line), { forward: line });
+  }
+  assert.deepEqual(logs, [
+    { id: 'azure', tool: 'keyvault:keyvault_key_get', refused: false },
+    { id: 'azure', tool: 'storage:storage_blob_get', refused: false },
+    { id: 'azure', tool: 'keyvault', refused: false },
+  ]);
+});
+
+test("the secret rule is azure's only", () => {
+  const { f, logs } = makeListed('azuredevops');
+  const line = callArgs(2, 'keyvault', { command: 'keyvault_secret_get' });
+  assert.deepEqual(f.fromAgent(line), { forward: line });
+  assert.equal(logs[0].refused, false);
+});
+
+test('a non-string command counts as no command', () => {
+  const { f, logs } = makeListed();
+  for (const c of [5, { a: 1 }, null]) {
+    const line = callArgs(2, 'keyvault', { command: c });
+    assert.deepEqual(f.fromAgent(line), { forward: line });
+  }
+  assert.deepEqual(logs.map((l) => l.tool), ['keyvault', 'keyvault', 'keyvault']);
+});
