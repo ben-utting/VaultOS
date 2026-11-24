@@ -14,6 +14,7 @@ const ctx = () => ({
   boardKeys: ['work', 'home'], agentIds: ['default', 'claude', 'cursor'], tz: TZ,
   agentLevels: { default: ['report', 'update', 'work'], claude: ['report', 'update', 'work'], cursor: ['report', 'update'] },
   agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' }, defaultAgent: 'claude',
+  connectorIds: ['atlassian', 'azuredevops'], agentConnectors: { default: true, claude: true, cursor: false },
 });
 const draft = (more = {}) => ({
   name: 'Check', agent: 'default', template: 'check-in', prompt: 'Look.', level: 'report',
@@ -117,6 +118,19 @@ test('create keeps a model, trimmed', async (t) => {
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.automation.model, 'gpt-5');
   assert.equal((await s.store.get(r.body.automation.id)).model, 'gpt-5');
+});
+
+test("an agent's edit of connectors switches the automation off", async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ agent: 'claude' });
+  const r = await s.api.edit(a.id, { connectors: ['atlassian'] }, 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const b = r.body.automation;
+  assert.equal(b.enabled, false);
+  assert.deepEqual(b.connectors, ['atlassian']);
+  assert.equal(AC.agentTagText(b, TZ), 'Claude Code changed the connectors. Off until you switch it on.');
+  const c = (await s.api.edit(a.id, { connectors: null }, 'Claude Code')).body.automation;
+  assert.equal('connectors' in c, false);
 });
 
 test('editing the model of one that is on switches it off, like an agent edit', async (t) => {

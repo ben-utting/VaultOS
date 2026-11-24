@@ -92,7 +92,7 @@ test('a model edit is sent as is and says it switched the automation off', async
 
 test('the help names the model among the edits that switch an automation off', async () => {
   const r = await run(['--help']);
-  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt or cards changes switch it off/);
+  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt, cards or connectors changes switch it off/);
 });
 
 test('a file that is not JSON is a usage error', async () => {
@@ -186,4 +186,26 @@ test('a Work trial says it ran as Report', async () => {
   const r = await run(['run', 'r1'], { answers: [['run', 200, { id: 'r1', automationName: 'Tidy', trigger: 'trial', level: 'work', state: 'finished', cards: [] }]] });
   assert.equal(r.code, 0);
   assert.match(r.out, /^Tidy · trial · tried as Report · not written to cards · finished$/m);
+});
+
+const optionsBody = (connectors) => ({
+  timezone: 'UTC', boards: [{ key: 'work', label: 'Work' }], statuses: [{ id: 'blocked' }], levels: [], agents: [], defaultAgent: null,
+  templates: [], limits: { maxCards: 25, trialCards: 3, trialsPerHour: 6, agentDrafts: 10, promptMax: 8000, timeLimitMin: [2, 30] }, connectors,
+});
+
+test('options lists the connectors automations can use now', async () => {
+  const some = await run(['options'], { answers: [['options', 200, optionsBody([
+    { id: 'atlassian', label: 'Atlassian', connected: true }, { id: 'azuredevops', label: 'Azure DevOps', connected: true },
+    { id: 'github', label: 'GitHub', connected: false }])]] });
+  assert.match(some.out, /^Connectors \(read-only\): Atlassian \(atlassian\), Azure DevOps \(azuredevops\)$/m);
+  assert.doesNotMatch(some.out, /GitHub/);
+  const none = await run(['options'], { answers: [['options', 200, optionsBody([{ id: 'github', label: 'GitHub', connected: false }])]] });
+  assert.match(none.out, /^Connectors \(read-only\): none connected$/m);
+});
+
+test('show prints Reads: when an automation has connectors', async () => {
+  const withC = await run(['show', 'a1'], { answers: [['show', 200, { automation: { id: 'a1', connectors: ['atlassian', 'azuredevops'] } }]] });
+  assert.match(withC.out, /^Reads: atlassian, azuredevops$/m);
+  const without = await run(['show', 'a1'], { answers: [['show', 200, { automation: { id: 'a1' } }]] });
+  assert.doesNotMatch(without.out, /Reads:/);
 });

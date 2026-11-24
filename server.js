@@ -1588,6 +1588,7 @@ const { createAutomationService } = require('./lib/automation-service');
 const AUTOMATIONS = createAutomationService({
   vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, regenerateBoard,
   terms: () => TERMS, profileFor, profiles: PROFILES, isInstalled, todayISO, termCmd,
+  connectorChoices: () => connectors.automationChoices(),
   renderMarkdown: (md) => marked.parse(stripAgentNotes(md), { breaks: true }),   // a note's lines stay lines
 });
 app.use('/api', AUTOMATIONS.router);

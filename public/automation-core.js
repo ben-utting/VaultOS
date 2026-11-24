@@ -218,11 +218,26 @@
         } else errors.level = `${labels[a.agent] || a.agent} can't run at ${lvl}`;
       }
     }
+    // Connectors the automation may look things up in, read-only. Absent, null or [] is off. Being signed in is
+    // not checked here (spec §3); the agent must be one that can use them.
+    let connectors = [];
+    if (a.connectors !== undefined && a.connectors !== null) {
+      const known = ctx.connectorIds || [];
+      if (!Array.isArray(a.connectors) || a.connectors.some((id) => typeof id !== 'string' || !known.includes(id))
+        || new Set(a.connectors).size !== a.connectors.length) errors.connectors = 'Pick connectors automations can use';
+      else connectors = a.connectors;
+    }
+    if (connectors.length && !errors.connectors && !errors.agent && ctx.agentConnectors && !ctx.agentConnectors[a.agent]) {
+      const labels = ctx.agentLabels || {};
+      const who = a.agent === 'default' ? ctx.defaultAgent : a.agent;
+      errors.connectors = `${labels[who] || who} can't use connectors in automations yet`;
+    }
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
       ok: true,
       value: {
         name, enabled, agent: a.agent, ...(model ? { model } : {}), template: a.template, prompt, level: a.level,
+        ...(connectors.length ? { connectors: [...connectors] } : {}),
         cards: { board: c.board, statuses, subtasks }, schedule, section, timeLimitMin: a.timeLimitMin,
       },
     };
@@ -313,6 +328,6 @@
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
-    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText,
   };
 });

@@ -238,6 +238,49 @@ test('agent and level: without agentLevels nothing extra is checked', () => {
   assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
+// ---------- Connectors ----------
+const connCtx = (more = {}) => levelCtx({
+  connectorIds: ['atlassian', 'azuredevops'], agentConnectors: { default: false, claude: true, cursor: false }, ...more,
+});
+const CONN_ERR = 'Pick connectors automations can use';
+
+test('connectors: absent, null and [] are all off and not stored', () => {
+  for (const c of [undefined, null, []]) {
+    const r = AC.validateAutomation({ ...example(), agent: 'claude', connectors: c }, connCtx());
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+    assert.equal('connectors' in r.value, false);
+  }
+});
+
+test('connectors must be known, usable and unique', () => {
+  for (const c of [['nope'], ['cursor-teams'], ['atlassian', 'atlassian'], 'atlassian']) {
+    const r = AC.validateAutomation({ ...example(), agent: 'claude', connectors: c }, connCtx());
+    assert.equal(r.ok, false);
+    assert.equal(r.errors.connectors, CONN_ERR);
+  }
+  // A missing ctx.connectorIds counts as none.
+  assert.equal(AC.validateAutomation({ ...example(), agent: 'claude', connectors: ['atlassian'] }, levelCtx()).errors.connectors, CONN_ERR);
+});
+
+test("connectors: an agent that can't use them is refused", () => {
+  const r = AC.validateAutomation({ ...example(), agent: 'cursor', connectors: ['atlassian'] }, connCtx());
+  assert.equal(r.errors.connectors, "Cursor CLI can't use connectors in automations yet");
+  const d = AC.validateAutomation({ ...example(), agent: 'default', connectors: ['atlassian'] }, connCtx({ agentConnectors: { default: false, claude: true, cursor: false } }));
+  assert.equal(d.errors.connectors, "Cursor CLI can't use connectors in automations yet");
+  const ok = AC.validateAutomation({ ...example(), agent: 'default', connectors: ['atlassian'] }, connCtx({ agentConnectors: { default: true } }));
+  assert.equal(ok.ok, true);
+});
+
+test('connectors: a valid list is kept in order given', () => {
+  const r = AC.validateAutomation({ ...example(), agent: 'claude', connectors: ['azuredevops', 'atlassian'] }, connCtx());
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.deepEqual(r.value.connectors, ['azuredevops', 'atlassian']);
+});
+
+test('listText is exported', () => {
+  assert.equal(AC.listText(['a', 'b', 'c']), 'a, b and c');
+});
+
 // ---------- Agent tags ----------
 test('agentTagText: a draft from an agent, only while it is off', () => {
   const origin = { by: 'agent', agent: 'Cursor CLI', at: '2026-11-11T09:00:00.000Z' };

@@ -12,7 +12,7 @@ You work through the `vaultos-automations` command. It only works in a VaultOS t
 ## What you can and can't do
 
 - You can read everything: `options`, `list`, `show`, `match`, `runs`, `run`.
-- You can create and edit automations. Anything you create is saved **off**. Editing the agent, model, level, prompt or cards of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
+- You can create and edit automations. Anything you create is saved **off**. Editing the agent, model, level, prompt, cards or connectors of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
 - You can `try` one: a trial on up to 3 cards, read-only, with notes kept in the run history and nothing written into the cards. At most 6 trials an hour.
 - You can switch one `off`, and `delete` one that's off.
 - You can't switch one on, start a real run or stop a run. The person does that in the Automations tab. Don't look for a way round it, and never edit `.vaultos/automations.json`.
@@ -31,7 +31,7 @@ You work through the `vaultos-automations` command. It only works in a VaultOS t
    Keep it short. A long menu is harder to act on.
 3. **Say the limits.**
    - One agent per card, and every run is per card. A run can't summarise a whole board in one note.
-   - No connectors and no web in a run.
+   - No web in a run. Connectors are off unless the automation's `connectors` lists some: ids from `options`, read-only lookups, and only for agents that can use them. Changing `connectors` switches the automation off, like a prompt change.
    - At most 20 cards a run.
    - Cards are chosen by board, status and subtasks only. "Untouched for 30 days" has to live in the prompt, for example "if the card was updated this week, keep the note to one line".
    - Only the agents `options` lists at a level can run there. Work (editing files in the card folder) is the most limited.

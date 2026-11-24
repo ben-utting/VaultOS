@@ -292,3 +292,11 @@ test('spawnAgent ends even when a child that left the process group holds the ou
   assert.equal(r.code, 0);
   assert.match(r.output, /Left one behind\./);
 });
+
+test('agentConnectors: claude yes, cursor and pi no', () => {
+  assert.equal(process.env.AUTOMATION_TEST_AGENT, undefined);
+  assert.equal(A.agentConnectors('claude'), true);
+  assert.equal(A.agentConnectors('cursor'), false);
+  assert.equal(A.agentConnectors('pi'), false);
+  assert.equal(A.agentConnectors('codex'), false);
+});

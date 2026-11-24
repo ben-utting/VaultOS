@@ -51,6 +51,7 @@ Exit codes: `0` done, `1` VaultOS refused (the reason and any field errors follo
 | `schedule` | See below. Times are in the board's time zone |
 | `section` | The heading the note goes under in each card: 1 to 40 letters, digits, spaces or hyphens, not one of the card's own sections |
 | `timeLimitMin` | 2 to 30 minutes per card |
+| `connectors` | Optional list of connector ids from `options` (the `Connectors (read-only)` line) the automation may look things up in during a run. Lookups are read-only. Leave it out, `null` or `[]` for none. Only some agents can use them, and a changed list switches the automation off |
 
 Board keys and agent ids differ per install: take them from `options`.
 
@@ -70,7 +71,7 @@ Board keys and agent ids differ per install: take them from `options`.
 `changes.json` holds only the fields you want to change. `cards` and `schedule` merge into what's there, so `{"schedule": {"time": "09:00"}}` keeps the repeat and `{"cards": {"statuses": ["blocked"]}}` keeps the board.
 
 - Changing `name`, `schedule`, `timeLimitMin`, `section` or `template` keeps the automation on or off as it was.
-- Changing `agent`, `model`, `level`, `prompt` or `cards` switches it off. The Automations tab then says what you changed, and the person switches it back on.
+- Changing `agent`, `model`, `level`, `prompt`, `cards` or `connectors` switches it off. The Automations tab then says what you changed, and the person switches it back on.
 - `"model": null` removes the model, so Cursor uses its default. That counts as a model change.
 - `"enabled": true` is ignored. `"enabled": false` switches it off.
 
