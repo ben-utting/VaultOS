@@ -62,3 +62,39 @@ test('hiddenCallReply carries the exact copy and the request id, and leaves allo
   assert.equal(T.hiddenCallReply({ jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'query-costs' } }, V), null);
   assert.equal(T.hiddenCallReply({ jsonrpc: '2.0', id: 9, method: 'tools/list' }, V), null);
 });
+
+test('atlassianReadOnly lets only reads through', () => {
+  const A = T.atlassianReadOnly;
+  for (const n of ['getJiraIssue', 'searchJiraIssuesUsingJql', 'getVisibleJiraProjects', 'getTransitionsForJiraIssue',
+    'lookupJiraAccountId', 'getConfluencePage', 'searchConfluenceUsingCql', 'getPagesInConfluenceSpace', 'atlassianUserInfo',
+    'getAccessibleAtlassianResources', 'search', 'fetch']) assert.equal(A.allow(n), true, n);
+  for (const n of ['createJiraIssue', 'editJiraIssue', 'transitionJiraIssue', 'addCommentToJiraIssue', 'addWorklogToJiraIssue',
+    'createConfluencePage', 'updateConfluencePage', 'createConfluenceFooterComment', 'createConfluenceInlineComment',
+    'createIssueLink', 'getaway', '', undefined]) assert.equal(A.allow(n), false, String(n));
+  assert.deepEqual(A.first, []);
+});
+
+test('githubReadOnly lets only get_, list_ and search_ through', () => {
+  const G = T.githubReadOnly;
+  for (const n of ['get_me', 'get_issue', 'list_issues', 'search_code', 'get_file_contents', 'list_commits']) {
+    assert.equal(G.allow(n), true, n);
+  }
+  for (const n of ['create_issue', 'update_issue', 'add_issue_comment', 'create_pull_request', 'merge_pull_request',
+    'push_files', 'create_or_update_file', 'delete_file', 'create_branch', 'fork_repository', 'assign_copilot_to_issue',
+    'request_copilot_review']) assert.equal(G.allow(n), false, n);
+  assert.deepEqual(G.first, []);
+});
+
+test('refusals name the tool', () => {
+  assert.equal(T.atlassianReadOnly.refusal('editJiraIssue'),
+    'VaultOS lets automations read Atlassian only, so editJiraIssue is off.');
+  assert.equal(T.githubReadOnly.refusal('create_issue'),
+    'VaultOS lets automations read GitHub only, so create_issue is off.');
+});
+
+test('automationFilter maps ids', () => {
+  assert.equal(T.automationFilter('vantage'), T.vantageReadOnly);
+  assert.equal(T.automationFilter('atlassian'), T.atlassianReadOnly);
+  assert.equal(T.automationFilter('github'), T.githubReadOnly);
+  assert.equal(T.automationFilter('mslearn'), null);
+});
