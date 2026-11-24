@@ -22,6 +22,10 @@ function loadHideDone(wsKey) {
 // care. Off by default, so nobody's board changes shape without them asking.
 function hideSubtasksKey(wsKey) { return 'vaultboard.hideSubtasks.' + wsKey; }
 function loadHideSubtasks(wsKey) { return localStorage.getItem(hideSubtasksKey(wsKey)) === '1'; }
+// While folded, the parent card can carry a line saying which statuses its subtasks are in. On unless someone turns
+// it off (it's what keeps a subtask moved to Scheduled visible); off, the subtasks chip alone says they're there.
+function foldStatusKey(wsKey) { return 'vaultboard.foldStatus.' + wsKey; }
+function loadFoldStatus(wsKey) { return localStorage.getItem(foldStatusKey(wsKey)) !== '0'; }
 
 (function migrateHiddenColumns() {
   const legacy = localStorage.getItem('vaultboard.hiddenColumns');
@@ -41,6 +45,7 @@ let STATE = {
 };
 STATE.hideDone = loadHideDone(STATE.workspace);
 STATE.hideSubtasks = loadHideSubtasks(STATE.workspace);
+STATE.foldStatus = loadFoldStatus(STATE.workspace);
 let FILTER_SEARCH = ''; // typed into the folder-filter popover, board/kb-scoped by whichever is open
 let DRAG = null;
 // body.board-dragging is what shows the hidden (empty) columns while a card is in the air.
@@ -523,6 +528,11 @@ function setHideSubtasks(on) {
   renderSubtaskToggle();
   render();
 }
+function setFoldStatus(on) {
+  STATE.foldStatus = on;
+  localStorage.setItem(foldStatusKey(STATE.workspace), on ? '1' : '0');
+  render();   // redraws the cards, and the switch and the Columns list with them
+}
 // The hint counts collapsible children, not cards currently hidden: it stays truthful while a search or a batch
 // filter is temporarily showing them again.
 function renderSubtaskToggle() {
@@ -531,8 +541,13 @@ function renderSubtaskToggle() {
   $('subtasks-d').textContent = n
     ? `${n} subtask card${n === 1 ? '' : 's'} on this board. The parent keeps a subtasks chip; select it to bring them back.`
     : 'No subtasks on this board yet. When there are, the parent keeps a subtasks chip; select it to bring them back.';
+  // The status line only exists while subtasks are folded, so its switch waits on that one.
+  $('fold-status').checked = STATE.foldStatus;
+  $('fold-status').disabled = !STATE.hideSubtasks;
+  $('fold-status-row').classList.toggle('is-off', !STATE.hideSubtasks);
 }
 $('fold-subtasks').addEventListener('change', (e) => setHideSubtasks(e.target.checked));
+$('fold-status').addEventListener('change', (e) => setFoldStatus(e.target.checked));
 $('hide-done').addEventListener('change', (e) => setHideDone(e.target.checked));
 function renderColsList() {
   $('hide-done').checked = STATE.hideDone;
@@ -542,7 +557,8 @@ function renderColsList() {
   $('cols-list').innerHTML = STATE.statuses.map((s) => {
     const count = n(s);
     const f = nFolded(s);
-    const why = s === 'done' && STATE.hideDone ? 'Hidden' : !count ? 'Hidden (empty)' : f >= count ? 'On parent cards' : f ? `Shown, ${f} folded` : 'Shown';
+    const why = s === 'done' && STATE.hideDone ? 'Hidden' : !count ? 'Hidden (empty)'
+      : f >= count ? (STATE.foldStatus ? 'On parent cards' : 'Folded away') : f ? `Shown, ${f} folded` : 'Shown';
     return `<li class="ss-col${why.startsWith('Shown') ? '' : ' off'}"><span class="dot" style="background: var(--${esc(s)})" aria-hidden="true"></span>`
       + `<span class="ss-col-n">${esc(STATUS_LABELS[s] || s)}</span><span class="ss-col-c">${count}</span><span class="ss-col-w">${why}</span></li>`;
   }).join('');
@@ -688,10 +704,10 @@ function batchChip(t) {
 
 // While subtasks are folded, the parent card says where they are: one quiet line per status of the unfinished ones
 // ("● 1 Scheduled · ● 1 Review"), in board order, so a subtask moved to Scheduled shows without a column of its own.
-// The title lists each one. Unfolded, they're cards again and the line goes.
+// The title lists each one. Unfolded, they're cards again and the line goes. Settings → Columns can turn it off.
 function foldedStatusLine(t) {
   const b = !t.batch && BATCH_INDEX.get(batchKeyOf(t));
-  if (!b || !b.parent || b.parent !== t || !subtasksCollapsed()) return '';
+  if (!b || !b.parent || b.parent !== t || !subtasksCollapsed() || !STATE.foldStatus) return '';
   const open = b.children.filter((c) => c.status !== 'done');
   if (!open.length) return '';
   const by = (s) => open.filter((c) => c.status === s);
@@ -2335,6 +2351,7 @@ async function loadWorkspaces() {
     localStorage.setItem('vaultboard.workspace', fallback.key);
     STATE.hideDone = loadHideDone(fallback.key);
     STATE.hideSubtasks = loadHideSubtasks(fallback.key);
+    STATE.foldStatus = loadFoldStatus(fallback.key);
   }
   renderWorkspaceSwitcher();
 }
@@ -2354,6 +2371,7 @@ function setWorkspace(key) {
   stopReadTracker();
   STATE.hideDone = loadHideDone(key);            // this board's own answer on Done
   STATE.hideSubtasks = loadHideSubtasks(key);   // …and its own answer on collapsing batches
+  STATE.foldStatus = loadFoldStatus(key);       // …and on the parent card's status line
   STATE.projectFilter = new Set();
   STATE.batchFilter = '';   // batch values are workspace-scoped; carrying one over empties the board
   STATE.query = '';

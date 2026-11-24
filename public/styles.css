@@ -1070,6 +1070,8 @@ html[data-font="dyslexic"] .kb-article { font-family: var(--read-font); letter-s
 .ss-pane .su-field, .ss-pane .su-row { margin: 0 0 6px; }
 .ss-pane .su-custom { margin: 0; }
 .ss-pane .su-switch:disabled { opacity: .5; cursor: default; }   /* the terminal with TERMINAL=0 */
+/* A row whose switch waits on the one above it (subtask statuses wait on folding): its words dim with the switch. */
+.ss-pane .su-row.is-off .su-label, .ss-pane .su-row.is-off .su-hint { opacity: .55; }
 .ss-actions { display: flex; gap: 8px; margin-top: 4px; }
 .ss-ok { margin: 0; font-size: var(--t-sm); color: var(--done); }
 .ss-ok:empty { display: none; }
