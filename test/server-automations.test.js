@@ -108,6 +108,7 @@ test('turn on, create, run now, see the note', async (t) => {
   assert.equal(list.body.automations[0].scheduleText, 'Weekdays 08:00');
   assert.match(list.body.automations[0].nextRun, /^\d{4}-\d\d-\d\dT0[78]:00:00\.000Z$/);
   assert.deepEqual(list.body.agents.map((a) => a.id), ['claude', 'cursor', 'pi']);
+  assert.ok(list.body.agents.every((a) => typeof a.connectors === 'boolean'));
   assert.equal((await s.api('POST', `/api/automations/${id}/run`)).status, 200);
   const idle = await waitIdle(s);
   assert.equal(idle.automations[0].lastRun.state, 'finished');

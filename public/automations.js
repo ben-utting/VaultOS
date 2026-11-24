@@ -87,6 +87,11 @@
     }
     renderFilter();
   }
+  // A connector's label from the choices the server sent, falling back to its id.
+  const connLabel = (id) => {
+    const c = AU.data && (AU.data.connectors || []).find((x) => x.id === id);
+    return c ? c.label : id;
+  };
   function rowHtml(a) {
     const last = a.lastRun;
     let lastLine = '<span class="au-last muted">Not run yet</span>';
@@ -103,6 +108,7 @@
       <button type="button" class="au-row-main" title="Edit ${esc(a.name)}">
         <span class="au-row-top"><span class="au-mark">${markFor(a.agent)}</span><span class="au-name">${esc(a.name)}</span></span>
         <span class="au-meta">${esc(a.scheduleText)} · ${esc(AC.cardsText(a.cards, boardLabel(a.cards.board)))} · ${esc(AC.LEVEL_LABEL[a.level])}</span>
+        ${a.connectors && a.connectors.length ? `<span class="au-reads">Reads: ${esc(a.connectors.map(connLabel).join(', '))}</span>` : ''}
         <span class="au-next">${a.nextRun ? `Next: ${esc(when(a.nextRun))}` : 'Off'}</span>
         ${AC.agentTagText(a, tz()) ? `<span class="au-tag">${esc(AC.agentTagText(a, tz()))}</span>` : ''}
         ${lastLine}
@@ -139,8 +145,8 @@
   $('au-new').addEventListener('click', () => openBuilder(null));
   // Only the fields an automation is saved with (the list adds scheduleText, nextRun and the like).
   function definition(a) {
-    const { name, enabled, agent, model, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
-    return { name, enabled, agent, ...(model ? { model } : {}), template, prompt, level, cards, schedule, section, timeLimitMin };
+    const { name, enabled, agent, model, connectors, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
+    return { name, enabled, agent, ...(model ? { model } : {}), ...(connectors && connectors.length ? { connectors } : {}), template, prompt, level, cards, schedule, section, timeLimitMin };
   }
 
   // ---------- Runs ----------
@@ -241,6 +247,14 @@
     if (c.proposalIgnored) warn.push(['plain', 'Status proposal ignored: you changed it during the run']);
     if (c.doneReverted) warn.push(['warn', `Done was put back to ${AC.STATUS_LABEL[c.statusBefore] || c.statusBefore || 'its status'}`]);
     if (c.ignored && c.ignored.length) warn.push(['plain', `Ignored: ${c.ignored.join(', ')}`]);
+    if (c.lookups && Object.keys(c.lookups).length) {
+      warn.push(['plain', `Looked up: ${Object.entries(c.lookups).map(([id, tools]) => `${connLabel(id)} (${Object.entries(tools).map(([t, n]) => `${t} ×${n}`).join(', ')})`).join(', ')}`]);
+    }
+    if (c.refusedCalls && Object.keys(c.refusedCalls).length) {
+      const n = Object.values(c.refusedCalls).reduce((sum, tools) => sum + Object.values(tools).reduce((x, y) => x + y, 0), 0);
+      warn.push(['warn', `Refused ${n} call${n === 1 ? '' : 's'} that would change something: ${Object.entries(c.refusedCalls).map(([id, tools]) => `${connLabel(id)} (${Object.keys(tools).join(', ')})`).join(', ')}`]);
+    }
+    if (c.notSignedIn && c.notSignedIn.length) warn.push(['plain', `Not signed in: ${c.notSignedIn.map(connLabel).join(', ')}`]);
     const body = c.noteHtml ? `<div class="au-note markdown">${safeHtml(c.noteHtml)}</div>` : (c.reason ? `<p class="au-reason">${esc(c.reason)}</p>` : '');
     return `<article class="au-card">
       <div class="au-card-head">
@@ -271,7 +285,7 @@
   // answers first, beside the fields.
   const B = { editing: null, matchTimer: null, matchSeq: 0, template: 'check-in', models: null, modelsLoading: null };
   const FIELD_OF = {
-    name: 'ab-name', agent: 'ab-agent', model: 'ab-model', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
+    name: 'ab-name', agent: 'ab-agent', model: 'ab-model', connectors: 'ab-conn', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
     statuses: 'ab-statuses', subtasks: 'ab-subtasks', schedule: 'ab-schedule', section: 'ab-section', timeLimitMin: 'ab-limit', enabled: 'ab',
   };
   const INPUT_FIELDS = new Set(['ab-name', 'ab-model', 'ab-prompt', 'ab-section', 'ab-limit', 'ab-board', 'ab-template']);
@@ -329,6 +343,36 @@
     }
     loadModels();
   }
+  // ---- Connectors (read-only lookups) ----
+  // The switch turns the ticks on. Ticks are the connected choices, plus any ticked id that isn't connected now.
+  // With nothing connected, or an agent that can't use connectors, the switch is off and disabled with a reason.
+  const connAgentCan = () => {
+    const d = AU.data;
+    if (!d) return { can: false, label: '' };
+    const v = radio('ab-agent');
+    const id = v === 'default' ? d.defaultAgent : v;
+    const a = (d.agents || []).find((x) => x.id === id);
+    return { can: !!(a && a.connectors), label: a ? a.label : (id || 'That agent') };
+  };
+  function paintConnectors(ticked) {
+    const d = AU.data;
+    const choices = (d && d.connectors) || [];
+    const keep = ticked || [...$('ab-conn-list').querySelectorAll('input:checked')].map((el) => el.dataset.id);
+    const connected = choices.filter((c) => c.connected);
+    const extra = keep.filter((id) => !connected.some((c) => c.id === id));
+    const items = [...connected.map((c) => ({ id: c.id, label: c.label })), ...extra.map((id) => ({ id, label: `${connLabel(id)} (not connected)` }))];
+    $('ab-conn-list').innerHTML = items.map((x) => `<label class="ab-conn-item"><input type="checkbox" data-id="${esc(x.id)}"${keep.includes(x.id) ? ' checked' : ''}> <span>${esc(x.label)}</span></label>`).join('');
+    const sw = $('ab-conn');
+    const agent = connAgentCan();
+    let why = '';
+    if (!items.length) why = 'Connect one in Settings → Connectors first';
+    else if (!agent.can) why = `${agent.label} can't use connectors in automations yet`;
+    sw.disabled = !!why;
+    if (why) sw.checked = false;
+    $('ab-conn-hint').textContent = why;
+    $('ab-conn-hint').classList.toggle('hidden', !why);
+    $('ab-conn-list').classList.toggle('hidden', !sw.checked || !items.length);
+  }
   function paintModels() {
     const m = B.models;
     $('ab-model-list').innerHTML = (m && m.models ? m.models : []).map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join('');
@@ -384,6 +428,7 @@
     return {
       name: $('ab-name').value, enabled: B.editing ? B.editing.enabled : (B.enabled !== undefined ? B.enabled : true),
       agent: radio('ab-agent'), model: $('ab-model').value.trim() || undefined,
+      connectors: $('ab-conn').checked ? [...$('ab-conn-list').querySelectorAll('input:checked')].map((el) => el.dataset.id) : [],
       template: $('ab-template').value, prompt: $('ab-prompt').value, level: radio('ab-level'),
       cards: { board: $('ab-board').value, statuses: checkedChips('ab-statuses'), subtasks: $('ab-subtasks').checked },
       schedule: scheduleFromForm(), section: $('ab-section').value, timeLimitMin: Number($('ab-limit').value),
@@ -450,6 +495,8 @@
     renderAgents(v.agent);
     $('ab-model').value = v.model || '';
     syncModel();
+    $('ab-conn').checked = !!(v.connectors && v.connectors.length);
+    paintConnectors(v.connectors || []);
     $('ab-template').innerHTML = Object.entries(AC.TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
     $('ab-template').value = v.template;
     $('ab-prompt').value = v.prompt;
@@ -494,8 +541,9 @@
     const d = AU.data;
     const choice = agentChoices().find((c) => c.v === value.agent);
     const boardKeys = [...$('ab-board').options].map((o) => o.value).filter((k) => k !== 'all');
-    const check = AC.validateAutomation(value, { boardKeys, agentIds: agentChoices().map((c) => c.v) });
+    const check = AC.validateAutomation(value, { boardKeys, agentIds: agentChoices().map((c) => c.v), connectorIds: ((d && d.connectors) || []).map((c) => c.id) });
     const errors = check.ok ? {} : { ...check.errors };
+    if ($('ab-conn').checked && !value.connectors.length) errors.connectors = 'Tick at least one connector, or switch this off';
     if (!value.agent) errors.agent = 'Pick an agent';
     else if (choice && agentBlock(choice, value.level || 'report')) errors.agent = `${choice.label}: ${agentBlock(choice, value.level || 'report')}`;
     if (Object.keys(errors).length) { showErrors(errors); return; }
@@ -526,7 +574,10 @@
     setRadio('ab-agent', t.dataset.v);
     $('ab-agent-err').textContent = '';
     syncModel();
+    paintConnectors();
   });
+  $('ab-conn').addEventListener('change', () => { $('ab-conn-err').textContent = ''; paintConnectors(); });
+  $('ab-conn-list').addEventListener('change', () => { $('ab-conn-err').textContent = ''; });
   $('ab-level').addEventListener('click', (e) => {
     const t = e.target.closest('.ab-level');
     if (!t) return;

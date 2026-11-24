@@ -681,6 +681,12 @@
         <datalist id="ab-model-list"></datalist>
         <p class="su-hint" id="ab-model-hint">Leave blank to use Cursor's default.</p>
         <p class="su-err" id="ab-model-err" aria-live="polite"></p></div>
+      <div class="su-field" id="ab-conn-f">
+        <div class="su-row ab-conn-row"><div class="su-row-t"><label class="su-label" for="ab-conn">Look things up in connectors (read-only)</label></div>
+          <input type="checkbox" class="su-switch" id="ab-conn" role="switch" aria-describedby="ab-conn-hint ab-conn-err"></div>
+        <div id="ab-conn-list" class="ab-conn-list hidden" role="group" aria-label="Connectors it may look things up in"></div>
+        <p class="su-hint hidden" id="ab-conn-hint"></p>
+        <p class="su-err" id="ab-conn-err" aria-live="polite"></p></div>
       <div class="su-field"><span class="su-label" id="ab-level-l">What it may change</span>
         <div id="ab-level" class="ab-levels" role="radiogroup" aria-labelledby="ab-level-l"></div>
         <p class="su-err" id="ab-level-err" aria-live="polite"></p></div>

@@ -4066,7 +4066,7 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .au-mark svg { display: block; width: 16px; height: 16px; color: var(--muted); }
 .au-name { overflow: hidden; font-size: var(--t-md); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .au-row-main:hover .au-name { color: var(--accent); }
-.au-meta, .au-next, .au-last { font-size: var(--t-xs); color: var(--muted); }
+.au-meta, .au-next, .au-last, .au-reads { font-size: var(--t-xs); color: var(--muted); }
 /* An automation an agent made or changed (spec §7): muted, never gold. */
 .au-tag { font-size: var(--t-xs); color: var(--muted); font-style: italic; }
 #ab-origin { margin: 2px 0 0; }
@@ -4454,3 +4454,10 @@ button.ghost.sp-pick { display: inline-flex; align-items: center; gap: 6px; padd
 .td-csub { font-size: var(--t-xs); color: var(--muted); }
 .td-cdiv { margin: 8px 8px; border: 0; border-top: 1px solid var(--line); }
 .td-cnone { margin: 0 0 6px; padding: 0 8px; font-size: var(--t-sm); color: var(--muted); }
+
+/* Automations builder: connectors row */
+.ab-conn-row { min-height: 38px; margin: 0; }
+.ab-conn-list { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 4px; }
+.ab-conn-item { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: var(--t-sm); overflow-wrap: anywhere; }
+#ab-conn-f .su-hint { margin-top: 4px; }
+.au-reads { overflow-wrap: anywhere; }
