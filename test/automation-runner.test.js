@@ -563,7 +563,11 @@ function fakeAccess(over = {}) {
     return {
       ids: ['atlassian'], entries: { atlassian: { kind: 'http', url: 'http://x', headers: { 'X-VaultOS-Key': 'SECRETKEY' } } },
       missing: ['vantage'], labels: { atlassian: 'Atlassian', vantage: 'Vantage' }, configFile: '/tmp/fake-mcp.json',
-      usage: async () => { log.order.push('usage'); return { lookups: { atlassian: { getIssue: 2 } }, refusedCalls: { atlassian: { editIssue: 1 } } }; },
+      usage: async () => {
+        log.order.push('usage');
+        if (over.usageFails) throw new Error(over.usageFails);
+        return { lookups: { atlassian: { getIssue: 2 } }, refusedCalls: { atlassian: { editIssue: 1 } } };
+      },
       revoke: async () => { log.revoked++; log.order.push('revoke'); },
     };
   };
@@ -613,6 +617,16 @@ test('a card with connectors: access is opened, handed to setup, the command and
   assert.deepEqual(c.notSignedIn, ['vantage']);
   const saved = JSON.stringify(run);
   assert.ok(!saved.includes('SECRETKEY') && !saved.includes('fake-mcp.json'));
+});
+
+test('a usage() that throws still records the connectors not signed in, and revokes', async (t) => {
+  const s = cset(t, { usageFails: 'log unreadable' }, { cards: { '01-a': ['in-progress'] } });
+  const run = await runAndWait(s, await s.make({ connectors: ['atlassian', 'vantage'] }));
+  const c = run.cards[0];
+  assert.equal(c.state, 'noted');
+  assert.deepEqual(c.notSignedIn, ['vantage']);
+  assert.ok(!('lookups' in c) && !('refusedCalls' in c));
+  assert.deepEqual(s.acc.log.order, ['usage', 'revoke']);
 });
 
 test('a timed-out card still revokes its connector access', async (t) => {
