@@ -300,6 +300,22 @@ test('off works even when the automation no longer validates', async (t) => {
   assert.equal((await s.store.get(on.id)).enabled, false);
 });
 
+test('off works for a connectors automation after the default agent becomes Cursor', async (t) => {
+  const s = setup(t);
+  const on = await s.personOn({ connectors: ['atlassian'] });
+  const cursorDefault = () => ({ ...ctx(), defaultAgent: 'cursor', agentLevels: { ...ctx().agentLevels, default: ['report', 'update'] }, agentConnectors: { default: false, claude: true, cursor: false } });
+  const api2 = createAgentApi({ store: s.store, runner: s.runner, ctx: cursorDefault, tz: () => TZ, options: () => ({}), listCards: async () => [] });
+  const r = await api2.off(on.id);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const after = await s.store.get(on.id);
+  assert.equal(after.enabled, false);
+  assert.deepEqual(after.connectors, ['atlassian']);
+  // An edit is a normal save, so it still meets the check.
+  const e = await api2.edit(on.id, { name: 'Renamed' }, 'Claude Code');
+  assert.equal(e.status, 400);
+  assert.equal(e.body.errors.connectors, "Cursor CLI can't use connectors in automations yet");
+});
+
 test('an agent can\'t delete an automation while it runs or waits in the queue', async (t) => {
   const s = setup(t);
   const { automation } = (await s.api.create(draft(), 'Cursor CLI')).body;

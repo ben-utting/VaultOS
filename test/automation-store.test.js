@@ -209,6 +209,34 @@ test('switching off still works after the default agent stops covering the level
   assert.equal((await store.update(value.id, input({ level: 'work', enabled: false, agent: 'cursor' }), lv(['report', 'update']))).ok, false);
 });
 
+test('switching off works for a connectors automation after the default agent becomes one that can\'t use them', async (t) => {
+  const { store } = setup(t);
+  const cx = (defaultAgent) => ({
+    ...ctx, agentIds: ['default', 'claude', 'cursor'], defaultAgent,
+    agentLevels: { default: ['report', 'update'], claude: ['report', 'update', 'work'], cursor: ['report', 'update'] },
+    agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' },
+    connectorIds: ['atlassian'], agentConnectors: { default: defaultAgent === 'claude', claude: true, cursor: false },
+  });
+  const a = (await store.create(input({ connectors: ['atlassian'] }), cx('claude'))).value;
+  const b = (await store.create(input({ name: 'Second', connectors: ['atlassian'] }), cx('claude'))).value;
+  // The default is now Cursor, which can't use connectors in automations.
+  const off = await store.update(a.id, input({ connectors: ['atlassian'], enabled: false }), cx('cursor'));
+  assert.equal(off.ok, true, JSON.stringify(off.errors));
+  assert.equal(off.value.enabled, false);
+  assert.deepEqual(off.value.connectors, ['atlassian'], 'switching off keeps the connectors');
+  // The queue's read-decide-write path does the same.
+  const off2 = await store.mutate(b.id, (old) => ({ input: { ...old, enabled: false }, ctx: cx('cursor') }));
+  assert.equal(off2.ok, true, JSON.stringify(off2.errors));
+  assert.equal(off2.value.enabled, false);
+  // A normal save still meets the check, with the agent's name in the message.
+  const on = await store.update(a.id, input({ connectors: ['atlassian'], enabled: true }), cx('cursor'));
+  assert.equal(on.ok, false);
+  assert.equal(on.errors.connectors, "Cursor CLI can't use connectors in automations yet");
+  const renamed = await store.update(a.id, input({ name: 'Renamed', connectors: ['atlassian'], enabled: false, level: 'update' }), cx('cursor'));
+  assert.equal(renamed.ok, false);
+  assert.equal(renamed.errors.connectors, "Cursor CLI can't use connectors in automations yet");
+});
+
 // ---------- The model ----------
 
 test('a model is saved with the automation, and a save without one clears it', async (t) => {

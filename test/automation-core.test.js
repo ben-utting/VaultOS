@@ -271,6 +271,16 @@ test("connectors: an agent that can't use them is refused", () => {
   assert.equal(ok.ok, true);
 });
 
+test("connectors: the can't-use message never says null", () => {
+  const ask = (more) => AC.validateAutomation({ ...example(), agent: 'default', connectors: ['atlassian'] }, connCtx(more)).errors.connectors;
+  // No default agent at all (and no level check to catch it first).
+  const none = ask({ defaultAgent: null, agentLevels: undefined, agentConnectors: { default: false } });
+  assert.equal(none, "Your default agent can't use connectors in automations yet");
+  // A default agent with no label falls back to its id.
+  assert.equal(ask({ defaultAgent: 'pi', agentLevels: undefined, agentConnectors: { default: false } }), "pi can't use connectors in automations yet");
+  for (const m of [none]) assert.doesNotMatch(m, /null|undefined/);
+});
+
 test('connectors: a valid list is kept in order given', () => {
   const r = AC.validateAutomation({ ...example(), agent: 'claude', connectors: ['azuredevops', 'atlassian'] }, connCtx());
   assert.equal(r.ok, true, JSON.stringify(r.errors));

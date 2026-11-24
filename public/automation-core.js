@@ -230,7 +230,7 @@
     if (connectors.length && !errors.connectors && !errors.agent && ctx.agentConnectors && !ctx.agentConnectors[a.agent]) {
       const labels = ctx.agentLabels || {};
       const who = a.agent === 'default' ? ctx.defaultAgent : a.agent;
-      errors.connectors = `${labels[who] || who} can't use connectors in automations yet`;
+      errors.connectors = `${(who && (labels[who] || who)) || 'Your default agent'} can't use connectors in automations yet`;
     }
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
