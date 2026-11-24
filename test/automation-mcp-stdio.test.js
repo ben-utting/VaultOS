@@ -94,3 +94,20 @@ test('the wrapper end to end', async () => {
   assert.equal(fs.readFileSync(seen, 'utf8'), 'read_x\n');
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('a large multi-byte line passes both ways whole', async () => {
+  const fake = path.join(__dirname, 'fixtures', 'fake-stdio-mcp.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'amcp-'));
+  const p = spawn(process.execPath, [STDIO_WRAPPER, '--id', 'azure', '--log', path.join(dir, 'c.log'), '--', process.execPath, fake], { stdio: ['pipe', 'pipe', 'inherit'] });
+  let out = '';
+  p.stdout.setEncoding('utf8');
+  p.stdout.on('data', (c) => { out += c; });
+  const closed = new Promise((res) => p.on('close', res));
+  const text = '\u20ac'.repeat(60000) + 'caf\u00e9 \u{1F600}';
+  p.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'x/echo', params: { text } }) + '\n');
+  for (let i = 0; i < 100 && !out.endsWith('\n'); i++) await new Promise((r) => setTimeout(r, 50));
+  p.stdin.end();
+  await closed;
+  assert.equal(JSON.parse(out).result.text, text);
+  fs.rmSync(dir, { recursive: true, force: true });
+});

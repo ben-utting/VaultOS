@@ -13,5 +13,6 @@ rl.on('line', (line) => {
   else if (m.method === 'tools/call') {
     if (process.env.FAKE_STDIO_SEEN) fs.appendFileSync(process.env.FAKE_STDIO_SEEN, ((m.params && m.params.name) || '') + '\n');
     send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: '{"ok":true}' }] } });
-  } else send({ jsonrpc: '2.0', id: m.id, result: {} });
+  } else if (m.method === 'x/echo') send({ jsonrpc: '2.0', id: m.id, result: { text: m.params.text } });
+  else send({ jsonrpc: '2.0', id: m.id, result: {} });
 });
