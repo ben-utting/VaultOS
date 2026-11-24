@@ -366,7 +366,7 @@
     const agent = connAgentCan();
     let why = '';
     if (!items.length) why = 'Connect one in Settings → Connectors first';
-    else if (!agent.can) why = `${agent.label} can't use connectors in automations yet`;
+    else if (!agent.can) why = AC.connectorsAgentHint(agent.label, { saved: B.editing && B.editing.connectors });
     sw.disabled = !!why;
     if (why) sw.checked = false;
     $('ab-conn-hint').textContent = why;

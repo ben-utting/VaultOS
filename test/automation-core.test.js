@@ -287,6 +287,13 @@ test('connectors: a valid list is kept in order given', () => {
   assert.deepEqual(r.value.connectors, ['azuredevops', 'atlassian']);
 });
 
+test("the builder's hint when the agent can't use connectors says saving removes saved ones", () => {
+  assert.equal(AC.connectorsAgentHint('Cursor CLI', { saved: ['atlassian'] }), "Cursor CLI can't use connectors in automations yet; saving removes them.");
+  for (const a of [{}, { saved: [] }, { saved: undefined }, null, undefined]) {
+    assert.equal(AC.connectorsAgentHint('Cursor CLI', a), "Cursor CLI can't use connectors in automations yet");
+  }
+});
+
 test('listText is exported', () => {
   assert.equal(AC.listText(['a', 'b', 'c']), 'a, b and c');
 });

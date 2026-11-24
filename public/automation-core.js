@@ -254,6 +254,9 @@
   // ---------- Agent tags (spec §7) ----------
   // The line under an automation an agent made or changed; '' when there's nothing to say.
   const listText = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  // The builder's reason the connectors switch is off when the agent can't use them. An automation with connectors
+  // saved loses them on Save, so it says so.
+  const connectorsAgentHint = (label, o) => `${label} can't use connectors in automations yet${o && Array.isArray(o.saved) && o.saved.length ? '; saving removes them.' : ''}`;
   function agentTagText(a, tz) {
     const ch = a && a.agentChange;
     const draft = a && a.origin && !a.enabled;
@@ -328,6 +331,6 @@
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
-    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText, connectorsAgentHint,
   };
 });
