@@ -43,6 +43,7 @@ let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (d) => { input += d; });
 process.stdin.on('end', () => {
+  if (process.env.FAKE_PROMPT_OUT) fs.appendFileSync(process.env.FAKE_PROMPT_OUT, input + '\n=====\n');
   const marks = (input.match(/MARK:\S+/g) || []).join(' ');
   const note = (text = 'Fake note.') => `\`\`\`vaultos-note\n${text}${marks ? ` ${marks}` : ''}\n\`\`\`\n`;
   const has = (d) => input.includes(`FAKE:${d}`);

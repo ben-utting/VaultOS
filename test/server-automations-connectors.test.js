@@ -37,7 +37,8 @@ async function ready(t, { fakeOpts = {}, fakeMode, upstreamEnv = 'CONNECTOR_UPST
   fs.mkdirSync(d.home);
   seedVault(d.vault, {});
   const keyOut = path.join(root, 'key-out.txt');
-  const srv = await startServer({ ...d, env: { TERMINAL: '1', AUTOMATION_TEST_AGENT: FAKE, TZ: 'Europe/London', FAKE_KEY_OUT: keyOut, [upstreamEnv]: fake.base } });
+  const promptOut = path.join(root, 'prompt-out.txt');
+  const srv = await startServer({ ...d, env: { TERMINAL: '1', AUTOMATION_TEST_AGENT: FAKE, TZ: 'Europe/London', FAKE_KEY_OUT: keyOut, FAKE_PROMPT_OUT: promptOut, [upstreamEnv]: fake.base } });
   const terms = [];
   t.after(async () => { for (const x of terms) x.close(); await srv.stop(); await fake.stop(); await fs.promises.rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); });
   const base = srv.base;
@@ -66,7 +67,7 @@ async function ready(t, { fakeOpts = {}, fakeMode, upstreamEnv = 'CONNECTOR_UPST
     assert.equal(run.state, 'finished');
     return (await as(tm, 'run', { id: run.id })).body.cards[0];
   };
-  return { ...d, base, fake, f, keyOut, person, trial, mcpDir: path.join(d.home, '.cache', 'vaultos', 'automation-mcp') };
+  return { ...d, base, fake, f, keyOut, promptOut, person, trial, mcpDir: path.join(d.home, '.cache', 'vaultos', 'automation-mcp') };
 }
 
 const leftovers = (dir) => (fs.existsSync(dir) ? fs.readdirSync(dir) : []);
@@ -76,6 +77,7 @@ test('a trial with Atlassian ticked reads, is refused a write, and changes nothi
   const con = await s.person('POST', '/api/connectors/atlassian/token', { email: 'alex@example.com', token: 'tok' }); assert.equal(con.status, 200, con.text);
   const before = fs.readFileSync(s.f, 'utf8');
   const card = await s.trial({ connectors: ['atlassian'], prompt: 'FAKE:mcp:atlassian:getJiraIssue FAKE:mcp:atlassian:editJiraIssue' });
+  assert.match(fs.readFileSync(s.promptOut, 'utf8'), /Connectors: you may look things up in Atlassian through their MCP tools\./);
   assert.match(card.note, /MCP:getJiraIssue:ok/);
   assert.match(card.note, /MCP:editJiraIssue:refused/);
   assert.equal(card.lookups.atlassian.getJiraIssue, 1);
@@ -99,6 +101,7 @@ test('an automation with no ticks makes no config and the prompt has no Connecto
   const con = await s.person('POST', '/api/connectors/atlassian/token', { email: 'alex@example.com', token: 'tok' }); assert.equal(con.status, 200, con.text);
   s.fake.state.calls.length = 0; // connecting listed tools itself
   const card = await s.trial({ prompt: 'FAKE:mcp:atlassian:getJiraIssue' });
+  assert.doesNotMatch(fs.readFileSync(s.promptOut, 'utf8'), /Connectors:/);
   assert.match(card.note, /MCP:getJiraIssue:unsupported/);
   assert.equal(card.lookups, undefined);
   assert.equal(card.notSignedIn, undefined);
