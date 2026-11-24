@@ -144,6 +144,19 @@ function cursorTree(t) {
     ['Work/card-b/notes.txt', 'S3'], ['Work/card-a-old/notes.txt', 'S4']]) fs.writeFileSync(path.join(v, f), s);
   return { root, v, card };
 }
+// cursorRules lists every sibling on the way to the card, the temp folder's own entries included, and other test
+// files running alongside add and remove entries there all the time. So rules taken at two moments are compared
+// without the Read rules for temp-folder entries other than this test's own root.
+function steadyRules(rules, root) {
+  return rules.filter((r) => {
+    const m = /^Read\((.+?)(\/\*)?\)$/.exec(r);
+    return !m || path.dirname(m[1]) !== path.dirname(root) || m[1] === root;
+  });
+}
+const steadyConfig = (text, root) => {
+  const c = JSON.parse(text);
+  return JSON.stringify({ ...c, permissions: { ...c.permissions, deny: steadyRules(c.permissions.deny, root) } }, null, 2);
+};
 
 test('cursor rules: the card folder is readable, nothing outside it is', async (t) => {
   const { root, v, card } = cursorTree(t);
@@ -337,20 +350,23 @@ test('cursor command with connectors adds --approve-mcps; without, nothing chang
 });
 
 test('cursor without connectors: cli-config.json byte-for-byte as before, and no mcp.json', async (t) => {
-  const { card } = cursorTree(t);
+  const { root, card } = cursorTree(t);
   const home = tmp(t);
   const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
   fs.mkdirSync(cur, { recursive: true });
   fs.writeFileSync(path.join(cur, 'mcp.json'), '{"stale":1}');
   await A.prepareAgent('cursor', 'report', card, { home });
+  const text = fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8');
   const was = { version: 1, permissions: { allow: [], deny: await A.cursorRules(card) } };
-  assert.equal(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8'), `${JSON.stringify(was, null, 2)}\n`);
+  // Byte for byte, apart from the temp-folder entries other tests make and remove meanwhile.
+  assert.equal(text, `${JSON.stringify(JSON.parse(text), null, 2)}\n`);
+  assert.equal(steadyConfig(text, root), steadyConfig(JSON.stringify(was), root));
   assert.deepEqual((await A.cursorRules(card)).slice(0, 4), ['Shell(*)', 'WebFetch(*)', 'Mcp(*:*)', 'Write(*)']);
   assert.ok(!fs.existsSync(path.join(cur, 'mcp.json')), 'a stale mcp.json is removed');
 });
 
 test('cursor with connectors: mcp.json 0600 in its own home, and only Mcp(*:*) dropped from the deny list', async (t) => {
-  const { card } = cursorTree(t);
+  const { root, card } = cursorTree(t);
   const home = tmp(t);
   const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
   assert.deepEqual(await A.prepareAgent('cursor', 'report', card, { home, mcp: MCP() }), {});
@@ -362,8 +378,8 @@ test('cursor with connectors: mcp.json 0600 in its own home, and only Mcp(*:*) d
   } });
   const withRules = JSON.parse(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8')).permissions.deny;
   const without = await A.cursorRules(card);
-  assert.deepEqual(withRules, without.filter((r) => r !== 'Mcp(*:*)'));
-  assert.deepEqual(await A.cursorRules(card, { mcp: true }), withRules);
+  assert.deepEqual(steadyRules(withRules, root), steadyRules(without.filter((r) => r !== 'Mcp(*:*)'), root));
+  assert.deepEqual(steadyRules(await A.cursorRules(card, { mcp: true }), root), steadyRules(withRules, root));
 });
 
 test("finishAgent removes cursor's mcp.json and does nothing for other agents", async (t) => {
@@ -436,13 +452,15 @@ test('connectors with no signed-in servers (ids: []) start both agents exactly a
   const none = { configFile: '/tmp/x/mcp.json', ids: [], entries: {} };
   assert.equal(A.agentCommand('claude', 'report', 'P', { mcp: none }).cmd, A.agentCommand('claude', 'report', 'P').cmd);
   assert.equal(A.agentCommand('cursor', 'report', 'P', { home: '/h', mcp: none }).cmd, A.agentCommand('cursor', 'report', 'P', { home: '/h' }).cmd);
-  const { card } = cursorTree(t);
+  const { root, card } = cursorTree(t);
   const home = tmp(t);
   const cur = path.join(home, '.cache', 'vaultos', 'automation-cursor', '.cursor');
   await A.prepareAgent('cursor', 'report', card, { home });
   const plain = fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8');
   await A.prepareAgent('cursor', 'report', card, { home, mcp: none });
-  assert.equal(fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8'), plain);
+  const again = fs.readFileSync(path.join(cur, 'cli-config.json'), 'utf8');
+  assert.equal(again, `${JSON.stringify(JSON.parse(again), null, 2)}\n`);
+  assert.equal(steadyConfig(again, root), steadyConfig(plain, root));
   assert.ok(plain.includes('Mcp(*:*)'));
   assert.ok(!fs.existsSync(path.join(cur, 'mcp.json')));
 });
