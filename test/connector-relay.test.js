@@ -27,9 +27,9 @@ function stubTarget(fake, over = {}) {
 }
 
 // A relay on a real loopback server. `peer` overrides the socket's remote address.
-async function startRelay(t, { target, key = KEY, peer, fetch: fetchFn } = {}) {
+async function startRelay(t, { target, key = KEY, peer, fetch: fetchFn, runKey, asked, targetId = 'atlassian' } = {}) {
   const log = [];
-  const handler = R.createRelay({ getKey: () => key, target: (id) => (id === 'atlassian' ? target : null), log: (m) => log.push(m), ...(fetchFn ? { fetch: fetchFn } : {}) });
+  const handler = R.createRelay({ getKey: () => key, ...(runKey ? { runKey } : {}), target: (id, opts) => { if (asked) asked.push(opts); return id === targetId ? target : null; }, log: (m) => log.push(m), ...(fetchFn ? { fetch: fetchFn } : {}) });
   const sockets = new Set();
   const server = http.createServer((req, res) => {
     if (peer) Object.defineProperty(req.socket, 'remoteAddress', { value: peer, configurable: true });
@@ -525,4 +525,73 @@ test('under the filter, what goes upstream is the JSON the relay read, as plain 
     { 'content-type': 'application/json; charset=iso-8859-1' });
   assert.deepEqual(vt.state.calls, ['query-costs']);
   assert.equal(vt.state.seen.at(-1).headers['content-type'], 'application/json');
+});
+
+// ----- one-off keys for automation runs -----
+const grantFor = (ids, counts = []) => ({ ids: new Set(ids), count: (...a) => counts.push(a) });
+const runKeyOf = (grant) => (given) => (given === 'run-1' ? grant : null);
+const callMsg = (id, name) => ({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: {} } });
+
+test('a one-off key reaches only its ticked connectors', async (t) => {
+  const fake = await setupFake(t);
+  const ok = await startRelay(t, { target: stubTarget(fake), runKey: runKeyOf(grantFor(['atlassian'])) });
+  assert.equal((await ok.call('POST', msg('tools/list', 1), { 'x-vaultos-key': 'run-1' })).status, 200);
+  const no = await startRelay(t, { target: stubTarget(fake), runKey: runKeyOf(grantFor(['github'])) });
+  const r = await no.call('POST', msg('tools/list', 1), { 'x-vaultos-key': 'run-1' });
+  assert.equal(r.status, 403);
+  assert.equal(await r.text(), 'Forbidden');
+  const none = await startRelay(t, { target: stubTarget(fake), runKey: () => null });
+  assert.equal((await none.call('POST', msg('tools/list', 1), { 'x-vaultos-key': 'run-1' })).status, 403);
+});
+
+test('a one-off key asks for the automation target', async (t) => {
+  const fake = await setupFake(t);
+  const asked = [];
+  const relay = await startRelay(t, { target: stubTarget(fake), asked, runKey: runKeyOf(grantFor(['atlassian'])) });
+  await relay.call('POST', msg('tools/list', 1), { 'x-vaultos-key': 'run-1' });
+  await relay.call('POST', msg('tools/list', 2));
+  assert.deepEqual(asked, [{ automation: true }, undefined]);
+});
+
+test('calls are counted under the grant', async (t) => {
+  const fake = await setupFake(t);
+  const counts = [];
+  const target = stubTarget(fake, { tools: { allow: (n) => n === 'atlassianUserInfo', first: [], refusal: (n) => `no ${n}` } });
+  const relay = await startRelay(t, { target, runKey: runKeyOf(grantFor(['atlassian'], counts)) });
+  const h = { 'x-vaultos-key': 'run-1' };
+  await relay.call('POST', JSON.stringify(callMsg(1, 'atlassianUserInfo')), h);
+  const before = fake.state.seen.length;
+  const r = await relay.call('POST', JSON.stringify(callMsg(2, 'editJiraIssue')), h);
+  assert.equal((await r.json()).result.isError, true);
+  assert.equal(fake.state.seen.length, before);
+  assert.deepEqual(counts, [['atlassian', 'atlassianUserInfo', false], ['atlassian', 'editJiraIssue', true]]);
+});
+
+test('a batch holding a hidden call is refused whole and counted', async (t) => {
+  const fake = await setupFake(t);
+  const counts = [];
+  const target = stubTarget(fake, { tools: Tools.atlassianReadOnly });
+  const relay = await startRelay(t, { target, runKey: runKeyOf(grantFor(['atlassian'], counts)) });
+  const r = await relay.call('POST', JSON.stringify([callMsg(1, 'atlassianUserInfo'), callMsg(2, 'editJiraIssue')]), { 'x-vaultos-key': 'run-1' });
+  assert.equal((await r.json()).length, 2);
+  assert.equal(fake.state.seen.length, 0);
+  assert.deepEqual(counts, [['atlassian', 'atlassianUserInfo', false], ['atlassian', 'editJiraIssue', true]]);
+});
+
+test('a built-in target counts its calls', async (t) => {
+  const counts = [];
+  const target = { label: 'LogicMonitor', authorization: async () => '', serve: async (rpc) => ({ jsonrpc: '2.0', id: rpc.id, result: {} }) };
+  const relay = await startRelay(t, { target, targetId: 'logicmonitor', runKey: runKeyOf(grantFor(['logicmonitor'], counts)) });
+  const r = await relay.call('POST', JSON.stringify(callMsg(1, 'lm_get')), { 'x-vaultos-key': 'run-1' }, '/mcp/logicmonitor');
+  assert.equal(r.status, 200);
+  assert.deepEqual(counts, [['logicmonitor', 'lm_get', false]]);
+});
+
+test('the normal key still works and counts nothing', async (t) => {
+  const fake = await setupFake(t);
+  const counts = [];
+  const relay = await startRelay(t, { target: stubTarget(fake), runKey: runKeyOf(grantFor(['atlassian'], counts)) });
+  const r = await relay.call('POST', JSON.stringify(callMsg(1, 'anything')));
+  assert.equal(r.status, 200);
+  assert.deepEqual(counts, []);
 });
