@@ -210,3 +210,54 @@ test('an unlisted tool keeps the read-only text even with a secret command', () 
   assert.equal(JSON.parse(r.reply).result.content[0].text, 'VaultOS has azure read-only for automations, so keyvault is off.');
   assert.deepEqual(logs, [{ id: 'azure', tool: 'keyvault:keyvault_secret_get', refused: true }]);
 });
+
+test('what is forwarded is the message that was checked, not the raw line', () => {
+  const { f, logs } = makeListed();
+  // Duplicate keys: JSON.parse keeps the last one, a server may keep the first.
+  const dupParams = '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"keyvault","arguments":{"command":"keyvault_secret_get"}},"params":{"name":"storage","arguments":{"command":"storage_blob_get"}}}';
+  let r = f.fromAgent(dupParams);
+  assert.equal(r.forward, JSON.stringify(JSON.parse(dupParams)));
+  assert.doesNotMatch(r.forward, /secret/);
+  const dupCommand = '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"keyvault","arguments":{"command":"keyvault_secret_get","command":"keyvault_key_get"}}}';
+  r = f.fromAgent(dupCommand);
+  assert.equal(r.forward, '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"keyvault","arguments":{"command":"keyvault_key_get"}}}');
+  // Other messages too, and spacing doesn't matter.
+  const spaced = '{ "jsonrpc": "2.0", "id": 4, "method": "initialize", "params": {}, "method": "initialize" }';
+  assert.deepEqual(f.fromAgent(spaced), { forward: '{"jsonrpc":"2.0","id":4,"method":"initialize","params":{}}' });
+  assert.deepEqual(logs.map((l) => [l.tool, l.refused]), [['storage:storage_blob_get', false], ['keyvault:keyvault_key_get', false]]);
+});
+
+test('a second command key in another case is refused with the read-only text, and logged refused', () => {
+  for (const id of ['azure', 'azuredevops']) {
+    const logs = [];
+    const f = createFilter({ id, log: (e) => logs.push(e) });
+    f.fromAgent(listReq);
+    f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'storage' }] } }));
+    for (const [n, args] of [[2, { command: 'storage_account_get', Command: 'keyvault_secret_get' }], [3, { COMMAND: 'storage_blob_get' }], [4, { cOmmand: 'x', intent: 'y' }]]) {
+      const r = f.fromAgent(callArgs(n, 'storage', args));
+      assert.equal(r.forward, undefined, JSON.stringify(args));
+      assert.deepEqual(JSON.parse(r.reply), { jsonrpc: '2.0', id: n, result: { isError: true, content: [{ type: 'text', text: `VaultOS has ${id} read-only for automations, so storage is off.` }] } });
+    }
+    assert.deepEqual(logs.map((l) => [l.tool, l.refused]), [['storage:storage_account_get', true], ['storage', true], ['storage', true]]);
+    // Only the exact key counts as the sub-command; others named differently pass.
+    const ok = callArgs(5, 'storage', { command: 'storage_blob_get', commandLine: 'x', subcommand: 'y' });
+    assert.deepEqual(f.fromAgent(ok), { forward: ok });
+  }
+});
+
+test('insights get is refused wherever it appears, with any separator', () => {
+  const logs = [];
+  const f = createFilter({ id: 'azure', log: (e) => logs.push(e) });
+  f.fromAgent(listReq);
+  f.fromServer(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'monitor' }, { name: 'insights' }, { name: 'monitor_insights_get' }] } }));
+  for (const [n, c] of [['monitor', 'monitor_insights_get'], ['insights', 'Insights-Get'], ['insights', 'insightsget'], ['insights', 'insights_get_report']]) {
+    const r = f.fromAgent(callArgs(2, n, { command: c }));
+    assert.equal(r.forward, undefined, c);
+    assert.deepEqual(JSON.parse(r.reply), secretRefusal(2, c));
+  }
+  const byName = f.fromAgent(callArgs(3, 'monitor_insights_get', {}));
+  assert.deepEqual(JSON.parse(byName.reply), secretRefusal(3, 'monitor_insights_get'));
+  const fine = callArgs(4, 'insights', { command: 'insights_list' });
+  assert.deepEqual(f.fromAgent(fine), { forward: fine });
+  assert.ok(logs.slice(0, 5).every((l) => l.refused));
+});
