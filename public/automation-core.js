@@ -232,12 +232,16 @@
       const who = a.agent === 'default' ? ctx.defaultAgent : a.agent;
       errors.connectors = `${(who && (labels[who] || who)) || 'Your default agent'} can't use connectors in automations yet`;
     }
+    // Calendar reminders the agent may propose (a vaultos-remind block). Absent, null or false is off and not
+    // stored. Saving doesn't need Calendar on: a run with Calendar off skips the reminder and says why.
+    const reminders = a.reminders === undefined || a.reminders === null ? false : a.reminders;
+    if (typeof reminders !== 'boolean') errors.reminders = 'Must be on or off';
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
       ok: true,
       value: {
         name, enabled, agent: a.agent, ...(model ? { model } : {}), template: a.template, prompt, level: a.level,
-        ...(connectors.length ? { connectors: [...connectors] } : {}),
+        ...(connectors.length ? { connectors: [...connectors] } : {}), ...(reminders ? { reminders: true } : {}),
         cards: { board: c.board, statuses, subtasks }, schedule, section, timeLimitMin: a.timeLimitMin,
       },
     };

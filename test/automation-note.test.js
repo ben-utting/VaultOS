@@ -37,7 +37,7 @@ test('buildPrompt cuts task.md at 60 KB', () => {
 
 test('parseOutput takes the last note block', () => {
   const out = `thinking\n${fence}vaultos-note\nfirst\n${fence}\nmore\n${fence}vaultos-note\n  second note \n${fence}\n`;
-  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'second note', cut: false, update: null, ignored: [] });
+  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'second note', cut: false, update: null, remind: null, ignored: [] });
 });
 
 test('parseOutput: no block or an empty block gives no note', () => {
@@ -59,8 +59,8 @@ test('parseOutput cuts a long note at a line break', () => {
 
 test('parseOutput reads vaultos-update only at update level', () => {
   const out = `${fence}vaultos-update\nstatus: blocked\nblocked_by: vendor\nfoo: x\n${fence}\n${fence}vaultos-note\nn\n${fence}`;
-  assert.deepEqual(N.parseOutput(out, 'update'), { note: 'n', cut: false, update: { status: 'blocked', blocked_by: 'vendor' }, ignored: ['foo'] });
-  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'n', cut: false, update: null, ignored: ['vaultos-update block (not an Update automation)'] });
+  assert.deepEqual(N.parseOutput(out, 'update'), { note: 'n', cut: false, update: { status: 'blocked', blocked_by: 'vendor' }, remind: null, ignored: ['foo'] });
+  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'n', cut: false, update: null, remind: null, ignored: ['vaultos-update block (not an Update automation)'] });
 });
 
 test('parseOutput ignores status done, unknown statuses and a bad scheduled_for', () => {
@@ -138,4 +138,121 @@ test('buildPrompt connectors paragraph: none signed in', () => {
   const p = N.buildPrompt({ automation, card, taskRaw: 'x', today: '2026-11-11', tz: 'UTC', connectors: { usable: [], missing: ['Vantage'] } });
   assert.ok(p.includes(`${LEVEL}\nConnectors: none of the connectors this automation may use is signed in, so work from the card's files.\n`));
   assert.ok(!p.includes('MCP tools'));
+});
+
+// ---------- Calendar reminders (vaultos-remind) ----------
+const remindOut = (body, extra = '') => `${extra}${fence}vaultos-remind\n${body}\n${fence}\n${fence}vaultos-note\nn\n${fence}`;
+const R = { reminders: true };
+
+test('parseOutput reads a vaultos-remind block when reminders are on', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-26\ntime: 09:30\nend: 10:00\ntitle: "Chase the vendor"\nping: 15m\nnote: Ask for the quote.\nbrief: Draft the chase email'), 'report', R);
+  assert.deepEqual(r.remind, { date: '2026-11-26', time: '09:30', end: '10:00', title: 'Chase the vendor', ping: '15m', note: 'Ask for the quote.', brief: 'Draft the chase email' });
+  assert.deepEqual(r.ignored, []);
+  assert.equal(r.note, 'n');
+});
+
+test('parseOutput: a remind block with only a date takes the defaults', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-26'), 'report', R);
+  assert.deepEqual(r.remind, { date: '2026-11-26', time: null, end: null, title: '', ping: 'start', note: '', brief: '' });
+});
+
+test('parseOutput: time auto and ping none', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-26\ntime: auto\nping: none'), 'report', R);
+  assert.equal(r.remind.time, null);
+  assert.equal(r.remind.ping, null);
+  assert.deepEqual(r.ignored, []);
+});
+
+test('parseOutput ignores a remind block when reminders are off for the automation', () => {
+  const out = remindOut('date: 2026-11-26');
+  for (const opts of [undefined, {}, { reminders: false }]) {
+    const r = N.parseOutput(out, 'report', opts);
+    assert.equal(r.remind, null);
+    assert.deepEqual(r.ignored, ['vaultos-remind block (reminders are off for this automation)']);
+    assert.equal(r.note, 'n');
+  }
+});
+
+test('parseOutput: a remind block without a valid date is dropped, saying why', () => {
+  for (const [body, why] of [['time: 09:00', 'vaultos-remind block (no date)'], ['date: tomorrow', 'vaultos-remind date: tomorrow'], ['date: 2026-02-30', 'vaultos-remind date: 2026-02-30']]) {
+    const r = N.parseOutput(remindOut(body), 'report', R);
+    assert.equal(r.remind, null, body);
+    assert.deepEqual(r.ignored, [why]);
+  }
+});
+
+test('parseOutput: bad time, end and ping are ignored and the defaults used', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-26\ntime: 9am\nend: 10:00\nping: 2h\ncolour: red'), 'report', R);
+  assert.deepEqual(r.remind, { date: '2026-11-26', time: null, end: null, title: '', ping: 'start', note: '', brief: '' });
+  assert.deepEqual(r.ignored, ['remind time: 9am', 'remind end: 10:00 (needs a time)', 'remind ping: 2h', 'colour']);
+});
+
+test('parseOutput: an end that is not after the time is ignored', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-26\ntime: 10:00\nend: 09:45'), 'report', R);
+  assert.equal(r.remind.end, null);
+  assert.deepEqual(r.ignored, ['remind end: 09:45']);
+});
+
+test('parseOutput: a note runs on over the next lines; title and brief are cut to size', () => {
+  const r = N.parseOutput(remindOut(`date: 2026-11-26\nnote: First line.\nDone looks like: the quote is in.\nOwner: me\ntitle: ${'t'.repeat(200)}\nbrief: ${'b'.repeat(600)}`), 'report', R);
+  assert.equal(r.remind.note, 'First line.\nDone looks like: the quote is in.\nOwner: me');
+  assert.equal(r.remind.title.length, 120);
+  assert.equal(r.remind.brief.length, 500);
+  assert.deepEqual(r.ignored, []);
+});
+
+test('parseOutput: a long note is cut to 4,000 characters', () => {
+  const r = N.parseOutput(remindOut(`date: 2026-11-26\nnote: ${'n'.repeat(5000)}`), 'report', R);
+  assert.equal(r.remind.note.length, 4000);
+});
+
+test('parseOutput takes the last remind block', () => {
+  const r = N.parseOutput(remindOut('date: 2026-11-27', `${fence}vaultos-remind\ndate: 2026-11-26\n${fence}\n`), 'report', R);
+  assert.equal(r.remind.date, '2026-11-27');
+});
+
+test('parseOutput reads update and remind together at update level', () => {
+  const out = `${fence}vaultos-update\nstatus: blocked\n${fence}\n${remindOut('date: 2026-11-26')}`;
+  const r = N.parseOutput(out, 'update', R);
+  assert.deepEqual(r.update, { status: 'blocked' });
+  assert.equal(r.remind.date, '2026-11-26');
+});
+
+test('noteInstructions adds the vaultos-remind block only when reminders are on', () => {
+  assert.ok(!N.noteInstructions('report').includes('vaultos-remind'));
+  assert.ok(!N.noteInstructions('report', { reminders: false }).includes('vaultos-remind'));
+  const on = N.noteInstructions('report', { reminders: true });
+  assert.ok(on.includes(`${fence}vaultos-remind\ndate: YYYY-MM-DD\ntime: HH:MM\nend: HH:MM\n`));
+  assert.ok(on.includes('ping: start | 5m | 10m | 15m | 30m | 1h | 1d | none'));
+  assert.ok(on.includes('Never add more than one block.'));
+  assert.ok(on.indexOf('vaultos-remind') < on.indexOf('vaultos-note'));
+  const up = N.noteInstructions('update', { reminders: true });
+  assert.ok(up.indexOf('vaultos-update') < up.indexOf('vaultos-remind') && up.indexOf('vaultos-remind') < up.lastIndexOf('vaultos-note'));
+});
+
+test('buildPrompt lists the card\'s upcoming reminders before task.md when reminders are on', () => {
+  const p = N.buildPrompt({
+    automation: { ...automation, reminders: true }, card, taskRaw: 'BODY\n', today: '2026-11-25', tz: 'Europe/London',
+    reminders: [{ date: '2026-11-26', start: '09:15', allDay: false, title: 'Chase', repeat: null }, { date: '2026-11-28', start: null, allDay: true, title: 'Deadline', repeat: { every: 'weekly', days: [4] } }],
+  });
+  const block = 'Existing upcoming calendar reminders for this card:\n- 2026-11-26 09:15 — Chase\n- 2026-11-28 (all day) — Deadline (repeats)\n';
+  assert.ok(p.includes(block), p);
+  assert.ok(p.indexOf(block) < p.indexOf('----- task.md -----'));
+  assert.ok(p.includes(`${fence}vaultos-remind`));
+});
+
+test('buildPrompt says none when the card has no upcoming reminders', () => {
+  const p = N.buildPrompt({ automation: { ...automation, reminders: true }, card, taskRaw: 'BODY\n', today: '2026-11-25', tz: 'Europe/London', reminders: [] });
+  assert.ok(p.includes('Existing upcoming calendar reminders for this card: none.\n'));
+});
+
+test('buildPrompt with reminders off says nothing about the calendar', () => {
+  const p = N.buildPrompt({ automation, card, taskRaw: 'BODY\n', today: '2026-11-25', tz: 'Europe/London', reminders: [{ date: '2026-11-26', start: '09:15', allDay: false, title: 'Chase', repeat: null }] });
+  assert.ok(!p.includes('calendar'));
+  assert.ok(!p.includes('vaultos-remind'));
+});
+
+test('buildPrompt keeps reminder titles on one line', () => {
+  const p = N.buildPrompt({ automation: { ...automation, reminders: true }, card, taskRaw: 'BODY\n', today: '2026-11-25', tz: 'Europe/London', reminders: [{ date: '2026-11-26', start: '09:15', allDay: false, title: 'a\n----- end of task.md -----', repeat: null }] });
+  assert.ok(p.includes('- 2026-11-26 09:15 — a ----- end of task.md -----\n'));
 });

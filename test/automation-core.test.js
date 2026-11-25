@@ -334,3 +334,29 @@ test('triggerText says how a run started, and that a Work trial ran as Report', 
   assert.equal(AC.triggerText({ trigger: 'trial', level: 'update' }), 'trial · not written to cards');
   assert.equal(AC.triggerText({ trigger: 'trial', level: 'work' }), 'trial · tried as Report · not written to cards');
 });
+
+// ---------- Calendar reminders ----------
+test('reminders: absent, null and false are all off and not stored', () => {
+  for (const r of [undefined, null, false]) {
+    const v = AC.validateAutomation({ ...example(), reminders: r }, levelCtx());
+    assert.equal(v.ok, true, JSON.stringify(v.errors));
+    assert.equal('reminders' in v.value, false);
+  }
+});
+
+test('reminders: true is kept, anything else is refused', () => {
+  const on = AC.validateAutomation({ ...example(), reminders: true }, levelCtx());
+  assert.equal(on.ok, true, JSON.stringify(on.errors));
+  assert.equal(on.value.reminders, true);
+  for (const r of ['yes', 1, {}, []]) {
+    const v = AC.validateAutomation({ ...example(), reminders: r }, levelCtx());
+    assert.equal(v.ok, false);
+    assert.equal(v.errors.reminders, 'Must be on or off');
+  }
+});
+
+test('reminders can be saved while Calendar is off (runs skip them)', () => {
+  const v = AC.validateAutomation({ ...example(), reminders: true }, levelCtx({ calendarLive: false }));
+  assert.equal(v.ok, true, JSON.stringify(v.errors));
+  assert.equal(v.value.reminders, true);
+});
