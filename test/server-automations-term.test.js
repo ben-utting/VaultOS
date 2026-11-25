@@ -68,6 +68,13 @@ test('a terminal can list, create a draft and see it off', { timeout: 30000 }, a
   assert.equal(opts.limits.trialCards, 3);
   assert.ok(opts.agents.some((a) => a.id === 'claude' && a.levels.includes('work')));
   assert.equal(opts.calendar, false);   // Settings → Features → Calendar is off by default
+  assert.deepEqual(opts.runsOn, [{ id: 'cards', label: 'Each matching card' }, { id: 'once', label: 'Once' }]);
+  assert.equal(opts.folders.work[0], '');   // the board's root first, then its folders
+  assert.ok(Array.isArray(opts.folders.home));
+  assert.deepEqual(opts.limits.newCardsPerRun, [1, 10]);
+  assert.equal(opts.limits.newCardsDefault, 5);
+  assert.equal(opts.limits.newCardsPerHour, 30);
+  assert.ok(opts.agents.some((a) => a.id === 'claude' && a.onceLevels.includes('work')));
 });
 
 test('no token, a wrong token, or another terminal\'s id is 403', { timeout: 30000 }, async (t) => {

@@ -128,7 +128,7 @@ test('saving an agent at a level it can\'t run is a 400 on level', async (t) => 
   await s.turnOn();
   const r = await s.api('POST', '/api/automations', automation({ agent: 'cursor', level: 'work' }));
   assert.equal(r.status, 400, r.text);
-  assert.match(r.body.errors.level, /^Cursor CLI can't run at Work$/);
+  assert.match(r.body.errors.level, /^Cursor CLI can't run at Work on each card; pick Once or another level$/);
   assert.equal((await s.api('POST', '/api/automations', automation({ agent: 'cursor', level: 'update' }))).status, 200);
 });
 
@@ -299,4 +299,70 @@ test('with Calendar off the reminder is skipped and the run still notes the card
   assert.deepEqual([card.state, card.reminder, card.reminderSkipped], ['noted', null, 'Calendar is switched off']);
   assert.match(fs.readFileSync(f, 'utf8'), /Fake note\./);
   assert.equal(fs.existsSync(path.join(s.vault, '.vaultos', 'calendar.json')), false);
+});
+
+// ---------- New cards (spec 2026-11-25) ----------
+const onceDef = (more = {}) => automation({ runsOn: 'once', level: 'work', newCards: { board: 'work', folder: 'tickets' }, prompt: 'FAKE:card:SUC-1:Reset_MFA', ...more });
+
+test('new cards: a Once automation saves into an existing folder; missing, skipped and card folders are refused', async (t) => {
+  const s = await ready(t);
+  seedVault(s.vault, { 'Work/tickets/.keep': '', 'Work/archive/x/.keep': '', 'Work/job/task.md': '---\nid: job\n---\n' });   // after setup, which makes the board folders
+  await s.turnOn();
+  const ok = await s.api('POST', '/api/automations', onceDef());
+  assert.equal(ok.status, 200, ok.text);
+  assert.equal(ok.body.automation.runsOn, 'once');
+  assert.equal('cards' in ok.body.automation, false);
+  const refused = async (folder) => {
+    const r = await s.api('POST', '/api/automations', onceDef({ newCards: { board: 'work', folder } }));
+    assert.equal(r.status, 400, folder);
+    return r.body.errors.newCards;
+  };
+  assert.equal(await refused('nope'), "That folder doesn't exist");
+  assert.equal(await refused('archive/x'), "Cards in that folder wouldn't show on the board");
+  assert.equal(await refused('job'), "That's a card's folder; pick the folder it sits in");
+  assert.equal(await refused('../Home'), 'Pick a folder inside the board');
+  const pc = await s.api('POST', '/api/automations', automation({ level: 'work', newCards: { board: 'work', folder: 'tickets', max: 2 } }));
+  assert.equal(pc.status, 200, pc.text);
+  assert.deepEqual(pc.body.automation.newCards, { board: 'work', folder: 'tickets', max: 2 });
+});
+
+test('new cards: the folders route lists usable folders per board', async (t) => {
+  const s = await ready(t);
+  seedVault(s.vault, { 'Work/tickets/.keep': '', 'Work/archive/x/.keep': '', 'Work/2. iam/queue/.keep': '' });   // after setup, which makes the board folders
+  const r = await s.api('GET', '/api/automations/folders?board=work');
+  assert.equal(r.status, 200);
+  assert.ok(r.body.folders.includes('') && r.body.folders.includes('tickets') && r.body.folders.includes('2. iam/queue'));
+  assert.ok(!r.body.folders.some((f) => f.startsWith('archive')));
+  const bad = await s.api('GET', '/api/automations/folders?board=nope');
+  assert.equal(bad.status, 400);
+  assert.equal(bad.body.error, 'Pick a board');
+  const agents = (await s.api('GET', '/api/automations')).body.agents;
+  assert.ok(agents.every((a) => Array.isArray(a.onceLevels)));
+});
+
+test('new cards: a Once run creates the card and the board shows it', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  seedVault(s.vault, { 'Work/tickets/.keep': '' });   // after setup, which makes the board folders
+  await s.turnOn();
+  const a = (await s.api('POST', '/api/automations', onceDef())).body.automation;
+  assert.equal((await s.api('POST', `/api/automations/${a.id}/run`)).status, 200);
+  await waitIdle(s);
+  const [run] = (await s.api('GET', '/api/automations/runs')).body.runs;
+  assert.equal(run.state, 'finished');
+  assert.equal(run.runsOn, 'once');
+  assert.equal(run.createdCount, 1);
+  assert.ok(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'SUC-1', 'task.md')));
+  const tasks = (await s.api('GET', '/api/tasks?ws=work')).body.tasks;
+  const made = tasks.find((x) => x.path === 'Work/tickets/SUC-1/task.md');
+  assert.ok(made, JSON.stringify(tasks.map((x) => x.path)));
+  assert.equal(made.status, 'backlog');
+  // The destination disappears: the next run fails and says why; switching off still works.
+  fs.rmSync(path.join(s.vault, 'Work', 'tickets'), { recursive: true });
+  await s.api('POST', `/api/automations/${a.id}/run`);
+  await waitIdle(s);
+  const [again] = (await s.api('GET', '/api/automations/runs')).body.runs;
+  assert.equal(again.state, 'failed');
+  assert.equal(again.cards[0].reason, "New cards folder: That folder doesn't exist");
+  const off = await s.api('PUT', `/api/automations/${a.id}`, { ...onceDef(), enabled: false });
+  assert.equal(off.status, 200, off.text);
 });

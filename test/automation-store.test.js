@@ -264,3 +264,20 @@ test('a record saved before models existed loads, updates and switches off with 
   assert.equal('model' in off.value, false);
   assert.equal('model' in JSON.parse(fs.readFileSync(file('automations.json'), 'utf8')).automations[0], false);
 });
+
+test('switching off a Once automation still works after its folder is gone (Review Focus 1)', async (t) => {
+  const { store } = setup(t);
+  let gone = false;
+  const c = { ...ctx, agentLevels: { default: ['report', 'update', 'work'], claude: ['report', 'update', 'work'] },
+    agentOnceLevels: { default: ['work'], claude: ['work'] }, newCardsFolderError: () => (gone ? "That folder doesn't exist" : null) };
+  const once = input({ runsOn: 'once', level: 'work', newCards: { board: 'work', folder: 'tickets' } });
+  const { value } = await store.create(once, c);
+  gone = true;
+  const off = await store.update(value.id, { ...once, enabled: false }, c);
+  assert.equal(off.ok, true, JSON.stringify(off.errors));
+  assert.equal(off.value.enabled, false);
+  assert.deepEqual(off.value.newCards, { board: 'work', folder: 'tickets', max: 5 });
+  const on = await store.update(value.id, { ...once, enabled: true }, c);
+  assert.equal(on.ok, false);
+  assert.equal(on.errors.newCards, "That folder doesn't exist");
+});

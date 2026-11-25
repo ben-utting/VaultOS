@@ -1603,6 +1603,7 @@ const AUTOMATIONS = createAutomationService({
   connectorChoices: () => connectors.automationChoices(),
   connectorAccess: (o) => connectors.automationAccess(o),
   calendar: CALENDAR,   // reminders a run proposes (vaultos-remind) go on the calendar through its rules
+  skipDirs: SKIP_DIRS,  // new cards a run proposes never go where the board doesn't look
   renderMarkdown: (md) => marked.parse(stripAgentNotes(md), { breaks: true }),   // a note's lines stay lines
 });
 app.use('/api', AUTOMATIONS.router);
