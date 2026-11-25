@@ -199,3 +199,26 @@ test('links, brief and agent are kept through create and update', async (t) => {
   const r = await s.update(entry.id, { agent: null }, ME);
   assert.deepEqual([r.entry.links, r.entry.brief, r.entry.agent], [['https://x.test'], 'Look at X', null]);
 });
+
+test('prepare runs inside the queue and can change the input or refuse', async (t) => {
+  const { s, disk } = setup(t);
+  await s.create(valid, ME);
+  const seen = [];
+  const r = await s.create({ title: 'ignored' }, AGENT, { prepare: (entries) => { seen.push(entries.length); return { input: { ...valid, start: '16:00', title: 'Prepared' } }; } });
+  assert.equal(r.ok, true);
+  assert.deepEqual(seen, [1]);
+  assert.equal(r.entry.title, 'Prepared');
+  assert.equal(r.entry.start, '16:00');
+  const no = await s.create(valid, AGENT, { prepare: () => ({ refused: 'Already there' }) });
+  assert.deepEqual(no, { ok: false, refused: 'Already there' });
+  assert.equal(disk().entries.length, 2);
+});
+
+test('prepare sees deleted entries too', async (t) => {
+  const { s } = setup(t);
+  const a = await s.create(valid, ME);
+  await s.remove(a.entry.id, ME);
+  let deleted = null;
+  await s.create(valid, AGENT, { prepare: (entries, d) => { deleted = d.deleted.map((e) => e.id); return { input: valid }; } });
+  assert.deepEqual(deleted, [a.entry.id]);
+});
