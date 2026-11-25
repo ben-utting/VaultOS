@@ -109,6 +109,7 @@
         <span class="au-row-top"><span class="au-mark">${markFor(a.agent)}</span><span class="au-name">${esc(a.name)}</span></span>
         <span class="au-meta">${esc(a.scheduleText)} · ${esc(AC.cardsText(a.cards, boardLabel(a.cards.board)))} · ${esc(AC.LEVEL_LABEL[a.level])}</span>
         ${a.connectors && a.connectors.length ? `<span class="au-reads">Reads: ${esc(a.connectors.map(connLabel).join(', '))}</span>` : ''}
+        ${a.reminders ? `<span class="au-reads">Can add calendar reminders${AU.data.calendar ? '' : ' (Calendar is off)'}</span>` : ''}
         <span class="au-next">${a.nextRun ? `Next: ${esc(when(a.nextRun))}` : 'Off'}</span>
         ${AC.agentTagText(a, tz()) ? `<span class="au-tag">${esc(AC.agentTagText(a, tz()))}</span>` : ''}
         ${lastLine}
@@ -145,8 +146,11 @@
   $('au-new').addEventListener('click', () => openBuilder(null));
   // Only the fields an automation is saved with (the list adds scheduleText, nextRun and the like).
   function definition(a) {
-    const { name, enabled, agent, model, connectors, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
-    return { name, enabled, agent, ...(model ? { model } : {}), ...(connectors && connectors.length ? { connectors } : {}), template, prompt, level, cards, schedule, section, timeLimitMin };
+    const { name, enabled, agent, model, connectors, reminders, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
+    return {
+      name, enabled, agent, ...(model ? { model } : {}), ...(connectors && connectors.length ? { connectors } : {}), ...(reminders ? { reminders: true } : {}),
+      template, prompt, level, cards, schedule, section, timeLimitMin,
+    };
   }
 
   // ---------- Runs ----------
@@ -246,6 +250,8 @@
     if (c.statusChange) warn.push(['warn', `${run.trigger === 'trial' ? 'Would move' : 'Status changed'}: ${AC.STATUS_LABEL[c.statusChange.from] || c.statusChange.from} → ${AC.STATUS_LABEL[c.statusChange.to] || c.statusChange.to}`]);
     if (c.proposalIgnored) warn.push(['plain', 'Status proposal ignored: you changed it during the run']);
     if (c.doneReverted) warn.push(['warn', `Done was put back to ${AC.STATUS_LABEL[c.statusBefore] || c.statusBefore || 'its status'}`]);
+    const remind = AC.reminderText(c, run.trigger === 'trial');
+    if (remind) warn.push([c.reminder ? 'plain' : 'warn', remind]);
     if (c.ignored && c.ignored.length) warn.push(['plain', `Ignored: ${c.ignored.join(', ')}`]);
     if (c.lookups && Object.keys(c.lookups).length) {
       warn.push(['plain', `Looked up: ${Object.entries(c.lookups).map(([id, tools]) => `${connLabel(id)} (${Object.entries(tools).map(([t, n]) => `${t} ×${n}`).join(', ')})`).join(', ')}`]);
@@ -287,6 +293,7 @@
   const FIELD_OF = {
     name: 'ab-name', agent: 'ab-agent', model: 'ab-model', connectors: 'ab-conn', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
     statuses: 'ab-statuses', subtasks: 'ab-subtasks', schedule: 'ab-schedule', section: 'ab-section', timeLimitMin: 'ab-limit', enabled: 'ab',
+    reminders: 'ab-remind',
   };
   const INPUT_FIELDS = new Set(['ab-name', 'ab-model', 'ab-prompt', 'ab-section', 'ab-limit', 'ab-board', 'ab-template']);
   const defaults = () => ({
@@ -373,6 +380,17 @@
     $('ab-conn-hint').classList.toggle('hidden', !why);
     $('ab-conn-list').classList.toggle('hidden', !sw.checked || !items.length);
   }
+  // ---- Calendar reminders ----
+  // Off and disabled while Settings → Features → Calendar is off; a saved automation keeps its setting (runs skip
+  // reminders until Calendar is on), so Save never drops it.
+  function paintReminders() {
+    const off = !(AU.data && AU.data.calendar);
+    const sw = $('ab-remind');
+    sw.disabled = off && !sw.checked;   // one that's on can still be switched off
+    const why = off ? (sw.checked ? "Calendar is off in Settings → Features, so runs skip reminders until it's on." : 'Switch Calendar on in Settings → Features first.') : '';
+    $('ab-remind-hint').textContent = why;
+    $('ab-remind-hint').classList.toggle('hidden', !why);
+  }
   function paintModels() {
     const m = B.models;
     $('ab-model-list').innerHTML = (m && m.models ? m.models : []).map((x) => `<option value="${esc(x.id)}">${esc(x.label)}</option>`).join('');
@@ -394,14 +412,17 @@
   function renderAdds() {
     const level = radio('ab-level') || 'report';
     const name = $('ab-name').value.trim() || '<name>';
+    const remind = $('ab-remind').checked;
     $('ab-adds').textContent = [
       `You are running unattended for the VaultOS automation "${name}". Nobody is watching: don't ask questions, don't wait for input.`,
       'Today is <date> (<time zone>). Card: "<title>", status <status>, last updated <date>.',
       'Its folder is your working directory.',
       AC.LEVEL_PARAGRAPHS[level],
+      ...(remind ? ["(the card's upcoming calendar reminders, or none)"] : []),
       "Here is the card's task.md:",
       '----- task.md -----', '(the card\'s task.md)', '----- end of task.md -----',
       '', '(your prompt)', '',
+      ...(remind ? ['(how to propose one calendar reminder for the card in a vaultos-remind block)'] : []),
       level === 'update' ? '(how to end with a vaultos-update block, if the card should move, and a vaultos-note block)' : '(how to end with a vaultos-note block: at most 1,500 characters)',
     ].join('\n');
   }
@@ -429,6 +450,7 @@
       name: $('ab-name').value, enabled: B.editing ? B.editing.enabled : (B.enabled !== undefined ? B.enabled : true),
       agent: radio('ab-agent'), model: $('ab-model').value.trim() || undefined,
       connectors: $('ab-conn').checked ? [...$('ab-conn-list').querySelectorAll('input:checked')].map((el) => el.dataset.id) : [],
+      reminders: $('ab-remind').checked,
       template: $('ab-template').value, prompt: $('ab-prompt').value, level: radio('ab-level'),
       cards: { board: $('ab-board').value, statuses: checkedChips('ab-statuses'), subtasks: $('ab-subtasks').checked },
       schedule: scheduleFromForm(), section: $('ab-section').value, timeLimitMin: Number($('ab-limit').value),
@@ -497,6 +519,9 @@
     syncModel();
     $('ab-conn').checked = !!(v.connectors && v.connectors.length);
     paintConnectors(v.connectors || []);
+    $('ab-remind').checked = !!v.reminders;
+    $('ab-remind-err').textContent = '';
+    paintReminders();
     $('ab-template').innerHTML = Object.entries(AC.TEMPLATES).map(([k, t]) => `<option value="${k}">${esc(t.label)}</option>`).join('');
     $('ab-template').value = v.template;
     $('ab-prompt').value = v.prompt;
@@ -578,6 +603,7 @@
   });
   $('ab-conn').addEventListener('change', () => { $('ab-conn-err').textContent = ''; paintConnectors(); });
   $('ab-conn-list').addEventListener('change', () => { $('ab-conn-err').textContent = ''; });
+  $('ab-remind').addEventListener('change', () => { $('ab-remind-err').textContent = ''; paintReminders(); renderAdds(); });
   $('ab-level').addEventListener('click', (e) => {
     const t = e.target.closest('.ab-level');
     if (!t) return;

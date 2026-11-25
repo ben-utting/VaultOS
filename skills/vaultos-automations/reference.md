@@ -52,6 +52,7 @@ Exit codes: `0` done, `1` VaultOS refused (the reason and any field errors follo
 | `section` | The heading the note goes under in each card: 1 to 40 letters, digits, spaces or hyphens, not one of the card's own sections |
 | `timeLimitMin` | 2 to 30 minutes per card |
 | `connectors` | Optional list of connector ids from `options` (the `Connectors (read-only)` line) the automation may look things up in during a run. Lookups are read-only. Leave it out, `null` or `[]` for none. Only some agents can use them, and a changed list switches the automation off |
+| `reminders` | Optional, `true` or left out. With `true`, the run's agent may propose one calendar reminder per card (see "Calendar reminders" below). Saving works while Calendar is off, but runs then skip the reminder: the `Calendar reminders` line of `options` says which. Changing it switches the automation off |
 
 Board keys and agent ids differ per install: take them from `options`.
 
@@ -71,9 +72,21 @@ Board keys and agent ids differ per install: take them from `options`.
 `changes.json` holds only the fields you want to change. `cards` and `schedule` merge into what's there, so `{"schedule": {"time": "09:00"}}` keeps the repeat and `{"cards": {"statuses": ["blocked"]}}` keeps the board.
 
 - Changing `name`, `schedule`, `timeLimitMin`, `section` or `template` keeps the automation on or off as it was.
-- Changing `agent`, `model`, `level`, `prompt`, `cards` or `connectors` switches it off. The Automations tab then says what you changed, and the person switches it back on.
+- Changing `agent`, `model`, `level`, `prompt`, `cards`, `connectors` or `reminders` switches it off. The Automations tab then says what you changed, and the person switches it back on.
 - `"model": null` removes the model, so Cursor uses its default. That counts as a model change.
 - `"enabled": true` is ignored. `"enabled": false` switches it off.
+
+## Calendar reminders
+
+With `"reminders": true`, each card's prompt lists the card's upcoming calendar reminders and explains a `vaultos-remind` block the agent may end with (before its note): `date` (required, YYYY-MM-DD), optional `time` and `end` (HH:MM), `title` (defaults to the card's title), `ping` (`start`, `5m` … `1d`, or `none`), `note` and `brief`. VaultOS checks it and puts the reminder on the calendar, linked to the card and tagged "Automation: <name>". You don't run any command for it: the agent in a run has no shell.
+
+- A time left out takes the first free 15-minute slot from 09:00 (the last starts at 15:45), so several cards on one date stagger 09:00, 09:15, 09:30. A full day is skipped.
+- A card that already has a reminder on that date gets no second one, so a re-run adds no duplicates. One the person deleted for that date isn't added again.
+- Past dates, and times already gone today, are skipped. So is everything while Calendar is off.
+- Automations add at most 30 reminders an hour between them.
+- The run shows "Reminder added: Thu 26 Nov 09:15 · …" or "Reminder skipped: why" on each card. A trial adds nothing and shows "Would remind: …" with the slot it would pick.
+
+Write the prompt so the agent knows when a reminder is worth it, for example "if the card needs me tomorrow, add a reminder for tomorrow morning".
 
 ## Trials
 
