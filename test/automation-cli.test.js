@@ -235,16 +235,16 @@ test('the help names reminders among the edits that switch an automation off', a
 // ---------- New cards (spec 2026-11-25 §11) ----------
 test('a Once run prints what it created, would create and did not', async () => {
   const card = { kind: 'once', title: 'Work / tickets', state: 'noted', note: 'Found 3.',
-    created: [{ title: 'Reset MFA', key: 'SUC-1', path: 'x' }, { title: 'Other', path: 'y' }],
-    notCreated: [{ title: 'Dup', key: 'SUC-2', reason: 'SUC-2 already has a card' }] };
+    created: [{ title: 'Reset MFA', key: 'TCK-1', path: 'x' }, { title: 'Other', path: 'y' }],
+    notCreated: [{ title: 'Dup', key: 'TCK-2', reason: 'TCK-2 already has a card' }] };
   const body = (trigger) => ({ id: 'r1', automationName: 'Queue', trigger, state: 'finished', runsOn: 'once', level: 'work', createdCount: 2, cards: [card] });
   const live = await run(['run', 'r1'], { answers: [['run', 200, body('manual')]] });
-  assert.match(live.out, /^ {2}Created: Reset MFA \(SUC-1\)$/m);
+  assert.match(live.out, /^ {2}Created: Reset MFA \(TCK-1\)$/m);
   assert.match(live.out, /^ {2}Created: Other$/m);
-  assert.match(live.out, /^ {2}Not created: SUC-2 — SUC-2 already has a card$/m);
+  assert.match(live.out, /^ {2}Not created: TCK-2 — TCK-2 already has a card$/m);
   const trial = await run(['run', 'r1'], { answers: [['run', 200, body('trial')]] });
   assert.match(trial.out, /^Queue · trial · nothing created · finished$/m);
-  assert.match(trial.out, /^ {2}Would create: Reset MFA \(SUC-1\)$/m);
+  assert.match(trial.out, /^ {2}Would create: Reset MFA \(TCK-1\)$/m);
 });
 
 test('list shows Once automations and where their new cards go', async () => {

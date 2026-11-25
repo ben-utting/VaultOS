@@ -246,7 +246,9 @@
     }
     const schedule = validSchedule(a.schedule);
     if (!schedule) errors.schedule = 'Pick when it runs (times as HH:MM)';
-    const nc = validNewCards(a.newCards, ctx);
+    // New cards are a Work permission: at Report or Update the field is dropped unchecked, so a destination left
+    // behind (an agent's level change, a folder deleted since) can't block a save.
+    const nc = a.level === 'work' ? validNewCards(a.newCards, ctx) : { value: null };
     if (nc.error) errors.newCards = nc.error;
     else if (once && !nc.value) errors.newCards = 'Pick where new cards go';
     if (!Number.isInteger(a.timeLimitMin) || a.timeLimitMin < 2 || a.timeLimitMin > 30) errors.timeLimitMin = 'Between 2 and 30 minutes';

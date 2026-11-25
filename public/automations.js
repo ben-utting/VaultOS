@@ -597,6 +597,7 @@
     }
     B.editing = a && !copy ? a : null;
     B.enabled = v.enabled;
+    B.folders = {};   // the folder lists load fresh each time: a folder made since (or a failed load) shows up
     B.template = v.template;
     $('ab-title').textContent = B.editing ? 'Edit automation' : 'New automation';
     const tag = B.editing ? AC.agentTagText(B.editing, tz()) : '';

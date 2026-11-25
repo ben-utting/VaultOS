@@ -78,3 +78,14 @@ test('setFrontmatterField quotes a value that starts with [ or a quote, so it re
   }
   assert.equal(setFrontmatterField('---\nstatus: x\n---\n', 'status', 'in-progress'), '---\nstatus: in-progress\n---\n');
 });
+
+test('review 2: values YAML would misread (indicators, reserved words, numbers) are quoted and read back as text', () => {
+  for (const v of ['- Fix login', '*URGENT* printer', '@team please', '`npm` fails', '!important', '% done', '> quote', '| pipe', '? q', '{x}', '&x', 'true', 'No', 'null', '~', '123', '1.5', '-2', ', lead', ']x']) {
+    const out = setFrontmatterField('---\ntitle: x\n---\n', 'title', v);
+    assert.match(out, /^title: "/m, v);
+    assert.equal(parseFrontmatter(out).meta.title, v, v);
+  }
+  for (const v of ['in-progress', '2026-11-25', 'Fix login', 'IAM — thing']) {
+    assert.match(setFrontmatterField('---\ntitle: x\n---\n', 'title', v), new RegExp(`^title: ${v}$`, 'm'), v);
+  }
+});

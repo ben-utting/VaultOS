@@ -20,7 +20,7 @@ function tmpBoard(t, files = {}) {
   return dir;
 }
 
-const SUC_LIKE_TEMPLATE = `---
+const BOARD_TEMPLATE = `---
 type: task
 id: ""                 # e.g. a short slug
 title: ""
@@ -72,7 +72,7 @@ test('destinationFolders: root first, depth 3, no skipped, dot or card folders',
 });
 
 test('folderNameFor and slugTitle', () => {
-  assert.equal(NC.folderNameFor({ key: 'SUC-1', title: 'x' }, 0, 'UTC'), 'SUC-1');
+  assert.equal(NC.folderNameFor({ key: 'TCK-1', title: 'x' }, 0, 'UTC'), 'TCK-1');
   assert.equal(NC.folderNameFor({ title: 'IAM — Reset MFA for new starter!' }, 0, 'UTC'), 'iam-reset-mfa-for-new-starter');
   assert.equal(NC.folderNameFor({ title: 'Café déjà vu' }, 0, 'UTC'), 'cafe-deja-vu');
   assert.equal(NC.folderNameFor({ title: '———' }, Date.UTC(2026, 10, 25, 8, 5), 'UTC'), 'card-20261125-0805');
@@ -83,28 +83,28 @@ test('folderNameFor and slugTitle', () => {
 });
 
 test('buildTaskFile: template kept, fields filled, sections written', () => {
-  const raw = NC.buildTaskFile({ template: SUC_LIKE_TEMPLATE, id: 'SUC-1', today: '2026-11-25', automationName: 'Jira queue', agentLabel: 'Claude Code',
-    card: { title: 'IAM — "Reset": MFA', key: 'SUC-1', goal: 'Works.', link: 'https://x.test/1', priority: 'high', plan: ['one'], context: 'ctx' } });
+  const raw = NC.buildTaskFile({ template: BOARD_TEMPLATE, id: 'TCK-1', today: '2026-11-25', automationName: 'Jira queue', agentLabel: 'Claude Code',
+    card: { title: 'IAM — "Reset": MFA', key: 'TCK-1', goal: 'Works.', link: 'https://x.test/1', priority: 'high', plan: ['one'], context: 'ctx' } });
   const { meta, body } = parseFrontmatter(raw);
   assert.equal(meta.title, 'IAM — "Reset": MFA');
   assert.equal(meta.status, 'backlog');
   assert.equal(meta.priority, 'high');
-  assert.equal(meta.id, 'SUC-1');
-  assert.equal(meta.source_key, 'SUC-1');
+  assert.equal(meta.id, 'TCK-1');
+  assert.equal(meta.source_key, 'TCK-1');
   assert.equal(meta.created_by, 'Jira queue');
   assert.equal(meta.owner, 'Owner-from-template');
   assert.equal(meta.created, '2026-11-25');
   assert.equal(meta.updated, '2026-11-25');
   assert.equal(meta.area, '');
-  assert.deepEqual(meta.aliases, ['SUC-1']);
-  assert.match(raw, /^id: SUC-1\naliases: \["SUC-1"\]\n/m);
+  assert.deepEqual(meta.aliases, ['TCK-1']);
+  assert.match(raw, /^id: TCK-1\naliases: \["TCK-1"\]\n/m);
   assert.match(body, /## Goal\nWorks\./);
   assert.match(body, /## Context \/ key facts\nctx\n\nSource: https:\/\/x\.test\/1/);
   assert.match(body, /## Plan\n- \[ \] one/);
   assert.match(body, /## Progress log\n- 2026-11-25 — Created by automation "Jira queue" \(Claude Code\)\./);
   assert.doesNotMatch(body, /2026-01-01 — created/);
   assert.match(body, /## Findings \/ decisions\n_Things learned\._/);
-  const keyless = parseFrontmatter(NC.buildTaskFile({ template: SUC_LIKE_TEMPLATE, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code',
+  const keyless = parseFrontmatter(NC.buildTaskFile({ template: BOARD_TEMPLATE, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code',
     card: { title: 't', goal: 'g', plan: [], priority: 'med' } })).meta;
   assert.equal(keyless.source_key, undefined);
 });
@@ -113,8 +113,8 @@ test('buildTaskFile: awkward templates and text (Review Focus 4, 5)', () => {
   assert.equal(parseFrontmatter(NC.buildTaskFile({ template: null, card: { title: '[P1] Fix [x]', goal: 'g', plan: [], priority: 'med' }, id: 'x', today: '2026-11-25', automationName: '[Daily]', agentLabel: 'Claude Code' })).meta.title, '[P1] Fix [x]');
   assert.equal(parseFrontmatter(NC.buildTaskFile({ template: null, card: { title: "'quoted' rest", goal: 'g', plan: [], priority: 'med' }, id: 'x', today: '2026-11-25', automationName: '[Daily]', agentLabel: 'Claude Code' })).meta.created_by, '[Daily]');
   const card = { title: '- a: "b"\n---', goal: '## Heading', plan: [], priority: 'med', context: '```\n## Sneaky' };
-  const templates = [null, SUC_LIKE_TEMPLATE.replace(/\n/g, '\r\n'), '---\nid: ""\ntitle: ""\nstatus: backlog\n---\n',
-    SUC_LIKE_TEMPLATE.replace(/## Plan[\s\S]*?(?=## Progress log)/, ''), 'no frontmatter at all\n'];
+  const templates = [null, BOARD_TEMPLATE.replace(/\n/g, '\r\n'), '---\nid: ""\ntitle: ""\nstatus: backlog\n---\n',
+    BOARD_TEMPLATE.replace(/## Plan[\s\S]*?(?=## Progress log)/, ''), 'no frontmatter at all\n'];
   for (const template of templates) {
     const raw = NC.buildTaskFile({ template, card, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code', fromCardId: 'job-1' });
     assert.doesNotMatch(raw, /\r/);
@@ -160,15 +160,15 @@ test('boardIndex: keys board-wide incl. archive and Done; existing = direct chil
 test('add: creates <dest>/<KEY>/task.md, calls onCreate, updates the index', async (t) => {
   const v = vaultWith(t);
   const run = await v.begin();
-  const r = await run.add(C('Reset MFA', 'SUC-1'));
-  assert.deepEqual(r, { created: { path: 'Work/tickets/SUC-1/task.md', id: 'SUC-1', title: 'Reset MFA', key: 'SUC-1' } });
-  const { meta } = parseFrontmatter(fs.readFileSync(path.join(v.destDir, 'SUC-1', 'task.md'), 'utf8'));
+  const r = await run.add(C('Reset MFA', 'TCK-1'));
+  assert.deepEqual(r, { created: { path: 'Work/tickets/TCK-1/task.md', id: 'TCK-1', title: 'Reset MFA', key: 'TCK-1' } });
+  const { meta } = parseFrontmatter(fs.readFileSync(path.join(v.destDir, 'TCK-1', 'task.md'), 'utf8'));
   assert.equal(meta.title, 'Reset MFA');
   assert.equal(meta.created_by, 'Queue');
   assert.equal(v.created.length, 1);
-  assert.ok(run.index.keys.includes('suc-1'));
-  assert.deepEqual(run.index.existing.map((e) => e.id), ['SUC-1']);
-  assert.deepEqual(fs.readdirSync(path.join(v.destDir, 'SUC-1')), ['task.md']);
+  assert.ok(run.index.keys.includes('tck-1'));
+  assert.deepEqual(run.index.existing.map((e) => e.id), ['TCK-1']);
+  assert.deepEqual(fs.readdirSync(path.join(v.destDir, 'TCK-1')), ['task.md']);
   const k = await run.add(C('Keyless one'), { fromCardId: 'job-1' });
   assert.equal(k.created.path, 'Work/tickets/keyless-one/task.md');
   assert.equal('key' in k.created, false);
@@ -176,18 +176,18 @@ test('add: creates <dest>/<KEY>/task.md, calls onCreate, updates the index', asy
 });
 
 test('add: uses the board template when there is one', async (t) => {
-  const v = vaultWith(t, { '_tasks/_Templates/task.md': SUC_LIKE_TEMPLATE });
+  const v = vaultWith(t, { '_tasks/_Templates/task.md': BOARD_TEMPLATE });
   const r = await (await v.begin()).add(C('T', 'X-1'));
   assert.equal(parseFrontmatter(fs.readFileSync(path.join(v.vault, r.created.path), 'utf8')).meta.owner, 'Owner-from-template');
 });
 
 test('duplicates (Review Focus 2, 3)', async (t) => {
-  const v = vaultWith(t, { 'elsewhere/SUC-1/task.md': task('SUC-1', 'Old one', 'done'), 'tickets/reset-mfa/task.md': task('reset-mfa', 'Reset MFA'),
+  const v = vaultWith(t, { 'elsewhere/TCK-1/task.md': task('TCK-1', 'Old one', 'done'), 'tickets/reset-mfa/task.md': task('reset-mfa', 'Reset MFA'),
     'tickets/plain/.keep': '' });
   const run = await v.begin();
-  assert.deepEqual(await run.add(C('Again', 'suc-1')), { notCreated: { title: 'Again', key: 'suc-1', reason: 'suc-1 already has a card' } });
-  assert.ok((await run.add(C('Nine', 'SUC-9'))).created);
-  assert.deepEqual(await run.add(C('Nine again', 'suc-9')), { notCreated: { title: 'Nine again', key: 'suc-9', reason: 'duplicate in this run' } });
+  assert.deepEqual(await run.add(C('Again', 'tck-1')), { notCreated: { title: 'Again', key: 'tck-1', reason: 'tck-1 already has a card' } });
+  assert.ok((await run.add(C('Nine', 'TCK-9'))).created);
+  assert.deepEqual(await run.add(C('Nine again', 'tck-9')), { notCreated: { title: 'Nine again', key: 'tck-9', reason: 'duplicate in this run' } });
   assert.deepEqual(await run.add(C('reset   MFA ')), { notCreated: { title: 'reset   MFA ', reason: 'a card with that title already exists' } });
   assert.deepEqual(await run.add(C('Plain')), { notCreated: { title: 'Plain', reason: 'a folder called plain already exists' } });
   assert.deepEqual(fs.readdirSync(path.join(v.destDir, 'plain')), ['.keep']);
@@ -225,7 +225,7 @@ test('concurrent adds from two runs are serialised: one folder, one duplicate', 
   const [r1, r2] = await Promise.all([v.begin(), v.begin()]);
   const res = await Promise.all([r1.add(C('Z', 'Z-1')), r2.add(C('Z too', 'Z-1'))]);
   assert.equal(res.filter((r) => r.created).length, 1);
-  assert.equal(res.find((r) => r.notCreated).notCreated.reason, 'Z-1 already has a card');
+  assert.equal(res.find((r) => r.notCreated).notCreated.reason, 'a folder called Z-1 already exists');
   assert.deepEqual(fs.readdirSync(v.destDir), ['Z-1']);
 });
 
@@ -246,4 +246,64 @@ test('buildTaskFile: a new card is a standalone job, so the template\'s SUBTASK 
   // A callout that isn't the subtask one stays.
   const other = template.replace('> [!warning] This is a SUBTASK', '> [!note] Keep me').replace(/<!-- SUBTASK ONLY[^\n]*\n/, '');
   assert.match(NC.buildTaskFile({ template: other, card: { title: 'T', goal: 'G', plan: [], priority: 'med' }, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code' }), /> \[!note\] Keep me/);
+});
+
+// ---------- Final review fixes ----------
+const headsOf = (raw) => parseFrontmatter(raw).body.split('\n').filter((l) => /^## /.test(l));
+const build = (card, template = BOARD_TEMPLATE) => NC.buildTaskFile({ template, card: { plan: [], priority: 'med', ...card }, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code' });
+
+test('review 1: backticks in a one-line field never add a fence line or break the sections', () => {
+  for (const card of [{ title: 't', goal: 'g', plan: ['```npm test``` passes'] }, { title: 't', goal: '```js``` thing' }, { title: 't', goal: 'g', plan: ['~~~ odd'] }]) {
+    const raw = build(card);
+    assert.deepEqual(headsOf(raw), ['## Goal', '## Context / key facts', '## Plan', '## Progress log', '## Findings / decisions'], JSON.stringify(card));
+    assert.doesNotMatch(raw, /^\s*(```|~~~)/m, JSON.stringify(card));
+  }
+  assert.match(build({ title: 't', goal: 'g', plan: ['```npm test``` passes'] }), /- \[ \] `npm test` passes\n/);
+  const parsed = require('../lib/automation-note').parseCard('title: t\ngoal: ```js``` thing\nplan:\n- ```npm test``` passes').card;
+  assert.equal(parsed.goal, '`js` thing');
+  assert.deepEqual(parsed.plan, ['`npm test` passes']);
+});
+
+test('review 1: in context, an inline ```x``` line is not a fence, and a real code block stays whole', () => {
+  const raw = build({ title: 't', goal: 'g', context: '```js``` thing\nmore\n```\ncode\n```\nafter' });
+  assert.deepEqual(headsOf(raw), ['## Goal', '## Context / key facts', '## Plan', '## Progress log', '## Findings / decisions']);
+  assert.match(raw, /`js` thing\nmore\n```\ncode\n```\nafter/);
+  assert.equal((raw.match(/^```/gm) || []).length, 2);
+});
+
+test('review 3: a card the person deleted is created again on the next run', async (t) => {
+  const v = vaultWith(t);
+  assert.ok((await (await v.begin()).add(C('K', 'K-1'))).created);
+  fs.rmSync(path.join(v.destDir, 'K-1'), { recursive: true });
+  const again = await (await v.begin()).add(C('K', 'K-1'));
+  assert.ok(again.created, JSON.stringify(again));
+});
+
+test('review 4: the key list puts source keys first, so a big board never pushes them out of the prompt', async (t) => {
+  const files = {};
+  for (let i = 0; i < 30; i++) files[`a/job-${i}/task.md`] = task(`job-${i}`, `Job ${i}`);
+  files['z/old/task.md'] = task('old', 'Old', 'done', 'source_key: TCK-7\n');
+  const v = vaultWith(t, files);
+  const ix = await NC.boardIndex(v.boardDir, v.destDir);
+  assert.equal(ix.keys[0], 'tck-7');
+  assert.ok(ix.keys.includes('job-0'));
+});
+
+test('review 6: a folder name the board skips, or a card file name, is refused', async (t) => {
+  const v = vaultWith(t, {}, { skipDirs: SKIP });
+  const run = await v.begin();
+  assert.deepEqual(await run.add(C('Data')), { notCreated: { title: 'Data', reason: "a folder called data wouldn't show on the board" } });
+  assert.equal((await run.add(C('x', 'archive'))).notCreated.reason, "a folder called archive wouldn't show on the board");
+  assert.equal((await run.add(C('y', 'task.md'))).notCreated.reason, "a folder called task.md wouldn't show on the board");
+  assert.deepEqual(fs.readdirSync(v.destDir), []);
+});
+
+test('review 7: the destination is checked again before each card, and reasons name no server path', async (t) => {
+  const v = vaultWith(t, {}, { skipDirs: SKIP });
+  const run = await v.begin();
+  assert.ok((await run.add(C('a', 'A-1'))).created);
+  fs.rmSync(v.destDir, { recursive: true });
+  const r = await run.add(C('b', 'B-1'));
+  assert.equal(r.notCreated.reason, "New cards folder: That folder doesn't exist");
+  assert.ok(!JSON.stringify(r).includes(v.vault));
 });

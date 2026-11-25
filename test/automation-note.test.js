@@ -262,8 +262,8 @@ const cardBlk = (body) => '```vaultos-card\n' + body + '\n```\n';
 const noteBlk = '```vaultos-note\nDone.\n```\n';
 
 test('parseCard: required fields, caps, plan list, multi-line context', () => {
-  const { card, ignored } = N.parseCard('title: IAM — Reset MFA\nkey: SUC-1234\ngoal: Works.\nlink: https://x.test/browse/SUC-1234\npriority: high\ncolour: red\nplan:\n- one\n- two\ncontext: line a\nRaised by: someone');
-  assert.deepEqual(card, { title: 'IAM — Reset MFA', key: 'SUC-1234', goal: 'Works.', link: 'https://x.test/browse/SUC-1234', priority: 'high', plan: ['one', 'two'], context: 'line a\nRaised by: someone' });
+  const { card, ignored } = N.parseCard('title: IAM — Reset MFA\nkey: TCK-1234\ngoal: Works.\nlink: https://x.test/browse/TCK-1234\npriority: high\ncolour: red\nplan:\n- one\n- two\ncontext: line a\nRaised by: someone');
+  assert.deepEqual(card, { title: 'IAM — Reset MFA', key: 'TCK-1234', goal: 'Works.', link: 'https://x.test/browse/TCK-1234', priority: 'high', plan: ['one', 'two'], context: 'line a\nRaised by: someone' });
   assert.deepEqual(ignored, ['vaultos-card colour']);
   assert.deepEqual(N.parseCard('goal: g').ignored, ['vaultos-card block (no title)']);
   assert.deepEqual(N.parseCard('title: t').ignored, ['vaultos-card block (no goal)']);
@@ -284,7 +284,7 @@ test('parseCard: bad key, link and priority are dropped to Ignored', () => {
     assert.equal(r.card.key, undefined, key);
     assert.match(r.ignored[0], /^vaultos-card key: /);
   }
-  assert.equal(N.parseCard('title: t\ngoal: g\nkey:  SUC-1 ').card.key, 'SUC-1');
+  assert.equal(N.parseCard('title: t\ngoal: g\nkey:  TCK-1 ').card.key, 'TCK-1');
   assert.equal(N.parseCard('title: t\ngoal: g\nkey:').card.key, undefined);
   assert.match(N.parseCard('title: t\ngoal: g\nlink: javascript:alert(1)').ignored[0], /^vaultos-card link: /);
   assert.match(N.parseCard('title: t\ngoal: g\nlink: https://a b').ignored[0], /^vaultos-card link: /);

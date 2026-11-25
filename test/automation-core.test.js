@@ -440,7 +440,7 @@ test('Work level text mentions new cards', () => {
   assert.equal(AC.NEW_CARDS_DEFAULT, 5);
   assert.equal(AC.NEW_CARDS_LIMIT, 10);
   assert.equal(AC.NEW_CARDS_PER_HOUR, 30);
-  assert.ok(AC.CARD_KEY_RE.test('SUC-1234') && !AC.CARD_KEY_RE.test('../x') && !AC.CARD_KEY_RE.test('-x'));
+  assert.ok(AC.CARD_KEY_RE.test('TCK-1234') && !AC.CARD_KEY_RE.test('../x') && !AC.CARD_KEY_RE.test('-x'));
   assert.match(AC.ONCE_PARAGRAPH, /^There is no card in this run\./);
 });
 
@@ -457,10 +457,19 @@ test('summaries: once runs and created counts', () => {
 });
 
 test('createdText: created, would create, not created', () => {
-  const c = { created: [{ title: 'Reset MFA', key: 'SUC-1', path: 'Work/tickets/SUC-1/task.md' }, { title: 'No key', path: 'Work/tickets/no-key/task.md' }],
-    notCreated: [{ title: 'Dup', key: 'SUC-2', reason: 'SUC-2 already has a card' }, { title: 'Keyless', reason: 'duplicate in this run' }] };
-  assert.deepEqual(AC.createdText(c, false), ['Created: Reset MFA (SUC-1)', 'Created: No key',
-    'Not created: SUC-2 — SUC-2 already has a card', 'Not created: Keyless — duplicate in this run']);
-  assert.deepEqual(AC.createdText(c, true).slice(0, 1), ['Would create: Reset MFA (SUC-1)']);
+  const c = { created: [{ title: 'Reset MFA', key: 'TCK-1', path: 'Work/tickets/TCK-1/task.md' }, { title: 'No key', path: 'Work/tickets/no-key/task.md' }],
+    notCreated: [{ title: 'Dup', key: 'TCK-2', reason: 'TCK-2 already has a card' }, { title: 'Keyless', reason: 'duplicate in this run' }] };
+  assert.deepEqual(AC.createdText(c, false), ['Created: Reset MFA (TCK-1)', 'Created: No key',
+    'Not created: TCK-2 — TCK-2 already has a card', 'Not created: Keyless — duplicate in this run']);
+  assert.deepEqual(AC.createdText(c, true).slice(0, 1), ['Would create: Reset MFA (TCK-1)']);
   assert.deepEqual(AC.createdText({}, false), []);
+});
+
+test('review 5: newCards only counts at Work; at Report or Update it is dropped and its folder never checked', () => {
+  for (const level of ['report', 'update']) {
+    const r = AC.validateAutomation({ ...ncBase, level, cards: { board: 'work', statuses: ['backlog'] }, section: 'Latest check-in', newCards: { board: 'work', folder: 'gone' } },
+      { ...ctxNC, newCardsFolderError: () => "That folder doesn't exist" });
+    assert.equal(r.ok, true, JSON.stringify(r.errors));
+    assert.equal('newCards' in r.value, false);
+  }
 });

@@ -820,7 +820,7 @@ const ticket = (s, name) => fs.readFileSync(path.join(s.vault, 'Work', 'tickets'
 
 test('once: one agent in the destination, cards created, note in the run', async (t) => {
   const s = setup(t, { cards: { 'job-1': ['in-progress'] }, withNewCards: true });
-  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA FAKE:card:-:Second_one' });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:TCK-1:Reset_MFA FAKE:card:-:Second_one' });
   assert.equal(a.runsOn, 'once');
   const run = await runAndWait(s, a);
   assert.equal(run.state, 'finished');
@@ -833,10 +833,10 @@ test('once: one agent in the destination, cards created, note in the run', async
   assert.equal(c.title, 'Work / tickets');
   assert.match(c.note, /Fake note\./);
   assert.equal(run.createdCount, 2);
-  assert.deepEqual(c.created.map((x) => x.path), ['Work/tickets/SUC-1/task.md', 'Work/tickets/second-one/task.md']);
+  assert.deepEqual(c.created.map((x) => x.path), ['Work/tickets/TCK-1/task.md', 'Work/tickets/second-one/task.md']);
   assert.deepEqual(c.created.map((x) => x.board), ['work', 'work']);   // the run detail opens each on its own board
-  assert.equal(parseFrontmatter(ticket(s, 'SUC-1')).meta.title, 'Reset MFA');
-  assert.match(ticket(s, 'SUC-1'), /Created by automation "Check" \(Claude Code\)\./);
+  assert.equal(parseFrontmatter(ticket(s, 'TCK-1')).meta.title, 'Reset MFA');
+  assert.match(ticket(s, 'TCK-1'), /Created by automation "Check" \(Claude Code\)\./);
   assert.match(s.read('job-1'), /status: in-progress/);
   assert.doesNotMatch(s.read('job-1'), /Latest check-in/);
 });
@@ -852,12 +852,12 @@ test('once: the agent runs in the destination folder, read-only', async (t) => {
 
 test('once: second run creates nothing (duplicates)', async (t) => {
   const s = setup(t, { withNewCards: true });
-  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA FAKE:card:-:Second_one' });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:TCK-1:Reset_MFA FAKE:card:-:Second_one' });
   await runAndWait(s, a);
   const run = await runAndWait(s, a);
   assert.equal(run.createdCount, 0);
   assert.equal(run.state, 'finished');
-  assert.deepEqual(run.cards[0].notCreated.map((x) => x.reason), ['SUC-1 already has a card', 'a card with that title already exists']);
+  assert.deepEqual(run.cards[0].notCreated.map((x) => x.reason), ['TCK-1 already has a card', 'a card with that title already exists']);
 });
 
 test('once: cards without a note still count; nothing back fails', async (t) => {
@@ -875,7 +875,7 @@ test('once: cards without a note still count; nothing back fails', async (t) => 
 
 test('once: destination gone → run fails with the folder reason (Review Focus 1)', async (t) => {
   const s = setup(t, { withNewCards: true });
-  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:TCK-1:Reset_MFA' });
   fs.rmSync(path.join(s.vault, 'Work', 'tickets'), { recursive: true });
   const run = await runAndWait(s, a);
   assert.equal(run.state, 'failed');
@@ -885,14 +885,14 @@ test('once: destination gone → run fails with the folder reason (Review Focus 
 
 test('once trial: would create, nothing on disk', async (t) => {
   const s = setup(t, { withNewCards: true });
-  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:TCK-1:Reset_MFA' });
   assert.deepEqual(await s.runner.tryNow(a.id), { queued: true });
   await s.runner.idle();
   const run = await s.lastRun();
   assert.equal(run.trigger, 'trial');
   assert.equal(run.createdCount, 1);
-  assert.equal(run.cards[0].created[0].path, 'Work/tickets/SUC-1/task.md');
-  assert.equal(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'SUC-1')), false);
+  assert.equal(run.cards[0].created[0].path, 'Work/tickets/TCK-1/task.md');
+  assert.equal(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'TCK-1')), false);
 });
 
 test('once: prompt lists existing cards and keys', async (t) => {
@@ -900,13 +900,13 @@ test('once: prompt lists existing cards and keys', async (t) => {
   process.env.FAKE_PROMPT_OUT = out;
   t.after(() => { delete process.env.FAKE_PROMPT_OUT; });
   const s = setup(t, { withNewCards: true });
-  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:TCK-1:Reset_MFA' });
   await runAndWait(s, a);
   await runAndWait(s, a);
   const second = fs.readFileSync(out, 'utf8').split('\n=====\n')[1];
   assert.match(second, /There is no card in this run\./);
-  assert.match(second, /^- SUC-1 · Reset MFA · backlog$/m);
-  assert.match(second, /Keys already on the board \(case doesn't matter\): suc-1\./);
+  assert.match(second, /^- TCK-1 · Reset MFA · backlog$/m);
+  assert.match(second, /Keys already on the board \(case doesn't matter\): tck-1\./);
 });
 
 test('once: connectors are opened for the destination and revoked', async (t) => {
@@ -965,4 +965,27 @@ test('per-card Work trial: would create, nothing written', async (t) => {
   assert.equal(run.createdCount, 1);
   assert.equal(run.cards[0].created[0].key, 'A-1');
   assert.equal(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')).length, 0);
+});
+
+test('review 12: a Once run that times out fails the run and creates nothing', async (t) => {
+  const s = setup(t, { withNewCards: true, timeLimitMs: 300 });
+  const run = await runAndWait(s, await s.make({ ...ONCE, prompt: 'FAKE:hang FAKE:card:A-1:One' }));
+  assert.equal(run.state, 'failed');
+  assert.equal(run.cards[0].state, 'timed-out');
+  assert.equal(run.createdCount, 0);
+  assert.deepEqual(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')), []);
+});
+
+test('review 12: stopping a Once run ends it stopped and creates nothing', async (t) => {
+  const s = setup(t, { withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:hang FAKE:card:A-1:One' });
+  await s.runner.runNow(a.id);
+  await waitFor(() => s.runner.status().current && s.runner.status().current.index === 0);
+  await sleep(200);
+  assert.equal(s.runner.stop(), true);
+  await s.runner.idle();
+  const run = await s.lastRun();
+  assert.equal(run.state, 'stopped');
+  assert.deepEqual([run.cards[0].state, run.cards[0].reason], ['failed', 'stopped']);
+  assert.deepEqual(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')), []);
 });

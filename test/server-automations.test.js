@@ -302,7 +302,7 @@ test('with Calendar off the reminder is skipped and the run still notes the card
 });
 
 // ---------- New cards (spec 2026-11-25) ----------
-const onceDef = (more = {}) => automation({ runsOn: 'once', level: 'work', newCards: { board: 'work', folder: 'tickets' }, prompt: 'FAKE:card:SUC-1:Reset_MFA', ...more });
+const onceDef = (more = {}) => automation({ runsOn: 'once', level: 'work', newCards: { board: 'work', folder: 'tickets' }, prompt: 'FAKE:card:TCK-1:Reset_MFA', ...more });
 
 test('new cards: a Once automation saves into an existing folder; missing, skipped and card folders are refused', async (t) => {
   const s = await ready(t);
@@ -351,9 +351,9 @@ test('new cards: a Once run creates the card and the board shows it', { timeout:
   assert.equal(run.state, 'finished');
   assert.equal(run.runsOn, 'once');
   assert.equal(run.createdCount, 1);
-  assert.ok(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'SUC-1', 'task.md')));
+  assert.ok(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'TCK-1', 'task.md')));
   const tasks = (await s.api('GET', '/api/tasks?ws=work')).body.tasks;
-  const made = tasks.find((x) => x.path === 'Work/tickets/SUC-1/task.md');
+  const made = tasks.find((x) => x.path === 'Work/tickets/TCK-1/task.md');
   assert.ok(made, JSON.stringify(tasks.map((x) => x.path)));
   assert.equal(made.status, 'backlog');
   // The destination disappears: the next run fails and says why; switching off still works.
