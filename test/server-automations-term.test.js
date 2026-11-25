@@ -67,6 +67,7 @@ test('a terminal can list, create a draft and see it off', { timeout: 30000 }, a
   assert.deepEqual(opts.boards.map((b) => b.key), ['work', 'home']);
   assert.equal(opts.limits.trialCards, 3);
   assert.ok(opts.agents.some((a) => a.id === 'claude' && a.levels.includes('work')));
+  assert.equal(opts.calendar, false);   // Settings → Features → Calendar is off by default
 });
 
 test('no token, a wrong token, or another terminal\'s id is 403', { timeout: 30000 }, async (t) => {

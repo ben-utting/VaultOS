@@ -258,3 +258,45 @@ test('the models route says why when the list cannot be loaded, and saving still
   assert.equal(c.status, 200, c.text);
   assert.equal(c.body.automation.model, 'typed-by-hand');
 });
+
+// ---------- Calendar reminders from automations ----------
+const CC = require('../public/calendar-core');
+test('a run with reminders on puts the agent\'s reminder on the calendar, linked to the card', async (t) => {
+  const s = await ready(t);
+  s.card('Work/1. a/01-x/task.md');
+  await s.turnOn();
+  assert.equal((await s.api('POST', '/api/settings/features', { calendar: true })).status, 200);
+  assert.equal((await s.api('GET', '/api/automations')).body.calendar, true);
+  const tomorrow = CC.addDays(CC.todayIn('Europe/London', Date.now()), 1);
+  const c = await s.api('POST', '/api/automations', automation({ reminders: true, prompt: `FAKE:remind:${tomorrow}` }));
+  assert.equal(c.status, 200, c.text);
+  assert.equal(c.body.automation.reminders, true);
+  assert.equal((await s.api('POST', `/api/automations/${c.body.automation.id}/run`)).status, 200);
+  await waitIdle(s);
+  const runs = await s.api('GET', '/api/automations/runs');
+  const card = (await s.api('GET', `/api/automations/runs/${runs.body.runs[0].id}`)).body.cards[0];
+  assert.equal(card.state, 'noted');
+  assert.equal(card.reminder.date, tomorrow);
+  assert.equal(card.reminder.start, '09:00');
+  const cal = await s.api('GET', `/api/calendar?from=${tomorrow}&to=${tomorrow}`);
+  assert.equal(cal.body.occurrences.length, 1);
+  const o = cal.body.occurrences[0];
+  assert.deepEqual([o.title, o.start, o.card && o.card.path, o.note], ['01-x', '09:00', 'Work/1. a/01-x/task.md', 'Fake reminder.']);
+  assert.equal(o.created.by.agent, 'Automation: Morning check-in');
+});
+
+test('with Calendar off the reminder is skipped and the run still notes the card', async (t) => {
+  const s = await ready(t);
+  const f = s.card('Work/1. a/01-x/task.md');
+  await s.turnOn();
+  assert.equal((await s.api('GET', '/api/automations')).body.calendar, false);
+  const c = await s.api('POST', '/api/automations', automation({ reminders: true, prompt: 'FAKE:remind:2099-01-01' }));
+  assert.equal(c.status, 200, c.text);
+  await s.api('POST', `/api/automations/${c.body.automation.id}/run`);
+  await waitIdle(s);
+  const runs = await s.api('GET', '/api/automations/runs');
+  const card = (await s.api('GET', `/api/automations/runs/${runs.body.runs[0].id}`)).body.cards[0];
+  assert.deepEqual([card.state, card.reminder, card.reminderSkipped], ['noted', null, 'Calendar is switched off']);
+  assert.match(fs.readFileSync(f, 'utf8'), /Fake note\./);
+  assert.equal(fs.existsSync(path.join(s.vault, '.vaultos', 'calendar.json')), false);
+});

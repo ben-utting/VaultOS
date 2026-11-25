@@ -1581,6 +1581,18 @@ app.get('/api/agents', settingsGuard, async (req, res) => {
     settingsFail(res, err, 'read the agents');
   }
 });
+// ---------- Calendar ----------
+// Entries, reminders and what's due (lib/calendar-service.js holds the rules; public/calendar-core.js the
+// shared ones). Off unless Settings → Features → Calendar is on; every route then answers 404. Built before
+// Automations, which add the reminders their runs propose through it.
+const { createCalendarService } = require('./lib/calendar-service');
+const CALENDAR = createCalendarService({
+  vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, safeVaultPath,
+  canWrite: (req) => !!(req.session && req.session.authed), profiles: PROFILES, termCmd,
+  terminalOn, defaultProfile: () => profileFor(SETTINGS()), isInstalled,
+});
+app.use('/api', CALENDAR.router);
+
 // ---------- Automations ----------
 // Scheduled agents over the boards' cards (lib/automation-service.js holds the rules). TERMS is read
 // through a getter: it is declared further down, with the terminal.
@@ -1590,20 +1602,10 @@ const AUTOMATIONS = createAutomationService({
   terms: () => TERMS, profileFor, profiles: PROFILES, isInstalled, todayISO, termCmd,
   connectorChoices: () => connectors.automationChoices(),
   connectorAccess: (o) => connectors.automationAccess(o),
+  calendar: CALENDAR,   // reminders a run proposes (vaultos-remind) go on the calendar through its rules
   renderMarkdown: (md) => marked.parse(stripAgentNotes(md), { breaks: true }),   // a note's lines stay lines
 });
 app.use('/api', AUTOMATIONS.router);
-
-// ---------- Calendar ----------
-// Entries, reminders and what's due (lib/calendar-service.js holds the rules; public/calendar-core.js the
-// shared ones). Off unless Settings → Features → Calendar is on; every route then answers 404.
-const { createCalendarService } = require('./lib/calendar-service');
-const CALENDAR = createCalendarService({
-  vaultDir: VAULT_DIR, settings: SETTINGS, terminalEnv: TERMINAL_ENV, boards, resolveWorkspace, scanAll, safeVaultPath,
-  canWrite: (req) => !!(req.session && req.session.authed), profiles: PROFILES, termCmd,
-  terminalOn, defaultProfile: () => profileFor(SETTINGS()), isInstalled,
-});
-app.use('/api', CALENDAR.router);
 
 // ---------- Connectors ----------
 // Thin routes over lib/connector-service.js, which holds every rule. Only a ConnectorError carries text
