@@ -251,7 +251,7 @@
     if (c.proposalIgnored) warn.push(['plain', 'Status proposal ignored: you changed it during the run']);
     if (c.doneReverted) warn.push(['warn', `Done was put back to ${AC.STATUS_LABEL[c.statusBefore] || c.statusBefore || 'its status'}`]);
     const remind = AC.reminderText(c, run.trigger === 'trial');
-    if (remind) warn.push([c.reminder ? 'plain' : 'warn', remind]);
+    if (remind) warn.push(['plain', remind]);   // a skip (a re-run's duplicate, Calendar off) never fails the card
     if (c.ignored && c.ignored.length) warn.push(['plain', `Ignored: ${c.ignored.join(', ')}`]);
     if (c.lookups && Object.keys(c.lookups).length) {
       warn.push(['plain', `Looked up: ${Object.entries(c.lookups).map(([id, tools]) => `${connLabel(id)} (${Object.entries(tools).map(([t, n]) => `${t} ×${n}`).join(', ')})`).join(', ')}`]);
