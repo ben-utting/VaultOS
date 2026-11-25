@@ -464,3 +464,35 @@ test('connectors with no signed-in servers (ids: []) start both agents exactly a
   assert.ok(plain.includes('Mcp(*:*)'));
   assert.ok(!fs.existsSync(path.join(cur, 'mcp.json')));
 });
+
+// ---------- Once runs (spec 2026-11-25 §9) ----------
+test('once levels: Claude and Cursor work, Pi none', () => {
+  assert.equal(process.env.AUTOMATION_TEST_AGENT, undefined);
+  assert.deepEqual(A.offeredLevels('claude', 'once'), ['work']);
+  assert.deepEqual(A.offeredLevels('cursor', 'once'), ['work']);
+  assert.deepEqual(A.offeredLevels('pi', 'once'), []);
+  assert.deepEqual(A.offeredLevels('codex', 'once'), []);
+  assert.deepEqual(A.offeredLevels('cursor'), ['report', 'update']);
+  assert.deepEqual(A.offeredLevels('cursor', 'cards'), ['report', 'update']);
+});
+
+test('a Once Work command is the read-only Report command', () => {
+  for (const id of ['claude', 'cursor']) {
+    assert.deepEqual(A.agentCommand(id, 'work', 'P', { once: true }), A.agentCommand(id, 'report', 'P'));
+  }
+  assert.doesNotMatch(A.agentCommand('claude', 'work', 'P', { once: true }).cmd, /Edit|Write|acceptEdits/);
+  assert.equal(A.agentCommand('pi', 'work', 'P', { once: true }).error, 'Pi is not available for Once automations at the Work level');
+  assert.equal(A.agentCommand('claude', 'report', 'P', { once: true }).error, 'Claude Code is not available for Once automations at the Report level');
+  assert.match(A.agentCommand('cursor', 'work', 'P').error, /not available for automations at the Work level/);
+});
+
+test('test agent: once levels default to work and can be narrowed with id@once', () => {
+  process.env.AUTOMATION_TEST_AGENT = FAKE;
+  try {
+    assert.deepEqual(A.offeredLevels('pi', 'once'), ['work']);
+    process.env.AUTOMATION_TEST_LEVELS = 'cursor@once:;cursor:report';
+    assert.deepEqual(A.offeredLevels('cursor', 'once'), []);
+    assert.deepEqual(A.offeredLevels('cursor'), ['report']);
+    assert.deepEqual(A.offeredLevels('claude', 'once'), ['work']);
+  } finally { delete process.env.AUTOMATION_TEST_AGENT; delete process.env.AUTOMATION_TEST_LEVELS; }
+});
