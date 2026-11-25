@@ -104,6 +104,15 @@
 
   // ---------- Definitions ----------
   const LEVELS = ['report', 'update', 'work'];
+  // What a run covers (spec 2026-11-25): one agent per matching card, or one agent per run that only proposes new cards.
+  const RUNS_ON = ['cards', 'once'];
+  const RUNS_ON_LABEL = { cards: 'Each matching card', once: 'Once' };
+  // New cards a Work automation may propose (VaultOS writes them, spec 2026-11-25 §5–§6).
+  const NEW_CARDS_DEFAULT = 5;
+  const NEW_CARDS_LIMIT = 10;
+  const NEW_CARDS_PER_HOUR = 30;
+  const NEW_FOLDER_MAX = 200;
+  const CARD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
   const CARD_STATUSES = ['backlog', 'in-progress', 'blocked', 'needs-decision', 'review', 'scheduled'];
   const STATUS_LABEL = {
     'backlog': 'Backlog', 'in-progress': 'In Progress', 'blocked': 'Blocked', 'needs-decision': 'Needs Decision',
@@ -143,7 +152,7 @@
   const LEVEL_TEXT = {
     report: 'Reads the card and writes a note. Changes nothing else.',
     update: 'Can also move the card (never to Done).',
-    work: "Can edit files in the card's folder.",
+    work: "Can edit files in the card's folder and create new cards.",
   };
   const REPORT_PARAGRAPH = "You can read and search files. Don't try to change anything: VaultOS writes your note into the card.";
   const LEVEL_PARAGRAPHS = {
@@ -151,6 +160,7 @@
     update: `${REPORT_PARAGRAPH} You may propose a status change in a vaultos-update block.`,
     work: "You may edit files in this card's folder. Don't run shell commands and don't set the card to done. VaultOS writes your note into the card.",
   };
+  const ONCE_PARAGRAPH = "There is no card in this run. You can read and search files and look things up, but don't try to change anything: VaultOS creates the cards you propose and keeps your note in the run history.";
 
   const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   function validSchedule(s) {
@@ -168,12 +178,39 @@
     return null;
   }
 
+  // A destination folder relative to the board's root: trimmed, outer slashes dropped, '' for the root. null when it
+  // could name something outside the board (empty, '.' or '..' segments, backslashes, control characters, too long).
+  function normalFolder(folder) {
+    if (typeof folder !== 'string') return null;
+    const f = folder.trim().replace(/^\/+|\/+$/g, '');
+    if (f.length > NEW_FOLDER_MAX || /[\\\u0000-\u001f\u007f]/.test(f)) return null;
+    if (f === '') return '';
+    return f.split('/').every((seg) => seg.trim() !== '' && seg !== '.' && seg !== '..') ? f : null;
+  }
+  // newCards → { value } | { error } | { value: null } when absent. Whether the folder exists is the server's
+  // check (ctx.newCardsFolderError), asked only once the shape is right.
+  function validNewCards(nc, ctx) {
+    if (nc === undefined || nc === null) return { value: null };
+    if (!isObj(nc)) return { error: 'Pick where new cards go' };
+    if (!ctx.boardKeys.includes(nc.board)) return { error: 'Pick a board for new cards' };
+    const folder = normalFolder(nc.folder);
+    if (folder === null) return { error: 'Pick a folder inside the board' };
+    const max = nc.max === undefined || nc.max === null ? NEW_CARDS_DEFAULT : nc.max;
+    if (!Number.isInteger(max) || max < 1 || max > NEW_CARDS_LIMIT) return { error: `New cards per run: 1 to ${NEW_CARDS_LIMIT}` };
+    const missing = typeof ctx.newCardsFolderError === 'function' ? ctx.newCardsFolderError(nc.board, folder) : null;
+    if (missing) return { error: missing };
+    return { value: { board: nc.board, folder, max } };
+  }
+
   // The builder and the server both run this; the server's answer is the one that counts.
   // ctx: { boardKeys: board keys from settings, agentIds: 'default' plus the agents automations can use }.
   function validateAutomation(input, ctx) {
     const a = isObj(input) ? input : {};
     const c = isObj(a.cards) ? a.cards : {};
     const errors = {};
+    const runsOn = a.runsOn === undefined || a.runsOn === null ? 'cards' : a.runsOn;
+    if (!RUNS_ON.includes(runsOn)) errors.runsOn = 'Pick each matching card or once';
+    const once = runsOn === 'once';
     const name = typeof a.name === 'string' ? a.name.trim() : '';
     if (!name || name.length > NAME_MAX) errors.name = `Give it a name of 1 to ${NAME_MAX} characters`;
     const enabled = a.enabled === undefined ? true : a.enabled;
@@ -192,24 +229,40 @@
     if (!prompt.trim()) errors.prompt = 'Write what the agent should do';
     else if (prompt.length > PROMPT_MAX) errors.prompt = `Keep it under ${PROMPT_MAX.toLocaleString('en-GB')} characters`;
     if (!LEVELS.includes(a.level)) errors.level = 'Pick Report, Update or Work';
-    if (c.board !== 'all' && !ctx.boardKeys.includes(c.board)) errors.board = 'Pick a board';
-    const statuses = Array.isArray(c.statuses) ? CARD_STATUSES.filter((s) => c.statuses.includes(s)) : [];
-    if (!statuses.length || c.statuses.some((s) => !CARD_STATUSES.includes(s))) errors.statuses = 'Pick at least one status (never Done)';
-    const subtasks = c.subtasks === undefined ? false : c.subtasks;
-    if (typeof subtasks !== 'boolean') errors.subtasks = 'Must be on or off';
+    else if (once && a.level !== 'work') errors.level = 'Once runs create cards, so they need Work';
+    // A Once run picks no cards and writes into none, so it has no card filter and no section.
+    let statuses = [];
+    let subtasks = false;
+    let section = '';
+    if (!once) {
+      if (c.board !== 'all' && !ctx.boardKeys.includes(c.board)) errors.board = 'Pick a board';
+      statuses = Array.isArray(c.statuses) ? CARD_STATUSES.filter((s) => c.statuses.includes(s)) : [];
+      if (!statuses.length || c.statuses.some((s) => !CARD_STATUSES.includes(s))) errors.statuses = 'Pick at least one status (never Done)';
+      subtasks = c.subtasks === undefined ? false : c.subtasks;
+      if (typeof subtasks !== 'boolean') errors.subtasks = 'Must be on or off';
+      section = typeof a.section === 'string' ? a.section.trim() : '';
+      if (!SECTION_RE.test(section)) errors.section = 'Use 1 to 40 letters, digits, spaces or hyphens';
+      else if (RESERVED_SECTIONS.includes(section.toLowerCase())) errors.section = "That's one of the card's own sections";
+    }
     const schedule = validSchedule(a.schedule);
     if (!schedule) errors.schedule = 'Pick when it runs (times as HH:MM)';
-    const section = typeof a.section === 'string' ? a.section.trim() : '';
-    if (!SECTION_RE.test(section)) errors.section = 'Use 1 to 40 letters, digits, spaces or hyphens';
-    else if (RESERVED_SECTIONS.includes(section.toLowerCase())) errors.section = "That's one of the card's own sections";
+    const nc = validNewCards(a.newCards, ctx);
+    if (nc.error) errors.newCards = nc.error;
+    else if (once && !nc.value) errors.newCards = 'Pick where new cards go';
     if (!Number.isInteger(a.timeLimitMin) || a.timeLimitMin < 2 || a.timeLimitMin > 30) errors.timeLimitMin = 'Between 2 and 30 minutes';
     // With ctx.agentLevels (the server and the builder pass it), the agent must be offered at the level.
     // 'default' is resolved to the current default agent; ctx.agentLevels.default is its levels.
-    if (ctx.agentLevels && !errors.agent && !errors.level) {
-      const levels = ctx.agentLevels[a.agent] || [];
+    if (ctx.agentLevels && !errors.agent && !errors.level && !errors.runsOn) {
+      const levels = (once ? (ctx.agentOnceLevels || {}) : ctx.agentLevels)[a.agent] || [];
       const labels = ctx.agentLabels || {};
-      if (!levels.length && a.agent === 'default') errors.agent = 'Pick an agent that can run automations';
-      else if (!levels.includes(a.level)) {
+      const onceLevels = (ctx.agentOnceLevels || {})[a.agent] || [];
+      if (!levels.length && a.agent === 'default' && !once) errors.agent = 'Pick an agent that can run automations';
+      else if (once && !levels.includes(a.level)) {
+        const who = a.agent === 'default' ? ctx.defaultAgent : a.agent;
+        errors.level = `${(who && (labels[who] || who)) || 'Your default agent'} can't run Once automations`;
+      } else if (!levels.includes(a.level) && onceLevels.includes(a.level) && a.agent !== 'default') {
+        errors.level = `${labels[a.agent] || a.agent} can't run at ${LEVEL_LABEL[a.level]} on each card; pick Once or another level`;
+      } else if (!levels.includes(a.level)) {
         const lvl = LEVEL_LABEL[a.level];
         if (a.agent === 'default') {
           const others = Object.keys(ctx.agentLevels).filter((id) => id !== 'default' && ctx.agentLevels[id].includes(a.level)).map((id) => labels[id] || id);
@@ -236,13 +289,15 @@
     // stored. Saving doesn't need Calendar on: a run with Calendar off skips the reminder and says why.
     const reminders = a.reminders === undefined || a.reminders === null ? false : a.reminders;
     if (typeof reminders !== 'boolean') errors.reminders = 'Must be on or off';
+    else if (once && reminders) errors.reminders = "Once runs can't add calendar reminders";
     if (Object.keys(errors).length) return { ok: false, errors };
     return {
       ok: true,
       value: {
         name, enabled, agent: a.agent, ...(model ? { model } : {}), template: a.template, prompt, level: a.level,
+        ...(once ? { runsOn: 'once' } : {}), ...(nc.value ? { newCards: nc.value } : {}),
         ...(connectors.length ? { connectors: [...connectors] } : {}), ...(reminders ? { reminders: true } : {}),
-        cards: { board: c.board, statuses, subtasks }, schedule, section, timeLimitMin: a.timeLimitMin,
+        ...(once ? {} : { cards: { board: c.board, statuses, subtasks } }), schedule, ...(once ? {} : { section }), timeLimitMin: a.timeLimitMin,
       },
     };
   }
@@ -251,6 +306,7 @@
   // a Work automation's trial ran with Report permissions, so it shows what it would say, not what it would do.
   const TRIGGER_TEXT = { 'schedule': 'scheduled', 'catch-up': 'catch-up', 'manual': 'run now' };
   function triggerText(run) {
+    if (run.trigger === 'trial' && run.runsOn === 'once') return 'trial · nothing created';
     if (run.trigger === 'trial') return run.level === 'work' ? 'trial · tried as Report · not written to cards' : 'trial · not written to cards';
     return TRIGGER_TEXT[run.trigger] || run.trigger || '';
   }
@@ -296,14 +352,25 @@
     return n;
   }
   const COUNT_LABEL = [['noted', 'noted'], ['skipped', 'skipped'], ['failed', 'failed'], ['timedOut', 'timed out'], ['notRun', 'not run'], ['moved', 'moved']];
-  // "6 cards · 7 min · 5 noted, 1 skipped"; a run still going is just "running".
+  const cardsN = (n) => `${n} card${n === 1 ? '' : 's'}`;
+  // "3 cards created", "would create 1 card" (a trial), "nothing created".
+  function createdCountText(run) {
+    const n = run.createdCount || 0;
+    if (!n) return 'nothing created';
+    return run.trigger === 'trial' ? `would create ${cardsN(n)}` : `${cardsN(n)} created`;
+  }
+  // "6 cards · 7 min · 5 noted, 1 skipped"; a run still going is just "running". A Once run has no cards to count, so
+  // it ends with what it created; a per-card run that created cards says so at the end.
   function runSummary(run) {
     if (run.state === 'running') return 'running';
     const total = (run.cards || []).length;
     const mins = Math.round((Date.parse(run.endedAt) - Date.parse(run.startedAt)) / 60000);
     const counts = runCounts(run);
+    const once = run.runsOn === 'once';
+    if (once) counts.noted = 0;   // the one entry being "noted" says nothing a Once run's summary needs
     const parts = COUNT_LABEL.filter(([k]) => counts[k]).map(([k, label]) => `${counts[k]} ${label}`);
-    return [`${total} card${total === 1 ? '' : 's'}`, mins >= 1 ? `${mins} min` : '<1 min', parts.join(', ')].filter(Boolean).join(' · ');
+    const created = once ? createdCountText(run) : (run.createdCount ? createdCountText(run) : '');
+    return [once ? '' : cardsN(total), mins >= 1 ? `${mins} min` : '<1 min', parts.join(', '), created].filter(Boolean).join(' · ');
   }
 
   // ---------- Display ----------
@@ -332,6 +399,17 @@
       cards.subtasks ? 'with subtasks' : '',
     ].filter(Boolean).join(' · ');
   }
+  // "New cards → Work / tickets"; the board's root is "top of the board".
+  function newCardsText(nc, boardLabel) {
+    return `New cards → ${boardLabel || nc.board} / ${nc.folder || 'top of the board'}`;
+  }
+  // A run entry's new-card lines: "Created: <title> (<key>)" ("Would create: …" on a trial), then
+  // "Not created: <key, else title> — <reason>".
+  function createdText(c, trial) {
+    const made = ((c && c.created) || []).map((x) => `${trial ? 'Would create' : 'Created'}: ${x.title}${x.key ? ` (${x.key})` : ''}`);
+    const not = ((c && c.notCreated) || []).map((x) => `Not created: ${x.key || x.title} — ${x.reason}`);
+    return [...made, ...not];
+  }
   // The last run's dot: ok (finished clean), warn (finished with skips or failures, or stopped), bad.
   function lastRunTone(run) {
     if (run.state === 'failed' || run.state === 'interrupted') return 'bad';
@@ -350,5 +428,7 @@
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
     TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText, connectorsAgentHint, reminderText,
+    RUNS_ON, RUNS_ON_LABEL, NEW_CARDS_DEFAULT, NEW_CARDS_LIMIT, NEW_CARDS_PER_HOUR, NEW_FOLDER_MAX, CARD_KEY_RE, ONCE_PARAGRAPH,
+    newCardsText, createdText, normalFolder,
   };
 });

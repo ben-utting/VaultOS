@@ -370,3 +370,97 @@ test('reminderText: added, would remind, skipped, nothing', () => {
   assert.equal(AC.reminderText({ reminder: null, reminderSkipped: '' }, true), '');
   assert.equal(AC.reminderText({}, true), '');
 });
+
+// ---------- New cards (spec 2026-11-25: Work can create new cards) ----------
+const ncBase = { name: 'Q', agent: 'claude', template: 'blank', prompt: 'p', level: 'work',
+  schedule: { repeat: 'daily', time: '08:00' }, timeLimitMin: 10 };
+const ctxNC = { boardKeys: ['work'], agentIds: ['default', 'claude', 'cursor'], tz: 'UTC',
+  agentLevels: { default: ['report', 'update', 'work'], claude: ['report', 'update', 'work'], cursor: ['report', 'update'] },
+  agentOnceLevels: { default: ['work'], claude: ['work'], cursor: ['work'] }, agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' } };
+
+test('once: valid with work + newCards; drops cards and section; max defaults to 5', () => {
+  const r = AC.validateAutomation({ ...ncBase, runsOn: 'once', newCards: { board: 'work', folder: 'tickets' },
+    cards: { board: 'work', statuses: ['backlog'] }, section: 'X' }, ctxNC);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.newCards, { board: 'work', folder: 'tickets', max: 5 });
+  assert.equal(r.value.runsOn, 'once');
+  assert.equal('cards' in r.value, false);
+  assert.equal('section' in r.value, false);
+});
+
+test('once needs Work, a destination, and no reminders', () => {
+  const e = AC.validateAutomation({ ...ncBase, runsOn: 'once', level: 'report', reminders: true }, ctxNC).errors;
+  assert.equal(e.level, 'Once runs create cards, so they need Work');
+  assert.equal(e.newCards, 'Pick where new cards go');
+  assert.equal(e.reminders, "Once runs can't add calendar reminders");
+});
+
+test('cursor: Work allowed once, refused on each card', () => {
+  assert.equal(AC.validateAutomation({ ...ncBase, agent: 'cursor', runsOn: 'once', newCards: { board: 'work', folder: '' } }, ctxNC).ok, true);
+  const e = AC.validateAutomation({ ...ncBase, agent: 'cursor', cards: { board: 'work', statuses: ['backlog'] }, section: 'Latest check-in' }, ctxNC).errors;
+  assert.equal(e.level, "Cursor CLI can't run at Work on each card; pick Once or another level");
+  const pi = AC.validateAutomation({ ...ncBase, agent: 'cursor', runsOn: 'once', newCards: { board: 'work', folder: '' } },
+    { ...ctxNC, agentOnceLevels: { ...ctxNC.agentOnceLevels, cursor: [] } }).errors;
+  assert.equal(pi.level, "Cursor CLI can't run Once automations");
+});
+
+test('newCards shape: folder without .. or leading slash, max 1-10, known board, folder check from ctx', () => {
+  const v = (nc, more = {}) => AC.validateAutomation({ ...ncBase, runsOn: 'once', newCards: nc }, { ...ctxNC, ...more });
+  assert.equal(v({ board: 'nope', folder: 'a' }).errors.newCards, 'Pick a board for new cards');
+  for (const folder of ['../x', 'a/../b', 'a\\b', 'a//b', '\u0001', './a', 'x'.repeat(201)]) {
+    assert.equal(v({ board: 'work', folder }).errors.newCards, 'Pick a folder inside the board', folder);
+  }
+  assert.equal(v({ board: 'work', folder: '/a/b/' }).value.newCards.folder, 'a/b');
+  assert.equal(v({ board: 'work', folder: ' 2. iam/tickets ' }).value.newCards.folder, '2. iam/tickets');
+  assert.equal(v({ board: 'work', folder: 'a', max: 11 }).errors.newCards, 'New cards per run: 1 to 10');
+  assert.equal(v({ board: 'work', folder: 'a', max: 0 }).errors.newCards, 'New cards per run: 1 to 10');
+  assert.equal(v({ board: 'work', folder: 'a', max: 2.5 }).errors.newCards, 'New cards per run: 1 to 10');
+  assert.equal(v({ board: 'work', folder: 'a' }, { newCardsFolderError: () => "That folder doesn't exist" }).errors.newCards, "That folder doesn't exist");
+  let asked = null;
+  v({ board: 'work', folder: '/t/' }, { newCardsFolderError: (b, f) => { asked = [b, f]; return null; } });
+  assert.deepEqual(asked, ['work', 't']);
+  assert.equal(v('tickets').errors.newCards, 'Pick where new cards go');
+});
+
+test('per-card Work may have newCards; runsOn junk refused', () => {
+  const r = AC.validateAutomation({ ...ncBase, cards: { board: 'work', statuses: ['backlog'] }, section: 'Latest check-in', newCards: { board: 'work', folder: 'f', max: 3 } }, ctxNC);
+  assert.deepEqual(r.value.newCards, { board: 'work', folder: 'f', max: 3 });
+  assert.equal('runsOn' in r.value, false);
+  const cards = AC.validateAutomation({ ...ncBase, runsOn: 'cards', cards: { board: 'work', statuses: ['backlog'] }, section: 'Latest check-in' }, ctxNC);
+  assert.equal(cards.ok, true);
+  assert.equal('runsOn' in cards.value, false);
+  assert.equal('newCards' in cards.value, false);
+  assert.equal(AC.validateAutomation({ ...ncBase, runsOn: 'twice' }, ctxNC).errors.runsOn, 'Pick each matching card or once');
+});
+
+test('Work level text mentions new cards', () => {
+  assert.equal(AC.LEVEL_TEXT.work, "Can edit files in the card's folder and create new cards.");
+  assert.deepEqual(AC.RUNS_ON, ['cards', 'once']);
+  assert.equal(AC.RUNS_ON_LABEL.once, 'Once');
+  assert.equal(AC.NEW_CARDS_DEFAULT, 5);
+  assert.equal(AC.NEW_CARDS_LIMIT, 10);
+  assert.equal(AC.NEW_CARDS_PER_HOUR, 30);
+  assert.ok(AC.CARD_KEY_RE.test('SUC-1234') && !AC.CARD_KEY_RE.test('../x') && !AC.CARD_KEY_RE.test('-x'));
+  assert.match(AC.ONCE_PARAGRAPH, /^There is no card in this run\./);
+});
+
+test('summaries: once runs and created counts', () => {
+  const t = '2026-11-25T08:00:00Z';
+  assert.equal(AC.runSummary({ state: 'finished', runsOn: 'once', startedAt: t, endedAt: t, createdCount: 3, cards: [{ state: 'noted' }] }), '<1 min · 3 cards created');
+  assert.equal(AC.runSummary({ state: 'finished', runsOn: 'once', trigger: 'trial', startedAt: t, endedAt: t, createdCount: 1, cards: [{ state: 'noted' }] }), '<1 min · would create 1 card');
+  assert.equal(AC.runSummary({ state: 'finished', runsOn: 'once', startedAt: t, endedAt: t, createdCount: 0, cards: [{ state: 'noted' }] }), '<1 min · nothing created');
+  assert.equal(AC.runSummary({ state: 'failed', runsOn: 'once', startedAt: t, endedAt: t, cards: [{ state: 'failed' }] }), '<1 min · 1 failed · nothing created');
+  assert.equal(AC.runSummary({ state: 'finished', startedAt: t, endedAt: t, createdCount: 2, cards: [{ state: 'noted' }, { state: 'noted' }] }), '2 cards · <1 min · 2 noted · 2 cards created');
+  assert.equal(AC.triggerText({ trigger: 'trial', level: 'work', runsOn: 'once' }), 'trial · nothing created');
+  assert.equal(AC.newCardsText({ board: 'work', folder: '' }, 'Work'), 'New cards → Work / top of the board');
+  assert.equal(AC.newCardsText({ board: 'work', folder: 'tickets' }), 'New cards → work / tickets');
+});
+
+test('createdText: created, would create, not created', () => {
+  const c = { created: [{ title: 'Reset MFA', key: 'SUC-1', path: 'Work/tickets/SUC-1/task.md' }, { title: 'No key', path: 'Work/tickets/no-key/task.md' }],
+    notCreated: [{ title: 'Dup', key: 'SUC-2', reason: 'SUC-2 already has a card' }, { title: 'Keyless', reason: 'duplicate in this run' }] };
+  assert.deepEqual(AC.createdText(c, false), ['Created: Reset MFA (SUC-1)', 'Created: No key',
+    'Not created: SUC-2 — SUC-2 already has a card', 'Not created: Keyless — duplicate in this run']);
+  assert.deepEqual(AC.createdText(c, true).slice(0, 1), ['Would create: Reset MFA (SUC-1)']);
+  assert.deepEqual(AC.createdText({}, false), []);
+});
