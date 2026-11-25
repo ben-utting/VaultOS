@@ -329,3 +329,25 @@ test('an agent can\'t delete an automation while it runs or waits in the queue',
   s.runner.busy = { current: null, queue: [] };
   assert.equal((await s.api.remove(automation.id)).status, 200);
 });
+
+test("an agent's edit of reminders switches the automation off, both ways", async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ agent: 'claude' });
+  const r = await s.api.edit(a.id, { reminders: true }, 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.automation.enabled, false);
+  assert.equal(r.body.automation.reminders, true);
+  assert.equal(AC.agentTagText(r.body.automation, TZ), 'Claude Code changed the reminders. Off until you switch it on.');
+  const b = await s.personOn({ agent: 'claude', reminders: true });
+  const off = (await s.api.edit(b.id, { reminders: false }, 'Claude Code')).body.automation;
+  assert.equal(off.enabled, false);
+  assert.equal('reminders' in off, false);
+});
+
+test('an agent can create a draft with reminders on (saved off)', async (t) => {
+  const s = setup(t);
+  const r = await s.api.create(draft({ reminders: true }), 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.automation.reminders, true);
+  assert.equal(r.body.automation.enabled, false);
+});

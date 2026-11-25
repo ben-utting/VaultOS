@@ -360,3 +360,13 @@ test('reminders can be saved while Calendar is off (runs skip them)', () => {
   assert.equal(v.ok, true, JSON.stringify(v.errors));
   assert.equal(v.value.reminders, true);
 });
+
+test('reminderText: added, would remind, skipped, nothing', () => {
+  const c = { reminder: { id: 'c_x', date: '2026-11-26', start: '09:15', end: null, title: 'Chase the vendor', ping: 'start' } };
+  assert.equal(AC.reminderText(c, false), 'Reminder added: Thu 26 Nov 09:15 · Chase the vendor');
+  assert.equal(AC.reminderText(c, true), 'Would remind: Thu 26 Nov 09:15 · Chase the vendor');
+  assert.equal(AC.reminderText({ reminder: { ...c.reminder, end: '09:45' } }, false), 'Reminder added: Thu 26 Nov 09:15–09:45 · Chase the vendor');
+  assert.equal(AC.reminderText({ reminder: null, reminderSkipped: 'Calendar is switched off' }, false), 'Reminder skipped: Calendar is switched off');
+  assert.equal(AC.reminderText({ reminder: null, reminderSkipped: '' }, true), '');
+  assert.equal(AC.reminderText({}, true), '');
+});

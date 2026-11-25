@@ -92,7 +92,7 @@ test('a model edit is sent as is and says it switched the automation off', async
 
 test('the help names the model among the edits that switch an automation off', async () => {
   const r = await run(['--help']);
-  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt, cards or connectors changes switch it off/);
+  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt, cards, connectors or reminders changes switch it off/);
 });
 
 test('a file that is not JSON is a usage error', async () => {
@@ -208,4 +208,26 @@ test('show includes connectors and stays valid JSON', async () => {
   assert.deepEqual(JSON.parse(withC.out).connectors, ['atlassian', 'azuredevops']);
   const without = await run(['show', 'a1'], { answers: [['show', 200, { automation: { id: 'a1' } }]] });
   assert.equal('connectors' in JSON.parse(without.out), false);
+});
+
+test('a run prints each card\'s reminder: added, would remind, skipped', async () => {
+  const rem = { id: 'c_x', date: '2026-11-26', start: '09:15', end: null, title: 'Chase', ping: 'start' };
+  const live = await run(['run', 'r1'], { answers: [['run', 200, { id: 'r1', automationName: 'Evening', trigger: 'manual', state: 'finished', cards: [
+    { title: 'Shed', state: 'noted', note: 'n', reminder: rem }, { title: 'Roof', state: 'noted', note: 'n', reminder: null, reminderSkipped: 'already has a reminder on that date' }] }]] });
+  assert.match(live.out, /^ {2}Reminder added: Thu 26 Nov 09:15 · Chase$/m);
+  assert.match(live.out, /^ {2}Reminder skipped: already has a reminder on that date$/m);
+  const trial = await run(['run', 'r2'], { answers: [['run', 200, { id: 'r2', automationName: 'Evening', trigger: 'trial', state: 'finished', cards: [{ title: 'Shed', state: 'noted', note: 'n', reminder: { ...rem, id: null } }] }]] });
+  assert.match(trial.out, /^ {2}Would remind: Thu 26 Nov 09:15 · Chase$/m);
+});
+
+test('options says whether calendar reminders can be added', async () => {
+  const on = await run(['options'], { answers: [['options', 200, { ...optionsBody([]), calendar: true }]] });
+  assert.match(on.out, /^Calendar reminders: available \(set "reminders": true\)$/m);
+  const off = await run(['options'], { answers: [['options', 200, { ...optionsBody([]), calendar: false }]] });
+  assert.match(off.out, /^Calendar reminders: Calendar is off in Settings → Features, so runs skip them$/m);
+});
+
+test('the help names reminders among the edits that switch an automation off', async () => {
+  const r = await run(['--help']);
+  assert.match(r.out, /edit <id> --file <changes\.json> .*reminders/);
 });

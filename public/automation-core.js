@@ -274,6 +274,20 @@
     return `Draft from ${o.agent} · ${day}`;
   }
 
+  // ---------- Calendar reminders in a run (spec: vaultos-remind) ----------
+  // "Reminder added: Thu 26 Nov 09:15 · Chase", "Would remind: …" on a trial, "Reminder skipped: why", or ''.
+  const WEEKDAY_OF = (date) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${date}T00:00:00Z`).getUTCDay()];
+  const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function reminderText(c, trial) {
+    const r = c && c.reminder;
+    if (r && r.date) {
+      const [, mo, d] = r.date.split('-').map(Number);
+      const when = `${WEEKDAY_OF(r.date)} ${d} ${MONTH_ABBR[mo - 1]} ${r.start || ''}${r.end ? `–${r.end}` : ''}`.trim();
+      return `${trial ? 'Would remind' : 'Reminder added'}: ${when}${r.title ? ` · ${r.title}` : ''}`;
+    }
+    return c && c.reminderSkipped ? `Reminder skipped: ${c.reminderSkipped}` : '';
+  }
+
   // ---------- Run summaries ----------
   function runCounts(run) {
     const n = { noted: 0, skipped: 0, failed: 0, timedOut: 0, notRun: 0, moved: 0 };
@@ -335,6 +349,6 @@
     DAYS, DAY_LABEL, HOURS_EVERY, wallParts, wallToUtc, lastSlot, nextSlot, describeSchedule, hhmm,
     whenText, cardsText, lastRunTone, failureText,
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
-    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText, connectorsAgentHint,
+    TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText, connectorsAgentHint, reminderText,
   };
 });
