@@ -688,3 +688,110 @@ test('a trial uses connectors too and writes nothing', async (t) => {
   assert.deepEqual(run.cards[0].lookups, { atlassian: { getIssue: 2 } });
   assert.equal(s.read('01-a'), before);
 });
+
+// ---------- Calendar reminders (vaultos-remind) ----------
+const { createCalendarService } = require('../lib/calendar-service');
+const { PROFILES } = require('../lib/agents');
+// A runner whose addReminder/cardReminders go to the real calendar service over the same temp vault, the way
+// lib/automation-service.js wires them. flags.calendar switches Settings → Features → Calendar.
+function calSetup(t, { cards, clockIso = '2026-11-25T19:00:00Z', calendar = true, promptOut = null } = {}) {
+  const flags = { calendar };
+  const clock = { now: Date.parse(clockIso) };
+  let cal = null;
+  const s = setup(t, {
+    cards,
+    cardReminders: (p) => cal.upcomingForCard(p),
+    addReminder: ({ automation, card, remind, trial, taken }) => cal.addFromAutomation(remind, { card: card.path, cardTitle: card.title, automationName: automation.name, dryRun: trial, taken }),
+    ...(promptOut ? { agentEnv: () => ({ ...process.env, FAKE_PROMPT_OUT: promptOut }) } : {}),
+  });
+  cal = createCalendarService({
+    vaultDir: s.vault, settings: () => ({ features: { calendar: flags.calendar }, today: { timezone: TZ }, boards: [] }),
+    boards: () => [], resolveWorkspace: () => ({ dir: s.vault }), scanAll: async () => [], safeVaultPath: async (rel) => path.join(s.vault, rel),
+    now: () => clock.now, profiles: PROFILES,
+  });
+  const calFile = path.join(s.vault, '.vaultos', 'calendar.json');
+  const entries = () => (fs.existsSync(calFile) ? JSON.parse(fs.readFileSync(calFile, 'utf8')).entries : []);
+  return { ...s, cal, flags, clock, entries, calFile };
+}
+const three = { '01-a': ['in-progress'], '02-b': ['in-progress'], '03-c': ['blocked'] };
+
+test('reminders on: each card\'s reminder is added, staggered, and recorded in the run', async (t) => {
+  const s = calSetup(t, { cards: three });
+  const run = await runAndWait(s, await s.make({ reminders: true, prompt: 'FAKE:remind:2026-11-26' }));
+  assert.deepEqual(run.cards.map((c) => [c.state, c.reminder && c.reminder.start, c.reminderSkipped]), [
+    ['noted', '09:00', ''], ['noted', '09:15', ''], ['noted', '09:30', ''],
+  ]);
+  assert.deepEqual(run.cards[0].reminder, { id: s.entries()[0].id, date: '2026-11-26', start: '09:00', end: null, title: '01-a', ping: 'start' });
+  assert.deepEqual(s.entries().map((e) => [e.card, e.start, e.note, e.created.by.agent]), [
+    ['Work/1. a/01-a/task.md', '09:00', 'Fake reminder.', 'Automation: Check'],
+    ['Work/1. a/02-b/task.md', '09:15', 'Fake reminder.', 'Automation: Check'],
+    ['Work/1. a/03-c/task.md', '09:30', 'Fake reminder.', 'Automation: Check'],
+  ]);
+});
+
+test('a re-run the same day adds no duplicates', async (t) => {
+  const s = calSetup(t, { cards: three });
+  const a = await s.make({ reminders: true, prompt: 'FAKE:remind:2026-11-26' });
+  await runAndWait(s, a);
+  const again = await runAndWait(s, a);
+  assert.deepEqual(again.cards.map((c) => [c.state, c.reminder, c.reminderSkipped]), Array(3).fill(['noted', null, 'already has a reminder on that date']));
+  assert.equal(s.entries().length, 3);
+});
+
+test('a trial writes nothing to the calendar but previews staggered times', async (t) => {
+  const s = calSetup(t, { cards: three });
+  const run = await tryAndWait(s, await s.make({ reminders: true, prompt: 'FAKE:remind:2026-11-26' }));
+  assert.deepEqual(run.cards.map((c) => c.reminder && [c.reminder.id, c.reminder.start]), [[null, '09:00'], [null, '09:15'], [null, '09:30']]);
+  assert.equal(fs.existsSync(s.calFile), false);
+});
+
+test('reminders off: a vaultos-remind block is ignored and nothing is added', async (t) => {
+  const s = calSetup(t, { cards: { '01-a': ['in-progress'] } });
+  const run = await runAndWait(s, await s.make({ prompt: 'FAKE:remind:2026-11-26' }));
+  assert.equal(run.cards[0].state, 'noted');
+  assert.equal(run.cards[0].reminder, null);
+  assert.deepEqual(run.cards[0].ignored, ['vaultos-remind block (reminders are off for this automation)']);
+  assert.equal(fs.existsSync(s.calFile), false);
+});
+
+test('Calendar off: the reminder is skipped with the reason and the card is still noted', async (t) => {
+  const s = calSetup(t, { cards: { '01-a': ['in-progress'] }, calendar: false });
+  const run = await runAndWait(s, await s.make({ reminders: true, prompt: 'FAKE:remind:2026-11-26' }));
+  assert.deepEqual([run.cards[0].state, run.cards[0].reminder, run.cards[0].reminderSkipped], ['noted', null, 'Calendar is switched off']);
+  assert.match(s.read('01-a'), /## Latest check-in/);
+});
+
+test('a bad or past date never fails the card', async (t) => {
+  const s = calSetup(t, { cards: { '01-a': ['in-progress'], '02-b': ['in-progress'] } });
+  const bad = await runAndWait(s, await s.make({ reminders: true, prompt: 'FAKE:remind:soon', cards: { board: 'work', statuses: ['in-progress'], subtasks: false } }));
+  assert.deepEqual(bad.cards.map((c) => [c.state, c.reminder, c.reminderSkipped, c.ignored]), Array(2).fill(['noted', null, '', ['vaultos-remind date: soon']]));
+  const past = await runAndWait(s, await s.make({ name: 'Past', reminders: true, prompt: 'FAKE:remind:2026-11-01' }));
+  assert.deepEqual(past.cards.map((c) => [c.state, c.reminderSkipped]), Array(2).fill(['noted', 'that date has passed']));
+});
+
+test('a reminder that throws is recorded as skipped; the note is still written', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, addReminder: async () => { throw new Error('disk full'); } });
+  const run = await runAndWait(s, await s.make({ reminders: true, prompt: 'FAKE:remind:2026-11-26' }));
+  assert.deepEqual([run.cards[0].state, run.cards[0].reminderSkipped], ['noted', "VaultOS couldn't add it: disk full"]);
+  assert.match(s.read('01-a'), /Fake note\./);
+});
+
+test('the prompt lists the card\'s upcoming reminders only when reminders are on', async (t) => {
+  const promptOut = path.join(os.tmpdir(), `auto-remind-prompt-${process.pid}-${Date.now()}`);
+  t.after(() => fs.rmSync(promptOut, { force: true }));
+  const s = calSetup(t, { cards: { '01-a': ['in-progress'] }, promptOut });
+  await s.cal.view.store.create({ title: 'Chase supplier', date: '2026-11-27', start: '10:00', card: 'Work/1. a/01-a/task.md', ping: null }, { kind: 'person' });
+  await runAndWait(s, await s.make({ reminders: true }));
+  await runAndWait(s, await s.make({ name: 'No reminders' }));
+  const [on, off] = fs.readFileSync(promptOut, 'utf8').split('\n=====\n');
+  assert.ok(on.includes('Existing upcoming calendar reminders for this card:\n- 2026-11-27 10:00 — Chase supplier\n'), on);
+  assert.ok(on.includes('```vaultos-remind'));
+  assert.ok(!off.includes('calendar reminders'));
+  assert.ok(!off.includes('vaultos-remind'));
+});
+
+test('a card whose reminders cannot be read still runs, with none listed', async (t) => {
+  const s = setup(t, { cards: { '01-a': ['in-progress'] }, cardReminders: async () => { throw new Error('nope'); } });
+  const run = await runAndWait(s, await s.make({ reminders: true }));
+  assert.equal(run.cards[0].state, 'noted');
+});

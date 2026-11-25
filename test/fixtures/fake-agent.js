@@ -68,9 +68,12 @@ process.stdin.on('end', () => {
   if (has('crash')) { process.stderr.write('boom\n'); process.exit(3); }
   if (has('none')) { process.stdout.write('I looked but wrote no note.\n'); return; }
   if (has('touch')) { fs.writeFileSync('touched.txt', 'x'); process.stdout.write(note('Touched a file.')); return; }
+  // FAKE:remind:<YYYY-MM-DD>[@HH:MM]: propose a calendar reminder for the card (a vaultos-remind block before the note).
+  const rm = /FAKE:remind:(\S+?)(?:@(\d\d:\d\d))?(?=\s|$)/.exec(input);
+  const remind = rm ? `\`\`\`vaultos-remind\ndate: ${rm[1]}\n${rm[2] ? `time: ${rm[2]}\n` : ''}note: Fake reminder.\n\`\`\`\n` : '';
   const up = /FAKE:update:([a-z-]+)/.exec(input);
   if (up) {
-    process.stdout.write(`\`\`\`vaultos-update\nstatus: ${up[1]}\nblocked_by: fake blocker\n\`\`\`\n${note('Proposed a move.')}`);
+    process.stdout.write(`\`\`\`vaultos-update\nstatus: ${up[1]}\nblocked_by: fake blocker\n\`\`\`\n${remind}${note('Proposed a move.')}`);
     return;
   }
   if (has('done')) {
@@ -84,5 +87,5 @@ process.stdin.on('end', () => {
     process.stdout.write(`\n${note('After the flood.')}`);
     return;
   }
-  process.stdout.write(`ok\n${note()}`);
+  process.stdout.write(`ok\n${remind}${note()}`);
 });
