@@ -473,3 +473,28 @@ test('review 5: newCards only counts at Work; at Report or Update it is dropped 
     assert.equal('newCards' in r.value, false);
   }
 });
+
+// ---------- Let the agent choose the folder (2026-11-25, follow-up) ----------
+test('choose: newCards with choose keeps only the board (top as base) and the cap', () => {
+  const r = AC.validateAutomation({ ...ncBase, runsOn: 'once', newCards: { board: 'work', folder: 'ignored/here', max: 10, choose: true } },
+    { ...ctxNC, newCardsFolderError: (b, f) => (f === '' ? null : 'checked the wrong folder') });
+  assert.equal(r.ok, true, JSON.stringify(r.errors));
+  assert.deepEqual(r.value.newCards, { board: 'work', folder: '', max: 10, choose: true });
+  assert.equal(AC.validateAutomation({ ...ncBase, runsOn: 'once', newCards: { board: 'work', folder: '', choose: 'yes' } }, ctxNC).errors.newCards, 'Must be on or off');
+  const plain = AC.validateAutomation({ ...ncBase, runsOn: 'once', newCards: { board: 'work', folder: 't', choose: false } }, ctxNC).value.newCards;
+  assert.deepEqual(plain, { board: 'work', folder: 't', max: 5 });
+  assert.equal(AC.NEW_FOLDERS_PER_RUN, 3);
+  assert.ok(AC.FOLDER_NAME_RE.test('10. security') && AC.FOLDER_NAME_RE.test('entra_b-2') && !AC.FOLDER_NAME_RE.test('.git') && !AC.FOLDER_NAME_RE.test('a/b') && !AC.FOLDER_NAME_RE.test('x'.repeat(61)));
+});
+
+test('choose: list text and created lines say where each card went', () => {
+  assert.equal(AC.newCardsText({ board: 'work', folder: '', choose: true }, 'Work'), 'New cards → Work / the agent picks the folder');
+  const c = { created: [{ title: 'Reset MFA', key: 'TCK-1', folder: '3. iam' }, { title: 'Firewall', folder: '10. security', newFolder: true }, { title: 'Top', folder: '' }] };
+  assert.deepEqual(AC.createdText(c, false), ['Created: Reset MFA (TCK-1) in 3. iam', 'Created: Firewall in 10. security (new folder)', 'Created: Top in the top of the board']);
+  assert.deepEqual(AC.createdText({ created: [{ title: 'A', key: 'K' }] }, false), ['Created: A (K)']);
+});
+
+test('choose: a new folder name ends in a letter or digit (SMB drops trailing dots and spaces)', () => {
+  for (const ok of ['10. security', 'entra', 'a', 'x_1-b']) assert.ok(AC.FOLDER_NAME_RE.test(ok), ok);
+  for (const bad of ['security ', '10.', 'x-', 'x_', ' x', '.x', '']) assert.ok(!AC.FOLDER_NAME_RE.test(bad), JSON.stringify(bad));
+});

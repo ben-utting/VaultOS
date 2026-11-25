@@ -8,7 +8,7 @@ const { createAutomationStore } = require('../lib/automation-store');
 const { createRunner } = require('../lib/automation-runner');
 const A = require('../lib/automation-agents');
 const { parseFrontmatter } = require('../lib/task-file');
-const { createCardWriter, checkDestination } = require('../lib/automation-newcards');
+const { createCardWriter, checkDestination, destinationFolders } = require('../lib/automation-newcards');
 
 process.env.AUTOMATION_TEST_AGENT = path.join(__dirname, 'fixtures', 'fake-agent.js');
 const TZ = 'Europe/London';
@@ -42,10 +42,14 @@ function setup(t, { cards = {}, busy = [], clock = null, withNewCards = false, .
       newCards: {
         begin: async (automation, { trial, agentLabel }) => {
           const boardDir = path.join(vault, 'Work');
-          const chk = checkDestination(boardDir, automation.newCards.folder, { skipDirs: new Set(['_tasks', '_Templates', 'archive']) });
+          const skipDirs = new Set(['_tasks', '_Templates', 'archive']);
+          const nc = automation.newCards;
+          const chk = checkDestination(boardDir, nc.folder, { skipDirs });
           if (!chk.ok) return { error: chk.error };
-          const h = await writer.begin({ boardDir, destDir: chk.dir, max: automation.newCards.max, automationName: automation.name, agentLabel, trial, today: '2026-11-11', tz: TZ });
-          return { ...h, dir: chk.dir, relDir: path.relative(vault, chk.dir).split(path.sep).join('/'), label: `Work / ${automation.newCards.folder || 'top of the board'}` };
+          const h = await writer.begin({ boardDir, destDir: chk.dir, max: nc.max, automationName: automation.name, agentLabel, trial, today: '2026-11-11', tz: TZ, choose: !!nc.choose });
+          return { ...h, dir: chk.dir, relDir: path.relative(vault, chk.dir).split(path.sep).join('/'),
+            label: nc.choose ? 'Work' : `Work / ${nc.folder || 'top of the board'}`, choose: !!nc.choose,
+            folders: nc.choose ? await destinationFolders(boardDir, { skipDirs }) : [] };
         },
       },
       ...more,
@@ -988,4 +992,23 @@ test('review 12: stopping a Once run ends it stopped and creates nothing', async
   assert.equal(run.state, 'stopped');
   assert.deepEqual([run.cards[0].state, run.cards[0].reason], ['failed', 'stopped']);
   assert.deepEqual(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')), []);
+});
+
+// ---------- Let the agent choose the folder ----------
+test('choose: a Once run files each card into the folder the agent names, and may add a folder', async (t) => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-')), 'p.txt');
+  process.env.FAKE_PROMPT_OUT = out;
+  t.after(() => { delete process.env.FAKE_PROMPT_OUT; });
+  const s = setup(t, { withNewCards: true });
+  fs.mkdirSync(path.join(s.vault, 'Work', '3. iam'));
+  const run = await runAndWait(s, await s.make({ ...ONCE, newCards: { board: 'work', folder: '', max: 10, choose: true },
+    prompt: 'FAKE:card:TCK-1:Reset_MFA:3._iam FAKE:card:TCK-2:Firewall:10._security FAKE:card:TCK-3:Loose' }));
+  assert.equal(run.state, 'finished');
+  assert.equal(run.cards[0].title, 'Work');
+  assert.deepEqual(run.cards[0].created.map((c) => [c.path, c.folder, !!c.newFolder]), [
+    ['Work/3. iam/TCK-1/task.md', '3. iam', false], ['Work/10. security/TCK-2/task.md', '10. security', true], ['Work/TCK-3/task.md', '', false]]);
+  const prompt = fs.readFileSync(out, 'utf8');
+  assert.match(prompt, /New cards go into the Work board\. Pick a folder/);
+  assert.match(prompt, /^- 3\. iam$/m);
+  assert.match(prompt, /^folder: /m);
 });

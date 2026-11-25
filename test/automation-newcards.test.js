@@ -307,3 +307,64 @@ test('review 7: the destination is checked again before each card, and reasons n
   assert.equal(r.notCreated.reason, "New cards folder: That folder doesn't exist");
   assert.ok(!JSON.stringify(r).includes(v.vault));
 });
+
+// ---------- Let the agent choose the folder ----------
+const Cf = (title, key, folder) => ({ ...C(title, key), ...(folder !== undefined ? { folder } : {}) });
+function chooseVault(t, files = {}, opts = {}) {
+  const v = vaultWith(t, { '0. admin/.keep': '', '3. iam/TCK-1/task.md': task('TCK-1', 'Reset MFA'), 'archive/old/.keep': '', ...files }, { skipDirs: SKIP, ...opts });
+  v.beginChoose = (more = {}) => v.begin({ destDir: v.boardDir, choose: true, max: 10, ...more });
+  return v;
+}
+
+test('choose: cards go into the folder the agent names, or the top of the board', async (t) => {
+  const v = chooseVault(t);
+  const run = await v.beginChoose();
+  assert.deepEqual(await run.add(Cf('Entra app', 'TCK-2', '3. iam')),
+    { created: { path: 'Work/3. iam/TCK-2/task.md', id: 'TCK-2', title: 'Entra app', key: 'TCK-2', folder: '3. iam' } });
+  assert.deepEqual((await run.add(Cf('Loose', 'TCK-3'))).created, { path: 'Work/TCK-3/task.md', id: 'TCK-3', title: 'Loose', key: 'TCK-3', folder: '' });
+  assert.ok(fs.existsSync(path.join(v.boardDir, '3. iam', 'TCK-2', 'task.md')));
+});
+
+test('choose: one new folder level at a time, safe names only, at most 3 a run', async (t) => {
+  const v = chooseVault(t);
+  const run = await v.beginChoose();
+  const a = await run.add(Cf('Firewall', 'F-1', '10. security'));
+  assert.deepEqual(a.created, { path: 'Work/10. security/F-1/task.md', id: 'F-1', title: 'Firewall', key: 'F-1', folder: '10. security', newFolder: true });
+  assert.equal('newFolder' in (await run.add(Cf('Firewall 2', 'F-2', '10. security'))).created, false);
+  assert.ok((await run.add(Cf('Entra', 'E-1', '3. iam/entra'))).created.newFolder);
+  const reason = async (card) => (await run.add(card)).notCreated.reason;
+  assert.equal(await reason(Cf('Deep', 'D-1', 'nope/deeper')), 'folder nope/deeper: only one new folder level at a time');
+  assert.equal(await reason(Cf('Dot', 'D-2', '3. iam/.git')), "folder 3. iam/.git: that's not a folder name VaultOS can make");
+  assert.equal(await reason(Cf('Data', 'D-3', 'data')), "folder data: that's not a folder name VaultOS can make");
+  assert.equal(await reason(Cf('Arch', 'D-4', 'archive/old')), "folder archive/old: Cards in that folder wouldn't show on the board");
+  assert.equal(await reason(Cf('Arch2', 'D-5', 'archive/new')), "folder archive/new: Cards in that folder wouldn't show on the board");
+  assert.equal(await reason(Cf('Card', 'D-6', '3. iam/TCK-1')), "folder 3. iam/TCK-1: That's a card's folder; pick the folder it sits in");
+  assert.ok((await run.add(Cf('Third', 'N-3', '11. third'))).created.newFolder);
+  assert.equal(await reason(Cf('Fourth', 'N-4', '12. fourth')), 'folder 12. fourth: no more new folders this run (3)');
+  assert.equal(fs.existsSync(path.join(v.boardDir, '12. fourth')), false);
+  assert.ok((await run.add(Cf('Into existing new', 'N-5', '11. third'))).created);
+});
+
+test('choose: the keyless title check is per folder; the key check stays board-wide', async (t) => {
+  const v = chooseVault(t);
+  const run = await v.beginChoose();
+  assert.equal((await run.add(Cf('Reset MFA', undefined, '3. iam'))).notCreated.reason, 'a card with that title already exists');
+  // A new run: in one run the same keyless title is a duplicate wherever it's aimed.
+  assert.ok((await (await v.beginChoose()).add(Cf('Reset MFA', undefined, '0. admin'))).created);
+  assert.equal((await run.add(Cf('Dup', 'tck-1', '0. admin'))).notCreated.reason, 'tck-1 already has a card');
+});
+
+test('choose: a trial makes no folders and says which would be new', async (t) => {
+  const v = chooseVault(t);
+  const run = await v.beginChoose({ trial: true });
+  assert.equal((await run.add(Cf('A', 'A-1', '10. security'))).created.newFolder, true);
+  assert.equal('newFolder' in (await run.add(Cf('B', 'B-1', '10. security'))).created, false);
+  assert.equal(fs.existsSync(path.join(v.boardDir, '10. security')), false);
+});
+
+test('a fixed-folder run ignores a folder line', async (t) => {
+  const v = chooseVault(t);
+  const r = await (await v.begin()).add(Cf('A', 'A-1', '3. iam'));
+  assert.equal(r.created.path, 'Work/tickets/A-1/task.md');
+  assert.equal('folder' in r.created, false);
+});

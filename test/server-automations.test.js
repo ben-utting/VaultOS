@@ -366,3 +366,22 @@ test('new cards: a Once run creates the card and the board shows it', { timeout:
   const off = await s.api('PUT', `/api/automations/${a.id}`, { ...onceDef(), enabled: false });
   assert.equal(off.status, 200, off.text);
 });
+
+test('choose: a Once automation where the agent picks the folder files cards across the board', { timeout: 30000 }, async (t) => {
+  const s = await ready(t);
+  seedVault(s.vault, { 'Work/3. iam/.keep': '', 'Work/0. admin/.keep': '' });
+  await s.turnOn();
+  const saved = await s.api('POST', '/api/automations', onceDef({ newCards: { board: 'work', folder: 'whatever', max: 10, choose: true },
+    prompt: 'FAKE:card:TCK-1:Reset_MFA:3._iam FAKE:card:TCK-2:Firewall:10._security' }));
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(saved.body.automation.newCards, { board: 'work', folder: '', max: 10, choose: true });
+  await s.api('POST', `/api/automations/${saved.body.automation.id}/run`);
+  await waitIdle(s);
+  const [run] = (await s.api('GET', '/api/automations/runs')).body.runs;
+  assert.equal(run.state, 'finished', JSON.stringify(run.cards));
+  assert.equal(run.createdCount, 2);
+  assert.equal(run.cards[0].title, 'Work (the agent picks the folder)');
+  assert.ok(run.cards[0].created.every((c) => typeof c.folder === 'string'));
+  const tasks = (await s.api('GET', '/api/tasks?ws=work')).body.tasks.map((x) => x.path);
+  assert.ok(tasks.includes('Work/3. iam/TCK-1/task.md') && tasks.includes('Work/10. security/TCK-2/task.md'), JSON.stringify(tasks));
+});

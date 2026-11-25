@@ -345,3 +345,31 @@ test('buildPrompt: a Work card run with newCards gets the card instructions befo
   assert.match(p, /^- A-1 · One · backlog$/m);
   assert.doesNotMatch(N.buildPrompt({ automation, card, taskRaw: 'x', today: '2026-11-11', tz: 'UTC' }), /vaultos-card/);
 });
+
+// ---------- Let the agent choose the folder ----------
+test('choose: parseCard reads folder (normalised; bad paths dropped to Ignored)', () => {
+  assert.equal(N.parseCard('title: t\ngoal: g\nfolder: /3. iam/entra/').card.folder, '3. iam/entra');
+  assert.equal(N.parseCard('title: t\ngoal: g\nfolder: "10. security"').card.folder, '10. security');
+  assert.equal(N.parseCard('title: t\ngoal: g').card.folder, undefined);
+  for (const bad of ['../x', 'a/../b', 'a\\\\b']) {
+    const r = N.parseCard(`title: t\ngoal: g\nfolder: ${bad}`);
+    assert.equal(r.card.folder, undefined, bad);
+    assert.match(r.ignored[0], /^vaultos-card folder: /);
+  }
+});
+
+test('choose: the prompt lists the board folders, the rules for new ones, and a folder line in the block', () => {
+  const folders = ['', '0. admin', '3. iam', '3. iam/entra', ...Array.from({ length: 320 }, (_, i) => `9. misc/f${i}`)];
+  const p = N.buildOncePrompt({ automation: { name: 'Q', prompt: 'Look.', level: 'work' }, today: '2026-11-25', tz: 'UTC',
+    newCards: { max: 10, destLabel: 'Work', existing: [], keys: ['tck-1'], choose: true, folders } });
+  assert.match(p, /New cards go into the Work board\. Pick a folder for each card from this list/);
+  assert.match(p, /^- 3\. iam\/entra$/m);
+  assert.match(p, /\(and 23 more\)/);
+  assert.match(p, /CLAUDE\.md/);
+  assert.match(p, /at most 3 new folders a run/);
+  assert.match(p, /^folder: /m);
+  assert.match(p, /Keys already on the board \(case doesn't matter\): tck-1\./);
+  const fixed = N.buildOncePrompt({ automation: { name: 'Q', prompt: 'Look.', level: 'work' }, today: '2026-11-25', tz: 'UTC',
+    newCards: { max: 10, destLabel: 'Work / tickets', existing: [], keys: [] } });
+  assert.doesNotMatch(fixed, /^folder: /m);
+});

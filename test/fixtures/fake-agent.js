@@ -67,10 +67,10 @@ process.stdin.on('end', () => {
   }
   if (has('crash')) { process.stderr.write('boom\n'); process.exit(3); }
   if (has('none')) { process.stdout.write('I looked but wrote no note.\n'); return; }
-  // FAKE:card:<KEY or ->:<Title_with_underscores> (repeatable): propose a new card (a vaultos-card block before the
-  // note); FAKE:cardsonly leaves the note out.
-  const cards = [...input.matchAll(/FAKE:card:([^:\s]+):(\S+)/g)].map(([, key, title]) =>
-    `\`\`\`vaultos-card\ntitle: ${title.replace(/_/g, ' ')}\n${key === '-' ? '' : `key: ${key}\n`}goal: Fake goal.\nplan:\n- first\n- second\n\`\`\`\n`).join('');
+  // FAKE:card:<KEY or ->:<Title_with_underscores>[:<folder_with_underscores>] (repeatable): propose a new card (a
+  // vaultos-card block before the note), with a folder line when given; FAKE:cardsonly leaves the note out.
+  const cards = [...input.matchAll(/FAKE:card:([^:\s]+):([^:\s]+)(?::(\S+))?/g)].map(([, key, title, folder]) =>
+    `\`\`\`vaultos-card\ntitle: ${title.replace(/_/g, ' ')}\n${key === '-' ? '' : `key: ${key}\n`}${folder ? `folder: ${folder.replace(/_/g, ' ')}\n` : ''}goal: Fake goal.\nplan:\n- first\n- second\n\`\`\`\n`).join('');
   if (has('cardsonly')) { process.stdout.write(`ok\n${cards}`); return; }
   if (has('touch')) { fs.writeFileSync('touched.txt', 'x'); process.stdout.write(note('Touched a file.')); return; }
   // FAKE:remind:<YYYY-MM-DD>[@HH:MM]: propose a calendar reminder for the card (a vaultos-remind block before the note).

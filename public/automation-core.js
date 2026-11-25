@@ -113,6 +113,10 @@
   const NEW_CARDS_PER_HOUR = 30;
   const NEW_FOLDER_MAX = 200;
   const CARD_KEY_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$/;
+  // "Let the agent choose": the agent may name a new folder one level inside an existing one, this many a run, with a
+  // name like "10. security" (letters, digits, spaces, . _ -, starting and ending with a letter or digit).
+  const NEW_FOLDERS_PER_RUN = 3;
+  const FOLDER_NAME_RE = /^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,58}[A-Za-z0-9])?$/;
   const CARD_STATUSES = ['backlog', 'in-progress', 'blocked', 'needs-decision', 'review', 'scheduled'];
   const STATUS_LABEL = {
     'backlog': 'Backlog', 'in-progress': 'In Progress', 'blocked': 'Blocked', 'needs-decision': 'Needs Decision',
@@ -193,13 +197,16 @@
     if (nc === undefined || nc === null) return { value: null };
     if (!isObj(nc)) return { error: 'Pick where new cards go' };
     if (!ctx.boardKeys.includes(nc.board)) return { error: 'Pick a board for new cards' };
-    const folder = normalFolder(nc.folder);
+    const choose = nc.choose === undefined || nc.choose === null ? false : nc.choose;
+    if (typeof choose !== 'boolean') return { error: 'Must be on or off' };
+    // With choose, the agent picks a folder per card; the top of the board is its base.
+    const folder = choose ? '' : normalFolder(nc.folder);
     if (folder === null) return { error: 'Pick a folder inside the board' };
     const max = nc.max === undefined || nc.max === null ? NEW_CARDS_DEFAULT : nc.max;
     if (!Number.isInteger(max) || max < 1 || max > NEW_CARDS_LIMIT) return { error: `New cards per run: 1 to ${NEW_CARDS_LIMIT}` };
     const missing = typeof ctx.newCardsFolderError === 'function' ? ctx.newCardsFolderError(nc.board, folder) : null;
     if (missing) return { error: missing };
-    return { value: { board: nc.board, folder, max } };
+    return { value: { board: nc.board, folder, max, ...(choose ? { choose: true } : {}) } };
   }
 
   // The builder and the server both run this; the server's answer is the one that counts.
@@ -403,12 +410,14 @@
   }
   // "New cards → Work / tickets"; the board's root is "top of the board".
   function newCardsText(nc, boardLabel) {
-    return `New cards → ${boardLabel || nc.board} / ${nc.folder || 'top of the board'}`;
+    return `New cards → ${boardLabel || nc.board} / ${nc.choose ? 'the agent picks the folder' : nc.folder || 'top of the board'}`;
   }
   // A run entry's new-card lines: "Created: <title> (<key>)" ("Would create: …" on a trial), then
   // "Not created: <key, else title> — <reason>".
   function createdText(c, trial) {
-    const made = ((c && c.created) || []).map((x) => `${trial ? 'Would create' : 'Created'}: ${x.title}${x.key ? ` (${x.key})` : ''}`);
+    // With "Let the agent choose", each card also says where it went: " in 3. iam", " (new folder)".
+    const where = (x) => (x.folder === undefined ? '' : ` in ${x.folder || 'the top of the board'}${x.newFolder ? ' (new folder)' : ''}`);
+    const made = ((c && c.created) || []).map((x) => `${trial ? 'Would create' : 'Created'}: ${x.title}${x.key ? ` (${x.key})` : ''}${where(x)}`);
     const not = ((c && c.notCreated) || []).map((x) => `Not created: ${x.key || x.title} — ${x.reason}`);
     return [...made, ...not];
   }
@@ -431,6 +440,7 @@
     LEVELS, LEVEL_LABEL, CARD_STATUSES, STATUS_LABEL, RESERVED_SECTIONS, MAX_CARDS, TRIAL_CARDS, NOTE_MAX, PROMPT_MAX, NAME_MAX, MODEL_MAX,
     TEMPLATES, LEVEL_TEXT, LEVEL_PARAGRAPHS, validateAutomation, runCounts, runSummary, agentTagText, triggerText, listText, connectorsAgentHint, reminderText,
     RUNS_ON, RUNS_ON_LABEL, NEW_CARDS_DEFAULT, NEW_CARDS_LIMIT, NEW_CARDS_PER_HOUR, NEW_FOLDER_MAX, CARD_KEY_RE, ONCE_PARAGRAPH,
+    NEW_FOLDERS_PER_RUN, FOLDER_NAME_RE,
     newCardsText, createdText, normalFolder,
   };
 });

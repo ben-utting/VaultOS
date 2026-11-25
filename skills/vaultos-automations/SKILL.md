@@ -79,7 +79,7 @@ Use these as starting points. Fit them to what you found in the vault rather tha
   }
   ```
 
-  Always have the agent pass the source's own id as `key`: that's what stops the same ticket becoming two cards. Take the board key, folder, connector id and agent from `options`, and check the folder exists (it's in `options`' folder list) before you create it.
+  Always have the agent pass the source's own id as `key`: that's what stops the same ticket becoming two cards. If the person files work into numbered area folders and would rather not pick one folder, use `"newCards": { "board": "work", "choose": true, "max": 10 }`: the agent then picks a folder for each card (and may add up to 3 new ones), guided by the board's `CLAUDE.md`. Take the board key, folder, connector id and agent from `options`, and check the folder exists (it's in `options`' folder list) before you create it.
 
 ## Writing a good prompt
 

@@ -280,7 +280,7 @@
       ${body}
       ${warn.map(([t, text, made, trial]) => (made
     // A created card's title opens it (on its own board); a trial's would-be card isn't there to open.
-    ? `<p class="au-warn" data-tone="${t}">${esc(text)}${trial ? esc(made.title) : `<button type="button" class="au-card-t au-created-link" data-path="${esc(made.path)}" data-board="${esc(made.board || '')}">${esc(made.title)}</button>`}${made.key ? ` (${esc(made.key)})` : ''}</p>`
+    ? `<p class="au-warn" data-tone="${t}">${esc(text)}${trial ? esc(made.title) : `<button type="button" class="au-card-t au-created-link" data-path="${esc(made.path)}" data-board="${esc(made.board || '')}">${esc(made.title)}</button>`}${made.key ? ` (${esc(made.key)})` : ''}${made.folder === undefined ? '' : ` in ${esc(made.folder || 'the top of the board')}${made.newFolder ? ' (new folder)' : ''}`}</p>`
     : `<p class="au-warn" data-tone="${t}">${esc(text)}</p>`)).join('')}
       ${c.outputTail ? `<details class="au-output"><summary>Output</summary><pre>${esc(c.outputTail)}</pre></details>` : ''}
     </article>`;
@@ -453,11 +453,17 @@
   // ---- New cards (Work only) ----
   const NO_CARDS = '__none__';   // a per-card Work automation that creates no cards
   const PICK = '__pick__';       // nothing picked yet (Once needs a folder)
+  const CHOOSE = '__choose__';   // the agent picks a folder for each card (newCards.choose)
   function paintNewCards() {
     const work = radio('ab-level') === 'work';
     $('ab-newCards').classList.toggle('hidden', !work);
-    $('ab-nc-hint').textContent = isOnce() ? 'Required for Once. Cards land in this folder, each in its own.' : "Leave it on Don't create cards and it won't create any.";
     paintFolders();
+    paintNcHint();
+  }
+  function paintNcHint() {
+    $('ab-nc-hint').textContent = $('ab-nc-folder').value === CHOOSE
+      ? `The agent picks a folder in this board for each card, and may add up to ${AC.NEW_FOLDERS_PER_RUN} new ones a run.`
+      : isOnce() ? 'Required for Once. Cards land in this folder, each in its own.' : "Leave it on Don't create cards and it won't create any.";
   }
   // The folder options for the picked board: the saved folder stays listed even if it's gone (Save then says so).
   function paintFolders() {
@@ -465,7 +471,7 @@
     const saved = sel.dataset.want !== undefined;   // the automation's own folder, until the person picks another
     const want = saved ? sel.dataset.want : sel.value;
     const list = B.folders[$('ab-nc-board').value];
-    const opts = [isOnce() ? [PICK, list ? 'Pick a folder' : 'Loading folders…'] : [NO_CARDS, "Don't create cards"]];
+    const opts = [isOnce() ? [PICK, list ? 'Pick a folder' : 'Loading folders…'] : [NO_CARDS, "Don't create cards"], [CHOOSE, 'Let the agent choose']];
     for (const f of list || []) opts.push([f, f || '(top of the board)']);
     if (saved && !opts.some(([v]) => v === want)) opts.push([want, want || '(top of the board)']);
     sel.innerHTML = opts.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join('');
@@ -485,6 +491,7 @@
     if (radio('ab-level') !== 'work') return undefined;
     const folder = $('ab-nc-folder').value;
     if (folder === NO_CARDS || folder === PICK) return undefined;
+    if (folder === CHOOSE) return { board: $('ab-nc-board').value, folder: '', max: Number($('ab-nc-max').value), choose: true };
     return { board: $('ab-nc-board').value, folder, max: Number($('ab-nc-max').value) };
   }
   function renderAdds() {
@@ -492,7 +499,10 @@
     const name = $('ab-name').value.trim() || '<name>';
     const remind = $('ab-remind').checked;
     const cards = level === 'work' && !!newCardsFromForm();
-    const cardsLine = '(the cards already in the destination, and how to propose new ones in vaultos-card blocks)';
+    const choosing = $('ab-nc-folder').value === CHOOSE;
+    const cardsLine = choosing
+      ? "(the board's folders, its CLAUDE.md if it has one, and how to propose new cards with a folder line in vaultos-card blocks)"
+      : '(the cards already in the destination, and how to propose new ones in vaultos-card blocks)';
     if (isOnce()) {
       $('ab-adds').textContent = [
         `You are running unattended for the VaultOS automation "${name}". Nobody is watching: don't ask questions, don't wait for input.`,
@@ -631,7 +641,7 @@
     if (nc && !ncBoards.some((b) => b.key === nc.board)) ncBoards.push({ key: nc.board, label: nc.board });
     $('ab-nc-board').innerHTML = ncBoards.map((b) => `<option value="${esc(b.key)}">${esc(b.label)}</option>`).join('');
     $('ab-nc-board').value = nc ? nc.board : (cards.board !== 'all' && ncBoards.some((b) => b.key === cards.board) ? cards.board : (ncBoards[0] || {}).key || '');
-    if (nc) $('ab-nc-folder').dataset.want = nc.folder; else delete $('ab-nc-folder').dataset.want;
+    if (nc) $('ab-nc-folder').dataset.want = nc.choose ? CHOOSE : nc.folder; else delete $('ab-nc-folder').dataset.want;
     $('ab-nc-folder').innerHTML = '';
     $('ab-nc-max').value = String(nc ? nc.max : AC.NEW_CARDS_DEFAULT);
     $('ab-repeat').value = v.schedule.repeat;
@@ -724,7 +734,7 @@
     syncRunsOn();
   });
   $('ab-nc-board').addEventListener('change', () => { delete $('ab-nc-folder').dataset.want; $('ab-newCards-err').textContent = ''; loadFolders(); renderAdds(); });
-  $('ab-nc-folder').addEventListener('change', () => { delete $('ab-nc-folder').dataset.want; $('ab-newCards-err').textContent = ''; renderAdds(); });
+  $('ab-nc-folder').addEventListener('change', () => { delete $('ab-nc-folder').dataset.want; $('ab-newCards-err').textContent = ''; paintNcHint(); renderAdds(); });
   $('ab-nc-max').addEventListener('input', () => { $('ab-newCards-err').textContent = ''; });
   // Arrow keys move along a radio group, as a native radio set does.
   for (const id of ['ab-agent', 'ab-level', 'ab-runsOn']) {
