@@ -71,3 +71,10 @@ test('replaceSection backstop: an old section with an unclosed fence does not sw
   const raw = '---\nid: x\n---\n\n## Latest check-in\nold\n```js\nlet a\n\n## Goal\ng\n\n## Plan\n- [ ] a\n';
   assert.equal(replaceSection(raw, 'Latest check-in', ['new']), '---\nid: x\n---\n\n## Latest check-in\nnew\n\n## Goal\ng\n\n## Plan\n- [ ] a\n');
 });
+
+test('setFrontmatterField quotes a value that starts with [ or a quote, so it reads back as text', () => {
+  for (const v of ['[P1] Fix [x]', "'quoted' rest", '"x" y']) {
+    assert.equal(parseFrontmatter(setFrontmatterField('---\ntitle: x\n---\n', 'title', v)).meta.title, v);
+  }
+  assert.equal(setFrontmatterField('---\nstatus: x\n---\n', 'status', 'in-progress'), '---\nstatus: in-progress\n---\n');
+});
