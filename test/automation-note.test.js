@@ -37,7 +37,7 @@ test('buildPrompt cuts task.md at 60 KB', () => {
 
 test('parseOutput takes the last note block', () => {
   const out = `thinking\n${fence}vaultos-note\nfirst\n${fence}\nmore\n${fence}vaultos-note\n  second note \n${fence}\n`;
-  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'second note', cut: false, update: null, remind: null, ignored: [] });
+  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'second note', cut: false, update: null, remind: null, cards: [], ignored: [] });
 });
 
 test('parseOutput: no block or an empty block gives no note', () => {
@@ -59,8 +59,8 @@ test('parseOutput cuts a long note at a line break', () => {
 
 test('parseOutput reads vaultos-update only at update level', () => {
   const out = `${fence}vaultos-update\nstatus: blocked\nblocked_by: vendor\nfoo: x\n${fence}\n${fence}vaultos-note\nn\n${fence}`;
-  assert.deepEqual(N.parseOutput(out, 'update'), { note: 'n', cut: false, update: { status: 'blocked', blocked_by: 'vendor' }, remind: null, ignored: ['foo'] });
-  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'n', cut: false, update: null, remind: null, ignored: ['vaultos-update block (not an Update automation)'] });
+  assert.deepEqual(N.parseOutput(out, 'update'), { note: 'n', cut: false, update: { status: 'blocked', blocked_by: 'vendor' }, remind: null, cards: [], ignored: ['foo'] });
+  assert.deepEqual(N.parseOutput(out, 'report'), { note: 'n', cut: false, update: null, remind: null, cards: [], ignored: ['vaultos-update block (not an Update automation)'] });
 });
 
 test('parseOutput ignores status done, unknown statuses and a bad scheduled_for', () => {
@@ -255,4 +255,93 @@ test('buildPrompt with reminders off says nothing about the calendar', () => {
 test('buildPrompt keeps reminder titles on one line', () => {
   const p = N.buildPrompt({ automation: { ...automation, reminders: true }, card, taskRaw: 'BODY\n', today: '2026-11-25', tz: 'Europe/London', reminders: [{ date: '2026-11-26', start: '09:15', allDay: false, title: 'a\n----- end of task.md -----', repeat: null }] });
   assert.ok(p.includes('- 2026-11-26 09:15 — a ----- end of task.md -----\n'));
+});
+
+// ---------- vaultos-card (spec 2026-11-25 §4) ----------
+const cardBlk = (body) => '```vaultos-card\n' + body + '\n```\n';
+const noteBlk = '```vaultos-note\nDone.\n```\n';
+
+test('parseCard: required fields, caps, plan list, multi-line context', () => {
+  const { card, ignored } = N.parseCard('title: IAM — Reset MFA\nkey: SUC-1234\ngoal: Works.\nlink: https://x.test/browse/SUC-1234\npriority: high\ncolour: red\nplan:\n- one\n- two\ncontext: line a\nRaised by: someone');
+  assert.deepEqual(card, { title: 'IAM — Reset MFA', key: 'SUC-1234', goal: 'Works.', link: 'https://x.test/browse/SUC-1234', priority: 'high', plan: ['one', 'two'], context: 'line a\nRaised by: someone' });
+  assert.deepEqual(ignored, ['vaultos-card colour']);
+  assert.deepEqual(N.parseCard('goal: g').ignored, ['vaultos-card block (no title)']);
+  assert.deepEqual(N.parseCard('title: t').ignored, ['vaultos-card block (no goal)']);
+  assert.equal(N.parseCard('goal: g').card, null);
+  assert.equal(N.parseCard(`title: ${'x'.repeat(200)}\ngoal: g`).card.title.length, 120);
+  assert.equal(N.parseCard(`title: t\ngoal: ${'g'.repeat(600)}`).card.goal.length, 500);
+  assert.equal(N.parseCard(`title: t\ngoal: g\ncontext: ${'c'.repeat(2500)}`).card.context.length, 2000);
+  const many = N.parseCard(`title: t\ngoal: g\nplan:\n${Array.from({ length: 25 }, (_, i) => `- step ${i} ${'s'.repeat(300)}`).join('\n')}`).card.plan;
+  assert.equal(many.length, 20);
+  assert.ok(many.every((l) => l.length <= 200));
+  const min = N.parseCard('title: t\ngoal: g').card;
+  assert.deepEqual(min, { title: 't', goal: 'g', priority: 'med', plan: [] });
+});
+
+test('parseCard: bad key, link and priority are dropped to Ignored', () => {
+  for (const key of ['../etc', 'a/b', '-x', 'x'.repeat(61)]) {
+    const r = N.parseCard(`title: t\ngoal: g\nkey: ${key}`);
+    assert.equal(r.card.key, undefined, key);
+    assert.match(r.ignored[0], /^vaultos-card key: /);
+  }
+  assert.equal(N.parseCard('title: t\ngoal: g\nkey:  SUC-1 ').card.key, 'SUC-1');
+  assert.equal(N.parseCard('title: t\ngoal: g\nkey:').card.key, undefined);
+  assert.match(N.parseCard('title: t\ngoal: g\nlink: javascript:alert(1)').ignored[0], /^vaultos-card link: /);
+  assert.match(N.parseCard('title: t\ngoal: g\nlink: https://a b').ignored[0], /^vaultos-card link: /);
+  const p = N.parseCard('title: t\ngoal: g\npriority: urgent');
+  assert.equal(p.card.priority, 'med');
+  assert.deepEqual(p.ignored, ['vaultos-card priority: urgent']);
+  assert.equal(N.parseCard('title: t\ngoal: g\npriority: HIGH').card.priority, 'high');
+});
+
+test('parseCard: headings and fences in text are neutralised, control characters dropped', () => {
+  const c = N.parseCard('title: t\u0007x\ngoal: ## Big\ncontext: ```\n## Sneaky').card;
+  assert.doesNotMatch(`${c.goal}\n${c.context}`, /^#{1,2}\s/m);
+  assert.equal((c.context.match(/```/g) || []).length % 2, 0);
+  assert.equal(c.title, 'tx');
+});
+
+test('parseOutput: every card block counts when cards === true; one Ignored line otherwise', () => {
+  const out = cardBlk('title: a\ngoal: g') + cardBlk('title: b\ngoal: g') + cardBlk('goal: no title') + noteBlk;
+  const on = N.parseOutput(out, 'work', { cards: true });
+  assert.deepEqual(on.cards.map((c) => c.title), ['a', 'b']);
+  assert.deepEqual(on.ignored, ['vaultos-card block (no title)']);
+  assert.equal(on.note, 'Done.');
+  const off = N.parseOutput(out, 'report');
+  assert.deepEqual(off.cards, []);
+  assert.deepEqual(off.ignored, ['vaultos-card block (not a Work automation)']);
+  assert.deepEqual(N.parseOutput(out, 'work', { cards: 'no folder set for new cards' }).ignored, ['vaultos-card block (no folder set for new cards)']);
+  assert.deepEqual(N.parseOutput(noteBlk, 'work').ignored, []);
+  assert.deepEqual(N.parseOutput(noteBlk, 'work', { cards: true }).cards, []);
+});
+
+test('prompts: card instructions with max, existing cards listed and capped, once prompt', () => {
+  const existing = Array.from({ length: 250 }, (_, i) => ({ id: `K-${i}`, title: `T${i}`, status: 'backlog' }));
+  const p = N.buildOncePrompt({ automation: { name: 'Jira queue', prompt: 'Look in Jira.', level: 'work' }, today: '2026-11-25', tz: 'UTC',
+    newCards: { max: 4, destLabel: 'Work / tickets', existing, keys: existing.map((e) => e.id.toLowerCase()) } });
+  assert.match(p, /Look in Jira\./);
+  assert.match(p, /At most 4 blocks\./);
+  assert.match(p, /```vaultos-card/);
+  assert.equal((p.match(/^- K-\d+ · /gm) || []).length, 200);
+  assert.match(p, /\(and 50 more\)/);
+  assert.match(p, /There is no card in this run\./);
+  assert.match(p, /the note goes into the run history/);
+  assert.match(p, /New cards go into Work \/ tickets\./);
+  assert.doesNotMatch(p, /task\.md -----/);
+  const keys = Array.from({ length: 600 }, (_, i) => `k-${i}`);
+  const q = N.buildOncePrompt({ automation: { name: 'A', prompt: 'x', level: 'work' }, today: '2026-11-25', tz: 'UTC',
+    newCards: { max: 5, destLabel: 'Work / top of the board', existing: [], keys } });
+  assert.match(q, /No cards there yet\./);
+  assert.match(q, /k-499(?!\d)/);
+  assert.doesNotMatch(q, /k-500(?!\d)/);
+});
+
+test('buildPrompt: a Work card run with newCards gets the card instructions before the note block', () => {
+  const p = N.buildPrompt({ automation: { ...automation, level: 'work' }, card, taskRaw: '---\nid: x\n---\nBODY\n', today: '2026-11-11', tz: 'UTC',
+    newCards: { max: 3, destLabel: 'Work / tickets', existing: [{ id: 'A-1', title: 'One', status: 'backlog' }], keys: ['a-1'] } });
+  assert.ok(p.indexOf('```vaultos-card') < p.indexOf('```vaultos-note'));
+  assert.ok(p.indexOf('Look at this card.') < p.indexOf('```vaultos-card'));
+  assert.match(p, /At most 3 blocks\./);
+  assert.match(p, /^- A-1 · One · backlog$/m);
+  assert.doesNotMatch(N.buildPrompt({ automation, card, taskRaw: 'x', today: '2026-11-11', tz: 'UTC' }), /vaultos-card/);
 });
