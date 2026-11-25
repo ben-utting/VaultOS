@@ -107,7 +107,10 @@
       <input type="checkbox" class="su-switch au-toggle" role="switch" aria-label="${esc(a.name)} on"${a.enabled ? ' checked' : ''}${AU.data.live ? '' : ' disabled'}>
       <button type="button" class="au-row-main" title="Edit ${esc(a.name)}">
         <span class="au-row-top"><span class="au-mark">${markFor(a.agent)}</span><span class="au-name">${esc(a.name)}</span></span>
-        <span class="au-meta">${esc(a.scheduleText)} · ${esc(AC.cardsText(a.cards, boardLabel(a.cards.board)))} · ${esc(AC.LEVEL_LABEL[a.level])}</span>
+        <span class="au-meta">${esc(a.scheduleText)} · ${a.runsOn === 'once'
+          ? `${esc(AC.RUNS_ON_LABEL.once)} · ${esc(AC.LEVEL_LABEL[a.level])} · ${esc(AC.newCardsText(a.newCards, boardLabel(a.newCards.board)))}`
+          : `${esc(AC.cardsText(a.cards, boardLabel(a.cards.board)))} · ${esc(AC.LEVEL_LABEL[a.level])}`}</span>
+        ${a.runsOn !== 'once' && a.newCards ? `<span class="au-reads">${esc(AC.newCardsText(a.newCards, boardLabel(a.newCards.board)))}</span>` : ''}
         ${a.connectors && a.connectors.length ? `<span class="au-reads">Reads: ${esc(a.connectors.map(connLabel).join(', '))}</span>` : ''}
         ${a.reminders ? `<span class="au-reads">Can add calendar reminders${AU.data.calendar ? '' : ' (Calendar is off)'}</span>` : ''}
         <span class="au-next">${a.nextRun ? `Next: ${esc(when(a.nextRun))}` : 'Off'}</span>
@@ -146,10 +149,11 @@
   $('au-new').addEventListener('click', () => openBuilder(null));
   // Only the fields an automation is saved with (the list adds scheduleText, nextRun and the like).
   function definition(a) {
-    const { name, enabled, agent, model, connectors, reminders, template, prompt, level, cards, schedule, section, timeLimitMin } = a;
+    const { name, enabled, agent, model, connectors, reminders, template, prompt, level, runsOn, newCards, cards, schedule, section, timeLimitMin } = a;
     return {
       name, enabled, agent, ...(model ? { model } : {}), ...(connectors && connectors.length ? { connectors } : {}), ...(reminders ? { reminders: true } : {}),
-      template, prompt, level, cards, schedule, section, timeLimitMin,
+      template, prompt, level, ...(runsOn === 'once' ? { runsOn } : {}), ...(newCards ? { newCards } : {}),
+      ...(cards ? { cards } : {}), schedule, ...(section !== undefined ? { section } : {}), timeLimitMin,
     };
   }
 
@@ -253,6 +257,9 @@
     const remind = AC.reminderText(c, run.trigger === 'trial');
     if (remind) warn.push(['plain', remind]);   // a skip (a re-run's duplicate, Calendar off) never fails the card
     if (c.ignored && c.ignored.length) warn.push(['plain', `Ignored: ${c.ignored.join(', ')}`]);
+    const trial = run.trigger === 'trial';
+    for (const x of c.created || []) warn.push(['plain', `${trial ? 'Would create' : 'Created'}: `, x, trial]);
+    for (const x of c.notCreated || []) warn.push(['warn', `Not created: ${x.key || x.title} — ${x.reason}`]);
     if (c.lookups && Object.keys(c.lookups).length) {
       warn.push(['plain', `Looked up: ${Object.entries(c.lookups).map(([id, tools]) => `${connLabel(id)} (${Object.entries(tools).map(([t, n]) => `${t} ×${n}`).join(', ')})`).join(', ')}`]);
     }
@@ -264,12 +271,17 @@
     const body = c.noteHtml ? `<div class="au-note markdown">${safeHtml(c.noteHtml)}</div>` : (c.reason ? `<p class="au-reason">${esc(c.reason)}</p>` : '');
     return `<article class="au-card">
       <div class="au-card-head">
-        <button type="button" class="au-card-t" data-path="${esc(c.path)}" data-board="${esc(c.board || '')}">${esc(c.title)}</button>
+        ${c.kind === 'once'   // a Once run's entry is its destination folder, not a card to open
+    ? `<span class="au-card-dest">New cards → ${esc(c.title)}</span>`
+    : `<button type="button" class="au-card-t" data-path="${esc(c.path)}" data-board="${esc(c.board || '')}">${esc(c.title)}</button>`}
         <span class="au-chip" data-tone="${tone}">${esc(label)}</span>
         ${c.durationMs ? `<span class="au-dur">${esc(fmtDuration(c.durationMs))}</span>` : ''}
       </div>
       ${body}
-      ${warn.map(([t, text]) => `<p class="au-warn" data-tone="${t}">${esc(text)}</p>`).join('')}
+      ${warn.map(([t, text, made, trial]) => (made
+    // A created card's title opens it (on its own board); a trial's would-be card isn't there to open.
+    ? `<p class="au-warn" data-tone="${t}">${esc(text)}${trial ? esc(made.title) : `<button type="button" class="au-card-t au-created-link" data-path="${esc(made.path)}" data-board="${esc(made.board || '')}">${esc(made.title)}</button>`}${made.key ? ` (${esc(made.key)})` : ''}</p>`
+    : `<p class="au-warn" data-tone="${t}">${esc(text)}</p>`)).join('')}
       ${c.outputTail ? `<details class="au-output"><summary>Output</summary><pre>${esc(c.outputTail)}</pre></details>` : ''}
     </article>`;
   }
@@ -289,11 +301,11 @@
   // A right-hand panel over the page. B.editing is the automation being edited (null for a new one);
   // nothing is saved until Save. The server's checks are the real ones; validateAutomation gives the same
   // answers first, beside the fields.
-  const B = { editing: null, matchTimer: null, matchSeq: 0, template: 'check-in', models: null, modelsLoading: null };
+  const B = { editing: null, matchTimer: null, matchSeq: 0, template: 'check-in', models: null, modelsLoading: null, folders: {}, foldersSeq: 0 };
   const FIELD_OF = {
     name: 'ab-name', agent: 'ab-agent', model: 'ab-model', connectors: 'ab-conn', level: 'ab-level', template: 'ab-template', prompt: 'ab-prompt', board: 'ab-board',
     statuses: 'ab-statuses', subtasks: 'ab-subtasks', schedule: 'ab-schedule', section: 'ab-section', timeLimitMin: 'ab-limit', enabled: 'ab',
-    reminders: 'ab-remind',
+    reminders: 'ab-remind', runsOn: 'ab-runsOn', newCards: 'ab-newCards',
   };
   const INPUT_FIELDS = new Set(['ab-name', 'ab-model', 'ab-prompt', 'ab-section', 'ab-limit', 'ab-board', 'ab-template']);
   const defaults = () => ({
@@ -310,15 +322,20 @@
     const def = d && d.defaultAgent && byId[d.defaultAgent];
     return [
       { v: 'default', label: def ? `Default (${def.label})` : 'Default (none set)', mark: d && d.defaultAgent ? d.defaultAgent : 'none',
-        installed: def ? def.installed : false, levels: def ? def.levels : [], none: !def },
-      ...(d ? d.agents : []).map((a) => ({ v: a.id, label: a.label, mark: a.id, installed: a.installed, levels: a.levels })),
+        installed: def ? def.installed : false, levels: def ? def.levels : [], onceLevels: def ? (def.onceLevels || []) : [], none: !def },
+      ...(d ? d.agents : []).map((a) => ({ v: a.id, label: a.label, mark: a.id, installed: a.installed, levels: a.levels, onceLevels: a.onceLevels || [] })),
     ];
   };
-  // Why an agent tile can't be picked at this level, or '' when it can.
-  function agentBlock(c, level) {
+  const isOnce = () => radio('ab-runsOn') === 'once';
+  // Why an agent tile can't be picked at this level (or for Once runs), or '' when it can.
+  function agentBlock(c, level, once = isOnce()) {
     if (c.none) return 'Pick a default in Settings → Agent';
     if (!c.installed) return 'Not installed';
-    if (!c.levels.includes(level)) return c.levels.length ? `Not yet available for ${AC.LEVEL_LABEL[level]}` : 'Not yet available';
+    const levels = once ? c.onceLevels : c.levels;
+    if (!levels.includes(level)) {
+      if (once) return 'Not yet available for Once';
+      return c.levels.length ? `Not yet available for ${AC.LEVEL_LABEL[level]}` : 'Not yet available';
+    }
     return '';
   }
   function renderAgents(selected) {
@@ -406,13 +423,84 @@
       .finally(() => { B.modelsLoading = null; paintModels(); });
   }
   function renderLevels(selected) {
-    $('ab-level').innerHTML = AC.LEVELS.map((l) => `<button type="button" role="radio" class="ab-level" data-v="${l}" aria-checked="${l === selected}">
-      <span class="ab-level-t">${esc(AC.LEVEL_LABEL[l])}</span><span class="ab-level-d">${esc(AC.LEVEL_TEXT[l])}</span></button>`).join('');
+    const once = isOnce();
+    $('ab-level').innerHTML = AC.LEVELS.map((l) => {
+      const off = once && l !== 'work';   // a Once run only creates cards, so it needs Work
+      return `<button type="button" role="radio" class="ab-level" data-v="${l}" aria-checked="${l === selected}"${off ? ' aria-disabled="true" title="Once runs need Work"' : ''}>
+      <span class="ab-level-t">${esc(AC.LEVEL_LABEL[l])}</span><span class="ab-level-d">${esc(AC.LEVEL_TEXT[l])}</span></button>`;
+    }).join('');
+  }
+  // ---- Runs on: each matching card, or once (spec 2026-11-25 §10) ----
+  const RUNS_ON_TEXT = { cards: 'One agent per card it picks.', once: 'One agent per run, not tied to a card. It looks things up and proposes new cards.' };
+  function renderRunsOn(selected) {
+    $('ab-runsOn').innerHTML = AC.RUNS_ON.map((r) => `<button type="button" role="radio" class="ab-level" data-v="${r}" aria-checked="${r === selected}">
+      <span class="ab-level-t">${esc(AC.RUNS_ON_LABEL[r])}</span><span class="ab-level-d">${esc(RUNS_ON_TEXT[r])}</span></button>`).join('');
+  }
+  // Shows what applies: Once hides the card filters, the section and reminders (their values stay for switching back)
+  // and holds the level at Work.
+  function syncRunsOn() {
+    const once = isOnce();
+    if (once) setRadio('ab-level', 'work');
+    renderLevels(radio('ab-level') || 'report');
+    for (const id of ['ab-cards-f', 'ab-statuses-f', 'ab-match', 'ab-section-f', 'ab-remind-f']) $(id).classList.toggle('hidden', once);
+    $('ab-when-h').textContent = once ? 'When it runs' : 'When it runs, and on which cards';
+    $('ab-prompt-l').textContent = once ? 'What it should do' : 'What it should do on each card';
+    $('ab-limit-l').textContent = once ? 'Time limit (minutes)' : 'Time limit per card (minutes)';
+    renderAgents(radio('ab-agent'));
+    paintNewCards();
+    renderAdds();
+  }
+  // ---- New cards (Work only) ----
+  const NO_CARDS = '__none__';   // a per-card Work automation that creates no cards
+  const PICK = '__pick__';       // nothing picked yet (Once needs a folder)
+  function paintNewCards() {
+    const work = radio('ab-level') === 'work';
+    $('ab-newCards').classList.toggle('hidden', !work);
+    $('ab-nc-hint').textContent = isOnce() ? 'Required for Once. Cards land in this folder, each in its own.' : "Leave it on Don't create cards and it won't create any.";
+    paintFolders();
+  }
+  // The folder options for the picked board: the saved folder stays listed even if it's gone (Save then says so).
+  function paintFolders() {
+    const sel = $('ab-nc-folder');
+    const saved = sel.dataset.want !== undefined;   // the automation's own folder, until the person picks another
+    const want = saved ? sel.dataset.want : sel.value;
+    const list = B.folders[$('ab-nc-board').value];
+    const opts = [isOnce() ? [PICK, list ? 'Pick a folder' : 'Loading folders…'] : [NO_CARDS, "Don't create cards"]];
+    for (const f of list || []) opts.push([f, f || '(top of the board)']);
+    if (saved && !opts.some(([v]) => v === want)) opts.push([want, want || '(top of the board)']);
+    sel.innerHTML = opts.map(([v, label]) => `<option value="${esc(v)}">${esc(label)}</option>`).join('');
+    sel.value = opts.some(([v]) => v === want) ? want : opts[0][0];
+  }
+  function loadFolders() {
+    const board = $('ab-nc-board').value;
+    paintFolders();
+    if (!board || B.folders[board]) return;
+    const seq = ++B.foldersSeq;
+    api(`/api/automations/folders?board=${encodeURIComponent(board)}`)
+      .then((r) => { B.folders[board] = Array.isArray(r.folders) ? r.folders : []; })
+      .catch(() => { B.folders[board] = []; })
+      .finally(() => { if (seq === B.foldersSeq) paintFolders(); });
+  }
+  function newCardsFromForm() {
+    if (radio('ab-level') !== 'work') return undefined;
+    const folder = $('ab-nc-folder').value;
+    if (folder === NO_CARDS || folder === PICK) return undefined;
+    return { board: $('ab-nc-board').value, folder, max: Number($('ab-nc-max').value) };
   }
   function renderAdds() {
     const level = radio('ab-level') || 'report';
     const name = $('ab-name').value.trim() || '<name>';
     const remind = $('ab-remind').checked;
+    const cards = level === 'work' && !!newCardsFromForm();
+    const cardsLine = '(the cards already in the destination, and how to propose new ones in vaultos-card blocks)';
+    if (isOnce()) {
+      $('ab-adds').textContent = [
+        `You are running unattended for the VaultOS automation "${name}". Nobody is watching: don't ask questions, don't wait for input.`,
+        'Today is <date> (<time zone>).', 'Your working directory is the folder new cards go into.', AC.ONCE_PARAGRAPH,
+        '', '(your prompt)', '', cardsLine, '', '(how to end with a vaultos-note block for the run history)',
+      ].join('\n');
+      return;
+    }
     $('ab-adds').textContent = [
       `You are running unattended for the VaultOS automation "${name}". Nobody is watching: don't ask questions, don't wait for input.`,
       'Today is <date> (<time zone>). Card: "<title>", status <status>, last updated <date>.',
@@ -422,6 +510,7 @@
       "Here is the card's task.md:",
       '----- task.md -----', '(the card\'s task.md)', '----- end of task.md -----',
       '', '(your prompt)', '',
+      ...(cards ? [cardsLine, ''] : []),
       ...(remind ? ['(how to propose one calendar reminder for the card in a vaultos-remind block)'] : []),
       level === 'update' ? '(how to end with a vaultos-update block, if the card should move, and a vaultos-note block)' : '(how to end with a vaultos-note block: at most 1,500 characters)',
     ].join('\n');
@@ -452,6 +541,7 @@
       connectors: $('ab-conn').checked ? [...$('ab-conn-list').querySelectorAll('input:checked')].map((el) => el.dataset.id) : [],
       reminders: $('ab-remind').checked,
       template: $('ab-template').value, prompt: $('ab-prompt').value, level: radio('ab-level'),
+      ...(isOnce() ? { runsOn: 'once', reminders: false } : {}), newCards: newCardsFromForm(),
       cards: { board: $('ab-board').value, statuses: checkedChips('ab-statuses'), subtasks: $('ab-subtasks').checked },
       schedule: scheduleFromForm(), section: $('ab-section').value, timeLimitMin: Number($('ab-limit').value),
     };
@@ -513,6 +603,7 @@
     $('ab-origin').textContent = tag;
     $('ab-origin').classList.toggle('hidden', !tag);
     $('ab-name').value = v.name;
+    renderRunsOn(v.runsOn === 'once' ? 'once' : 'cards');
     renderLevels(v.level);
     renderAgents(v.agent);
     $('ab-model').value = v.model || '';
@@ -527,19 +618,28 @@
     $('ab-prompt').value = v.prompt;
     promptCount();
     const boards = (typeof WORKSPACE_LIST !== 'undefined' ? WORKSPACE_LIST : []);
+    const cards = v.cards || defaults().cards;   // a Once automation has none: the form keeps the defaults for switching back
     const boardOpts = [{ key: 'all', label: 'All boards' }, ...boards];
-    if (!boardOpts.some((b) => b.key === v.cards.board)) boardOpts.push({ key: v.cards.board, label: v.cards.board });
+    if (!boardOpts.some((b) => b.key === cards.board)) boardOpts.push({ key: cards.board, label: cards.board });
     $('ab-board').innerHTML = boardOpts.map((b) => `<option value="${esc(b.key)}">${esc(b.label)}</option>`).join('');
-    $('ab-board').value = v.cards.board;
-    $('ab-subtasks').checked = v.cards.subtasks;
-    $('ab-statuses').innerHTML = AC.CARD_STATUSES.map((st) => `<button type="button" class="ab-chip" data-v="${st}" aria-pressed="${v.cards.statuses.includes(st)}">${esc(AC.STATUS_LABEL[st])}</button>`).join('');
+    $('ab-board').value = cards.board;
+    $('ab-subtasks').checked = cards.subtasks;
+    $('ab-statuses').innerHTML = AC.CARD_STATUSES.map((st) => `<button type="button" class="ab-chip" data-v="${st}" aria-pressed="${cards.statuses.includes(st)}">${esc(AC.STATUS_LABEL[st])}</button>`).join('');
+    const nc = v.newCards || null;
+    const ncBoards = [...boards];
+    if (nc && !ncBoards.some((b) => b.key === nc.board)) ncBoards.push({ key: nc.board, label: nc.board });
+    $('ab-nc-board').innerHTML = ncBoards.map((b) => `<option value="${esc(b.key)}">${esc(b.label)}</option>`).join('');
+    $('ab-nc-board').value = nc ? nc.board : (cards.board !== 'all' && ncBoards.some((b) => b.key === cards.board) ? cards.board : (ncBoards[0] || {}).key || '');
+    if (nc) $('ab-nc-folder').dataset.want = nc.folder; else delete $('ab-nc-folder').dataset.want;
+    $('ab-nc-folder').innerHTML = '';
+    $('ab-nc-max').value = String(nc ? nc.max : AC.NEW_CARDS_DEFAULT);
     $('ab-repeat').value = v.schedule.repeat;
     $('ab-time').value = v.schedule.time || '08:00';
     $('ab-every').innerHTML = AC.HOURS_EVERY.map((n) => `<option value="${n}">${n === 1 ? 'hour' : `${n} hours`}</option>`).join('');
     $('ab-every').value = String(v.schedule.every || 4);
     $('ab-from').value = v.schedule.from || '08:00';
     $('ab-days').innerHTML = AC.DAYS.map((d) => `<button type="button" class="ab-chip" data-v="${d}" aria-pressed="${(v.schedule.days || ['mon']).includes(d)}">${AC.DAY_LABEL[d]}</button>`).join('');
-    $('ab-section').value = v.section;
+    $('ab-section').value = v.section !== undefined ? v.section : defaults().section;
     $('ab-limit').value = String(v.timeLimitMin);
     document.querySelector('.ab-more').open = false;
     document.querySelector('.ab-adds').open = false;
@@ -548,7 +648,8 @@
     for (const b of [$('ab-save'), $('ab-save-run')]) b.disabled = false;
     clearErrors();
     syncRepeat();
-    renderAdds();
+    syncRunsOn();
+    loadFolders();
     refreshMatch();
     $('au-builder').classList.remove('hidden');
     $('au-scrim').classList.remove('hidden');
@@ -606,14 +707,26 @@
   $('ab-remind').addEventListener('change', () => { $('ab-remind-err').textContent = ''; paintReminders(); renderAdds(); });
   $('ab-level').addEventListener('click', (e) => {
     const t = e.target.closest('.ab-level');
-    if (!t) return;
+    if (!t || t.getAttribute('aria-disabled') === 'true') return;
     setRadio('ab-level', t.dataset.v);
     renderAgents(radio('ab-agent'));
+    paintNewCards();
     renderAdds();
     $('ab-level-err').textContent = '';
   });
+  $('ab-runsOn').addEventListener('click', (e) => {
+    const t = e.target.closest('.ab-level');
+    if (!t) return;
+    setRadio('ab-runsOn', t.dataset.v);
+    $('ab-runsOn-err').textContent = '';
+    $('ab-level-err').textContent = '';
+    syncRunsOn();
+  });
+  $('ab-nc-board').addEventListener('change', () => { delete $('ab-nc-folder').dataset.want; $('ab-newCards-err').textContent = ''; loadFolders(); renderAdds(); });
+  $('ab-nc-folder').addEventListener('change', () => { delete $('ab-nc-folder').dataset.want; $('ab-newCards-err').textContent = ''; renderAdds(); });
+  $('ab-nc-max').addEventListener('input', () => { $('ab-newCards-err').textContent = ''; });
   // Arrow keys move along a radio group, as a native radio set does.
-  for (const id of ['ab-agent', 'ab-level']) {
+  for (const id of ['ab-agent', 'ab-level', 'ab-runsOn']) {
     $(id).addEventListener('keydown', (e) => {
       if (!['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) return;
       const items = [...$(id).querySelectorAll('[role="radio"]:not([aria-disabled="true"])')];

@@ -235,3 +235,15 @@ test('a failing onCreate does not undo the card', async (t) => {
   assert.ok(r.created);
   assert.ok(fs.existsSync(path.join(v.destDir, 'X-9', 'task.md')));
 });
+
+test('buildTaskFile: a new card is a standalone job, so the template\'s SUBTASK ONLY comment and callout go', () => {
+  const template = fs.readFileSync(path.join(__dirname, '..', 'starter-kit', 'board', '_tasks', '_Templates', 'task.md'), 'utf8');
+  assert.match(template, /SUBTASK ONLY/);
+  const raw = NC.buildTaskFile({ template, card: { title: 'T', goal: 'G', plan: [], priority: 'med' }, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code' });
+  assert.doesNotMatch(raw, /SUBTASK/);
+  assert.doesNotMatch(raw, /^> /m);
+  assert.match(raw, /\n---\n\n## Goal\nG\n/);
+  // A callout that isn't the subtask one stays.
+  const other = template.replace('> [!warning] This is a SUBTASK', '> [!note] Keep me').replace(/<!-- SUBTASK ONLY[^\n]*\n/, '');
+  assert.match(NC.buildTaskFile({ template: other, card: { title: 'T', goal: 'G', plan: [], priority: 'med' }, id: 'x', today: '2026-11-25', automationName: 'A', agentLabel: 'Claude Code' }), /> \[!note\] Keep me/);
+});

@@ -693,26 +693,37 @@
           <input type="checkbox" class="su-switch" id="ab-remind" role="switch" aria-describedby="ab-remind-hint ab-remind-err"></div>
         <p class="su-hint hidden" id="ab-remind-hint"></p>
         <p class="su-err" id="ab-remind-err" aria-live="polite"></p></div>
+      <div class="su-field"><span class="su-label" id="ab-runsOn-l">Runs on</span>
+        <div id="ab-runsOn" class="ab-levels ab-runs-on" role="radiogroup" aria-labelledby="ab-runsOn-l"></div>
+        <p class="su-err" id="ab-runsOn-err" aria-live="polite"></p></div>
       <div class="su-field"><span class="su-label" id="ab-level-l">What it may change</span>
         <div id="ab-level" class="ab-levels" role="radiogroup" aria-labelledby="ab-level-l"></div>
         <p class="su-err" id="ab-level-err" aria-live="polite"></p></div>
+      <div class="su-field hidden" id="ab-newCards"><span class="su-label" id="ab-nc-l">New cards go to</span>
+        <div class="ab-two ab-nc-row">
+          <select id="ab-nc-board" class="su-input" aria-label="Board for new cards"></select>
+          <select id="ab-nc-folder" class="su-input" aria-label="Folder for new cards" aria-describedby="ab-nc-hint ab-newCards-err"></select>
+        </div>
+        <label class="ab-nc-max" for="ab-nc-max">Up to <input id="ab-nc-max" class="su-input ab-narrow" type="number" min="1" max="10" step="1"> new cards per run</label>
+        <p class="su-hint" id="ab-nc-hint"></p>
+        <p class="su-err" id="ab-newCards-err" aria-live="polite"></p></div>
       <div class="su-field"><label for="ab-template">Start from</label>
         <select id="ab-template" class="su-input ab-narrow"></select>
         <p class="su-err" id="ab-template-err" aria-live="polite"></p></div>
-      <div class="su-field"><label for="ab-prompt">What it should do on each card</label>
+      <div class="su-field"><label for="ab-prompt" id="ab-prompt-l">What it should do on each card</label>
         <textarea id="ab-prompt" class="su-input ab-prompt" rows="10" spellcheck="true" aria-describedby="ab-prompt-n ab-prompt-err"></textarea>
         <p class="su-hint ab-count-n" id="ab-prompt-n"></p>
         <p class="su-err" id="ab-prompt-err" aria-live="polite"></p>
         <details class="ab-adds"><summary>What VaultOS adds</summary><pre id="ab-adds"></pre></details></div>
 
-      <h3 class="ab-sec">When it runs, and on which cards</h3>
-      <div class="ab-two">
+      <h3 class="ab-sec" id="ab-when-h">When it runs, and on which cards</h3>
+      <div class="ab-two" id="ab-cards-f">
         <div class="su-field"><label for="ab-board">Board</label><select id="ab-board" class="su-input"></select>
           <p class="su-err" id="ab-board-err" aria-live="polite"></p></div>
         <div class="su-row ab-subtasks"><div class="su-row-t"><label class="su-label" for="ab-subtasks">Include subtasks</label></div>
           <input type="checkbox" class="su-switch" id="ab-subtasks" role="switch"></div>
       </div>
-      <div class="su-field"><span class="su-label" id="ab-statuses-l">Cards that are</span>
+      <div class="su-field" id="ab-statuses-f"><span class="su-label" id="ab-statuses-l">Cards that are</span>
         <div id="ab-statuses" class="ab-chips" role="group" aria-labelledby="ab-statuses-l"></div>
         <p class="su-err" id="ab-statuses-err" aria-live="polite"></p></div>
       <div id="ab-match" class="ab-match" aria-live="polite"></div>
@@ -732,11 +743,11 @@
       <p class="su-err" id="ab-schedule-err" aria-live="polite"></p>
       <details class="ab-more"><summary>More</summary>
         <div class="ab-two">
-          <div class="su-field"><label for="ab-section">Card section heading</label>
+          <div class="su-field" id="ab-section-f"><label for="ab-section">Card section heading</label>
             <input id="ab-section" class="su-input" type="text" maxlength="40" autocomplete="off" aria-describedby="ab-section-hint ab-section-err">
             <p class="su-hint" id="ab-section-hint">Replaced on every run.</p>
             <p class="su-err" id="ab-section-err" aria-live="polite"></p></div>
-          <div class="su-field"><label for="ab-limit">Time limit per card (minutes)</label>
+          <div class="su-field"><label for="ab-limit" id="ab-limit-l">Time limit per card (minutes)</label>
             <input id="ab-limit" class="su-input ab-narrow" type="number" min="2" max="30" step="1" aria-describedby="ab-limit-err">
             <p class="su-err" id="ab-limit-err" aria-live="polite"></p></div>
         </div>

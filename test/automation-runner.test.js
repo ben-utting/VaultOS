@@ -834,6 +834,7 @@ test('once: one agent in the destination, cards created, note in the run', async
   assert.match(c.note, /Fake note\./);
   assert.equal(run.createdCount, 2);
   assert.deepEqual(c.created.map((x) => x.path), ['Work/tickets/SUC-1/task.md', 'Work/tickets/second-one/task.md']);
+  assert.deepEqual(c.created.map((x) => x.board), ['work', 'work']);   // the run detail opens each on its own board
   assert.equal(parseFrontmatter(ticket(s, 'SUC-1')).meta.title, 'Reset MFA');
   assert.match(ticket(s, 'SUC-1'), /Created by automation "Check" \(Claude Code\)\./);
   assert.match(s.read('job-1'), /status: in-progress/);
