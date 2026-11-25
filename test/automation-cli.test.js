@@ -92,7 +92,7 @@ test('a model edit is sent as is and says it switched the automation off', async
 
 test('the help names the model among the edits that switch an automation off', async () => {
   const r = await run(['--help']);
-  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt, cards, connectors or reminders changes switch it off/);
+  assert.match(r.out, /edit <id> --file <changes\.json> +agent, model, level, prompt, cards, runsOn, newCards, connectors or reminders changes switch it off/);
 });
 
 test('a file that is not JSON is a usage error', async () => {
@@ -230,4 +230,44 @@ test('options says whether calendar reminders can be added', async () => {
 test('the help names reminders among the edits that switch an automation off', async () => {
   const r = await run(['--help']);
   assert.match(r.out, /edit <id> --file <changes\.json> .*reminders/);
+});
+
+// ---------- New cards (spec 2026-11-25 §11) ----------
+test('a Once run prints what it created, would create and did not', async () => {
+  const card = { kind: 'once', title: 'Work / tickets', state: 'noted', note: 'Found 3.',
+    created: [{ title: 'Reset MFA', key: 'SUC-1', path: 'x' }, { title: 'Other', path: 'y' }],
+    notCreated: [{ title: 'Dup', key: 'SUC-2', reason: 'SUC-2 already has a card' }] };
+  const body = (trigger) => ({ id: 'r1', automationName: 'Queue', trigger, state: 'finished', runsOn: 'once', level: 'work', createdCount: 2, cards: [card] });
+  const live = await run(['run', 'r1'], { answers: [['run', 200, body('manual')]] });
+  assert.match(live.out, /^ {2}Created: Reset MFA \(SUC-1\)$/m);
+  assert.match(live.out, /^ {2}Created: Other$/m);
+  assert.match(live.out, /^ {2}Not created: SUC-2 — SUC-2 already has a card$/m);
+  const trial = await run(['run', 'r1'], { answers: [['run', 200, body('trial')]] });
+  assert.match(trial.out, /^Queue · trial · nothing created · finished$/m);
+  assert.match(trial.out, /^ {2}Would create: Reset MFA \(SUC-1\)$/m);
+});
+
+test('list shows Once automations and where their new cards go', async () => {
+  const r = await run(['list'], { answers: [['list', 200, { automations: [
+    { id: 'a1', enabled: false, name: 'Queue', scheduleText: 'Weekdays 08:00', level: 'work', runsOn: 'once', newCards: { board: 'work', folder: 'tickets', max: 5 }, lastRun: null, tag: '' },
+    { id: 'a2', enabled: true, name: 'Check', scheduleText: 'Daily 08:00', level: 'report', lastRun: null, tag: '' }] }]] });
+  assert.match(r.out, /^a1 {2}off {2}Queue · Weekdays 08:00 · Once · Work · New cards → work \/ tickets · never run$/m);
+  assert.match(r.out, /^a2 {2}on {3}Check · Daily 08:00 · Report · never run$/m);
+});
+
+test('options lists Once levels, Runs on and the folders for new cards', async () => {
+  const folders = ['', ...Array.from({ length: 24 }, (_, i) => `f${String(i).padStart(2, '0')}`)];
+  const r = await run(['options'], { answers: [['options', 200, { ...optionsBody([]),
+    runsOn: [{ id: 'cards', label: 'Each matching card' }, { id: 'once', label: 'Once' }], folders: { work: folders },
+    agents: [{ id: 'cursor', label: 'Cursor CLI', levels: ['report', 'update'], onceLevels: ['work'], installed: true }],
+    limits: { ...optionsBody([]).limits, newCardsPerRun: [1, 10], newCardsDefault: 5, newCardsPerHour: 30 } }]] });
+  assert.match(r.out, /^Runs on: Each matching card \(cards\), Once \(once\)$/m);
+  assert.match(r.out, /^ {2}cursor \(Cursor CLI\): report, update; once: work$/m);
+  assert.match(r.out, /^Folders for new cards \(work\): \(top of the board\), f00, .*f18, and 5 more$/m);
+  assert.match(r.out, /new cards 1–10 a run \(default 5\), 30 an hour/);
+});
+
+test('the help names runsOn and newCards among the edits that switch an automation off', async () => {
+  const r = await run(['--help']);
+  assert.match(r.out, /edit <id> --file <changes\.json> .*runsOn.*newCards/);
 });

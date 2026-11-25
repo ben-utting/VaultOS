@@ -1,18 +1,18 @@
 ---
 name: vaultos-automations
-description: Use when the person asks what automations could help them, wants to set up, change or check a VaultOS automation (a scheduled agent that writes a note into cards), asks how their automations are doing, or asks you to look at the vault and suggest what to automate. Works through the vaultos-automations command in a VaultOS terminal.
+description: Use when the person asks what automations could help them, wants to set up, change or check a VaultOS automation (a scheduled agent that writes a note into cards, or one that looks somewhere such as Jira and creates new cards), asks how their automations are doing, or asks you to look at the vault and suggest what to automate. Works through the vaultos-automations command in a VaultOS terminal.
 ---
 
 # VaultOS automations
 
-An automation runs one agent per card on a schedule. Each run picks cards by board and status, gives every card its own headless agent with your prompt, and writes the agent's note into one section of the card. The person sees each automation, and every run's results, in the Automations tab.
+An automation runs one agent per card on a schedule. Each run picks cards by board and status, gives every card its own headless agent with your prompt, and writes the agent's note into one section of the card. A Work automation can also create new cards, and a **Once** automation runs one agent per run, not tied to a card, whose job is to look somewhere (usually a connector) and propose new cards. The person sees each automation, and every run's results, in the Automations tab.
 
 You work through the `vaultos-automations` command. It only works in a VaultOS terminal. Details of every field and command are in [reference.md](reference.md).
 
 ## What you can and can't do
 
 - You can read everything: `options`, `list`, `show`, `match`, `runs`, `run`.
-- You can create and edit automations. Anything you create is saved **off**. Editing the agent, model, level, prompt, cards, connectors or reminders of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
+- You can create and edit automations. Anything you create is saved **off**. Editing the agent, model, level, prompt, cards, runsOn, newCards, connectors or reminders of one that's on switches it off. Name, schedule, time limit and note heading edits keep it as it was.
 - You can `try` one: a trial on up to 3 cards, read-only, with notes kept in the run history and nothing written into the cards. At most 6 trials an hour.
 - You can switch one `off`, and `delete` one that's off.
 - You can't switch one on, start a real run or stop a run. The person does that in the Automations tab. Don't look for a way round it, and never edit `.vaultos/automations.json`.
@@ -30,7 +30,8 @@ You work through the `vaultos-automations` command. It only works in a VaultOS t
 
    Keep it short. A long menu is harder to act on.
 3. **Say the limits.**
-   - One agent per card, and every run is per card. A run can't summarise a whole board in one note.
+   - One agent per card, and every run is per card, except a Once run, which has one agent and no card. A run can't summarise a whole board in one note.
+   - Only VaultOS creates cards: a Work agent proposes them in `vaultos-card` blocks and they land in the one folder `newCards` names (reference.md, "New cards").
    - No web in a run. Connectors are off unless the automation's `connectors` lists some: ids from `options`, read-only lookups, and only for agents that can use them. Changing `connectors` switches the automation off, like a prompt change.
    - No shell in a run, so a run's agent can't use `vaultos-calendar`. With `"reminders": true` it can propose one calendar reminder per card instead, and VaultOS adds it (reference.md, "Calendar reminders").
    - At most 20 cards a run.
@@ -61,6 +62,24 @@ Use these as starting points. Fit them to what you found in the vault rather tha
 - **Blocked chaser** (Update) over Blocked: if the blocker looks cleared, propose moving the card back to In Progress.
 - **Backlog sweep**, weekly (Report) over Backlog: is this still wanted, and what's the smallest next step?
 - **Folder summary** (Work, Claude Code only) over In Progress: gather what's in the card folder into a short summary file.
+- **Go and look, then make cards** (Once, Work, one connector): look in a source and propose a card for each thing that has none yet. For example, the person's Jira queue:
+
+  ```json
+  {
+    "name": "Jira queue to cards",
+    "agent": "default",
+    "template": "blank",
+    "prompt": "Find the Jira issues assigned to me that aren't done. For each one, propose a card: the issue's summary as the title, its key as key, its link, and a one-line goal. Skip any whose key is already on the board.",
+    "level": "work",
+    "runsOn": "once",
+    "newCards": { "board": "work", "folder": "tickets", "max": 5 },
+    "connectors": ["atlassian"],
+    "schedule": { "repeat": "weekdays", "time": "08:00" },
+    "timeLimitMin": 10
+  }
+  ```
+
+  Always have the agent pass the source's own id as `key`: that's what stops the same ticket becoming two cards. Take the board key, folder, connector id and agent from `options`, and check the folder exists (it's in `options`' folder list) before you create it.
 
 ## Writing a good prompt
 

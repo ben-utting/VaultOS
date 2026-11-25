@@ -11,10 +11,10 @@ Exit codes: `0` done, `1` VaultOS refused (the reason and any field errors follo
 | `vaultos-automations options` | What this install offers: boards, statuses, levels, agents and the levels each can run, the default agent, templates with their prompts, schedule examples, limits, time zone |
 | `vaultos-automations list` | Every automation: id, on or off, schedule, level, last run, and a tag on drafts you or another agent made |
 | `vaultos-automations show <id>` | One automation as JSON, ready to copy fields from |
-| `vaultos-automations match <id>` | The cards an automation would pick up right now |
+| `vaultos-automations match <id>` | The cards an automation would pick up right now (a Once automation picks none) |
 | `vaultos-automations match --file draft.json` | The same for a draft you haven't created (only `cards` is read) |
 | `vaultos-automations runs [--automation <id>] [--limit N]` | Recent runs, newest first, with their trigger (scheduled, catch-up, run now, trial) |
-| `vaultos-automations run <runId>` | One run: each card's state, reason, note, status change and files changed |
+| `vaultos-automations run <runId>` | One run: each card's state, reason, note, status change, files changed, and the new cards it created or didn't |
 | `vaultos-automations create --file automation.json` | Creates it, always switched off |
 | `vaultos-automations edit <id> --file changes.json` | Changes some fields; see "Edits" below |
 | `vaultos-automations off <id>` | Switches it off |
@@ -44,8 +44,10 @@ Exit codes: `0` done, `1` VaultOS refused (the reason and any field errors follo
 | `model` | Optional, Cursor CLI only. The model the run passes to Cursor as `--model`, for example `gpt-5` or `claude-opus-4-8[context=1m,effort=high,fast=false]`. Leave it out (or `null`) for Cursor's default. One line, 1 to 200 characters. It isn't checked against a list, so a wrong id only shows when the run fails: `cursor-agent --list-models` lists what this install can use. Other agents ignore it, and so does `default` unless the default agent is Cursor |
 | `template` | `check-in` or `blank`. A label of where the prompt started; the prompt is what counts |
 | `prompt` | What the agent does on each card, up to 8,000 characters. VaultOS adds the card, its task.md and the rules for the level |
-| `level` | `report`: reads and writes a note. `update`: can also propose a status change (never to Done). `work`: can edit files in the card's folder |
-| `cards.board` | A board key from `options`, or `all` |
+| `level` | `report`: reads and writes a note. `update`: can also propose a status change (never to Done). `work`: can edit files in the card's folder and propose new cards (see "New cards") |
+| `runsOn` | Optional. Left out (or `cards`): one agent per matching card. `once`: one agent per run, not tied to a card, that looks things up and proposes new cards. `once` needs `level: "work"` and `newCards`, has no `cards`, `section` or `reminders`, and is offered to the agents whose `once` levels in `options` include `work` |
+| `newCards` | Optional, Work only: `{ "board": "<key>", "folder": "<path in the board>", "max": 5 }`. Where new cards go and how many a run may make (1 to 10, default 5). `folder` is relative to the board (`""` is its top) and must already exist, inside the board, not in a folder the board skips (`_tasks`, `archive` and so on) and not inside a card's folder. `options` lists the folders per board. Required with `runsOn: "once"` |
+| `cards.board` | A board key from `options`, or `all` (not used with `runsOn: "once"`) |
 | `cards.statuses` | One or more of `backlog`, `in-progress`, `blocked`, `needs-decision`, `review`, `scheduled` (never `done`) |
 | `cards.subtasks` | `true` to include subtask cards |
 | `schedule` | See below. Times are in the board's time zone |
@@ -69,10 +71,10 @@ Board keys and agent ids differ per install: take them from `options`.
 
 ## Edits
 
-`changes.json` holds only the fields you want to change. `cards` and `schedule` merge into what's there, so `{"schedule": {"time": "09:00"}}` keeps the repeat and `{"cards": {"statuses": ["blocked"]}}` keeps the board.
+`changes.json` holds only the fields you want to change. `cards`, `newCards` and `schedule` merge into what's there, so `{"schedule": {"time": "09:00"}}` keeps the repeat and `{"cards": {"statuses": ["blocked"]}}` keeps the board. `"newCards": null` removes the destination.
 
 - Changing `name`, `schedule`, `timeLimitMin`, `section` or `template` keeps the automation on or off as it was.
-- Changing `agent`, `model`, `level`, `prompt`, `cards`, `connectors` or `reminders` switches it off. The Automations tab then says what you changed, and the person switches it back on.
+- Changing `agent`, `model`, `level`, `prompt`, `cards`, `runsOn`, `newCards`, `connectors` or `reminders` switches it off. The Automations tab then says what you changed, and the person switches it back on.
 - `"model": null` removes the model, so Cursor uses its default. That counts as a model change.
 - `"enabled": true` is ignored. `"enabled": false` switches it off.
 
@@ -88,6 +90,28 @@ With `"reminders": true`, each card's prompt lists the card's upcoming calendar 
 
 Write the prompt so the agent knows when a reminder is worth it, for example "if the card needs me tomorrow, add a reminder for tomorrow morning".
 
+## New cards
+
+A Work automation with `newCards` can create cards. The agent never writes them itself: it ends its reply with one `vaultos-card` block per card (before its note), and VaultOS creates `<folder>/<key or title slug>/task.md` from the board's own template (`_tasks/_Templates/task.md`, or a built-in one), status Backlog.
+
+```
+title: how it should read on the board        (required, up to 120 characters)
+key: the source's own id, e.g. a ticket number (letters, digits, . _ -)
+goal: what done looks like                     (required, up to 500)
+link: https://… to the source item
+priority: low | med | high                     (default med)
+plan:
+- first next action
+context: who raised it, dates, ids             (up to 2,000)
+```
+
+- The prompt shows the agent the cards already in the folder and every key on the board, so it can skip them.
+- VaultOS skips a card whose key is already the `id` or `source_key` of any card on the board (Done and archived ones too, case doesn't matter), one without a key whose title matches a card in the folder, a second proposal of the same thing in one run, and anything whose folder name is taken.
+- At most `max` new cards a run, and 30 an hour across all automations. The rest are listed as not created and come up again next run.
+- A **Once** automation (`runsOn: "once"`) has no card: its agent works from the destination folder and its connectors, read-only, and its note goes into the run history with what it created. This is the "go and look, then make me cards" shape, for example turning the tickets in someone's Jira queue into cards.
+- On each card, a Work run's follow-up cards come after its note, and the new card's Progress log says which card it came from.
+- The run shows "Created: <title> (<key>)" and "Not created: <key>" with the reason. A trial creates nothing and shows "Would create: …".
+
 ## Trials
 
 `try` runs the automation on its first 3 matching cards with the agent held to reading. The notes go into the run history only; nothing is written into the cards and no card moves. At Update, the run shows the move it would have made ("Would move"). A Work automation is tried as Report, so the trial shows what it would say, not what it would change. At most 6 trials an hour; one at a time, queued behind any run in progress.
@@ -95,6 +119,7 @@ Write the prompt so the agent knows when a reminder is worth it, for example "if
 ## Limits
 
 - 20 cards a run (3 for a trial).
+- New cards: up to the automation's `max` (1 to 10) a run, 30 an hour across automations.
 - 10 drafts from agents that are still off. Delete some, or ask the person to switch them on, before making more.
 - 6 trials an hour.
 - Drafts never run on their schedule until the person switches them on.

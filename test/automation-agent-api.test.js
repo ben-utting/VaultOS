@@ -15,6 +15,7 @@ const ctx = () => ({
   agentLevels: { default: ['report', 'update', 'work'], claude: ['report', 'update', 'work'], cursor: ['report', 'update'] },
   agentLabels: { claude: 'Claude Code', cursor: 'Cursor CLI' }, defaultAgent: 'claude',
   connectorIds: ['atlassian', 'azuredevops'], agentConnectors: { default: true, claude: true, cursor: false },
+  agentOnceLevels: { default: ['work'], claude: ['work'], cursor: ['work'] },
 });
 const draft = (more = {}) => ({
   name: 'Check', agent: 'default', template: 'check-in', prompt: 'Look.', level: 'report',
@@ -72,7 +73,7 @@ test('create reports field errors as a 400', async (t) => {
   const s = setup(t);
   const r = await s.api.create(draft({ agent: 'cursor', level: 'work' }), 'Cursor CLI');
   assert.equal(r.status, 400);
-  assert.equal(r.body.errors.level, "Cursor CLI can't run at Work");
+  assert.equal(r.body.errors.level, "Cursor CLI can't run at Work on each card; pick Once or another level");
 });
 
 test('create refuses the 11th agent draft that is still off', async (t) => {
@@ -350,4 +351,49 @@ test('an agent can create a draft with reminders on (saved off)', async (t) => {
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.automation.reminders, true);
   assert.equal(r.body.automation.enabled, false);
+});
+
+// ---------- New cards (spec 2026-11-25 §11) ----------
+const onceDraft = (more = {}) => ({ name: 'Queue', agent: 'default', template: 'blank', prompt: 'Look in Jira.', level: 'work', runsOn: 'once',
+  newCards: { board: 'work', folder: 'tickets' }, schedule: { repeat: 'weekdays', time: '08:00' }, timeLimitMin: 10, ...more });
+
+test('create of a Once draft is stored off with its destination', async (t) => {
+  const s = setup(t);
+  const r = await s.api.create(onceDraft({ enabled: true }), 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const a = r.body.automation;
+  assert.equal(a.enabled, false);
+  assert.equal(a.runsOn, 'once');
+  assert.deepEqual(a.newCards, { board: 'work', folder: 'tickets', max: 5 });
+  assert.equal('cards' in a, false);
+});
+
+test('editing newCards or runsOn on an automation that is on switches it off', async (t) => {
+  const s = setup(t);
+  const a = await s.personOn({ level: 'work', newCards: { board: 'work', folder: 'tickets' } });
+  const r = await s.api.edit(a.id, { newCards: { folder: 'queue' } }, 'Claude Code');
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.automation.enabled, false);
+  assert.deepEqual(r.body.automation.newCards, { board: 'work', folder: 'queue', max: 5 });
+  assert.deepEqual(r.body.automation.agentChange.fields, ['newCards']);
+  const b = await s.personOn({ level: 'work', newCards: { board: 'work', folder: 'tickets' } });
+  const r2 = await s.api.edit(b.id, { runsOn: 'once' }, 'Claude Code');
+  assert.equal(r2.status, 200, JSON.stringify(r2.body));
+  assert.equal(r2.body.automation.enabled, false);
+  assert.ok(r2.body.automation.agentChange.fields.includes('runsOn'));
+  const c = await s.personOn({ level: 'work', newCards: { board: 'work', folder: 'tickets' } });
+  const r3 = await s.api.edit(c.id, { newCards: null }, 'Claude Code');
+  assert.equal('newCards' in r3.body.automation, false);
+  const d = await s.personOn({ level: 'work', newCards: { board: 'work', folder: 'tickets' } });
+  const safe = await s.api.edit(d.id, { name: 'Renamed' }, 'Claude Code');
+  assert.equal(safe.body.automation.enabled, true);
+  assert.deepEqual(safe.body.automation.newCards, { board: 'work', folder: 'tickets', max: 5 });
+});
+
+test('match on a Once automation is a 400', async (t) => {
+  const s = setup(t);
+  const a = (await s.api.create(onceDraft(), 'Claude Code')).body.automation;
+  const r = await s.api.match({ id: a.id });
+  assert.equal(r.status, 400);
+  assert.equal(r.body.error, "Once automations don't pick cards");
 });
