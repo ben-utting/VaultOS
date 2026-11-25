@@ -271,3 +271,13 @@ test('the help names runsOn and newCards among the edits that switch an automati
   const r = await run(['--help']);
   assert.match(r.out, /edit <id> --file <changes\.json> .*runsOn.*newCards/);
 });
+
+test('options explains newCards, including letting the agent choose the folder', async () => {
+  const r = await run(['options'], { answers: [['options', 200, { ...optionsBody([]),
+    runsOn: [{ id: 'cards', label: 'Each matching card' }, { id: 'once', label: 'Once' }], folders: { work: ['', 'tickets'] },
+    limits: { ...optionsBody([]).limits, newCardsPerRun: [1, 10], newCardsDefault: 5, newCardsPerHour: 30 } }]] });
+  assert.match(r.out, /^New cards \(Work only\): "newCards": \{ "board": "<key>", "folder": "<a folder below>", "max": 1–10 \}$/m);
+  assert.match(r.out, /^ {2}or \{ "board": "<key>", "choose": true, "max": 1–10 \}: the agent picks a folder for each card and may add up to 3 new ones a run$/m);
+  const old = await run(['options'], { answers: [['options', 200, optionsBody([])]] });
+  assert.doesNotMatch(old.out, /New cards \(Work only\)/);
+});
