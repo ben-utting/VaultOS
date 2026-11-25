@@ -8,6 +8,7 @@ const { createAutomationStore } = require('../lib/automation-store');
 const { createRunner } = require('../lib/automation-runner');
 const A = require('../lib/automation-agents');
 const { parseFrontmatter } = require('../lib/task-file');
+const { createCardWriter, checkDestination } = require('../lib/automation-newcards');
 
 process.env.AUTOMATION_TEST_AGENT = path.join(__dirname, 'fixtures', 'fake-agent.js');
 const TZ = 'Europe/London';
@@ -30,9 +31,26 @@ g
 `;
 
 // A temp vault with a Work board, the real store and the real spawner (fake agent), and a runner over them.
-function setup(t, { cards = {}, busy = [], clock = null, ...more } = {}) {
+function setup(t, { cards = {}, busy = [], clock = null, withNewCards = false, ...more } = {}) {
   const vault = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-runner-'));
   t.after(() => fs.rmSync(vault, { recursive: true, force: true }));
+  if (withNewCards) {
+    // New cards go into Work/<folder>, through the real writer (what lib/automation-service.js builds).
+    fs.mkdirSync(path.join(vault, 'Work', 'tickets'), { recursive: true });
+    const writer = createCardWriter({ vaultDir: vault });
+    more = {
+      newCards: {
+        begin: async (automation, { trial, agentLabel }) => {
+          const boardDir = path.join(vault, 'Work');
+          const chk = checkDestination(boardDir, automation.newCards.folder, { skipDirs: new Set(['_tasks', '_Templates', 'archive']) });
+          if (!chk.ok) return { error: chk.error };
+          const h = await writer.begin({ boardDir, destDir: chk.dir, max: automation.newCards.max, automationName: automation.name, agentLabel, trial, today: '2026-11-11', tz: TZ });
+          return { ...h, dir: chk.dir, relDir: path.relative(vault, chk.dir).split(path.sep).join('/'), label: `Work / ${automation.newCards.folder || 'top of the board'}` };
+        },
+      },
+      ...more,
+    };
+  }
   for (const [name, [status, extra]] of Object.entries(cards)) {
     const dir = path.join(vault, 'Work', '1. a', name);
     fs.mkdirSync(dir, { recursive: true });
@@ -794,4 +812,156 @@ test('a card whose reminders cannot be read still runs, with none listed', async
   const s = setup(t, { cards: { '01-a': ['in-progress'] }, cardReminders: async () => { throw new Error('nope'); } });
   const run = await runAndWait(s, await s.make({ reminders: true }));
   assert.equal(run.cards[0].state, 'noted');
+});
+
+// ---------- New cards (spec 2026-11-25 §7–§8) ----------
+const ONCE = { runsOn: 'once', level: 'work', newCards: { board: 'work', folder: 'tickets', max: 5 } };
+const ticket = (s, name) => fs.readFileSync(path.join(s.vault, 'Work', 'tickets', name, 'task.md'), 'utf8');
+
+test('once: one agent in the destination, cards created, note in the run', async (t) => {
+  const s = setup(t, { cards: { 'job-1': ['in-progress'] }, withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA FAKE:card:-:Second_one' });
+  assert.equal(a.runsOn, 'once');
+  const run = await runAndWait(s, a);
+  assert.equal(run.state, 'finished');
+  assert.equal(run.runsOn, 'once');
+  assert.equal(run.cards.length, 1);
+  const c = run.cards[0];
+  assert.equal(c.kind, 'once');
+  assert.equal(c.state, 'noted');
+  assert.equal(c.path, 'Work/tickets');
+  assert.equal(c.title, 'Work / tickets');
+  assert.match(c.note, /Fake note\./);
+  assert.equal(run.createdCount, 2);
+  assert.deepEqual(c.created.map((x) => x.path), ['Work/tickets/SUC-1/task.md', 'Work/tickets/second-one/task.md']);
+  assert.equal(parseFrontmatter(ticket(s, 'SUC-1')).meta.title, 'Reset MFA');
+  assert.match(ticket(s, 'SUC-1'), /Created by automation "Check" \(Claude Code\)\./);
+  assert.match(s.read('job-1'), /status: in-progress/);
+  assert.doesNotMatch(s.read('job-1'), /Latest check-in/);
+});
+
+test('once: the agent runs in the destination folder, read-only', async (t) => {
+  const cmds = [];
+  const s = setup(t, { withNewCards: true, agentCommand: (id, level, prompt, opts) => { cmds.push({ level, opts }); return A.agentCommand(id, level, prompt, opts); } });
+  const run = await runAndWait(s, await s.make({ ...ONCE, prompt: 'FAKE:touch' }));
+  assert.deepEqual(run.cards[0].filesChanged, ['touched.txt']);
+  assert.ok(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'touched.txt')));
+  assert.ok(cmds.length >= 2 && cmds.every((x) => x.level === 'work' && x.opts && x.opts.once === true));
+});
+
+test('once: second run creates nothing (duplicates)', async (t) => {
+  const s = setup(t, { withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA FAKE:card:-:Second_one' });
+  await runAndWait(s, a);
+  const run = await runAndWait(s, a);
+  assert.equal(run.createdCount, 0);
+  assert.equal(run.state, 'finished');
+  assert.deepEqual(run.cards[0].notCreated.map((x) => x.reason), ['SUC-1 already has a card', 'a card with that title already exists']);
+});
+
+test('once: cards without a note still count; nothing back fails', async (t) => {
+  const s = setup(t, { withNewCards: true });
+  const r1 = await runAndWait(s, await s.make({ ...ONCE, prompt: 'FAKE:cardsonly FAKE:card:X-1:Only' }));
+  assert.equal(r1.cards[0].state, 'noted');
+  assert.equal(r1.cards[0].note, '');
+  assert.equal(r1.createdCount, 1);
+  const r2 = await runAndWait(s, await s.make({ ...ONCE, name: 'Other', prompt: 'FAKE:none' }));
+  assert.equal(r2.state, 'failed');
+  assert.equal(r2.cards[0].state, 'failed');
+  assert.equal(r2.cards[0].reason, 'nothing back from the agent');
+  assert.equal(r2.createdCount, 0);
+});
+
+test('once: destination gone → run fails with the folder reason (Review Focus 1)', async (t) => {
+  const s = setup(t, { withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  fs.rmSync(path.join(s.vault, 'Work', 'tickets'), { recursive: true });
+  const run = await runAndWait(s, a);
+  assert.equal(run.state, 'failed');
+  assert.equal(run.cards[0].state, 'failed');
+  assert.equal(run.cards[0].reason, "New cards folder: That folder doesn't exist");
+});
+
+test('once trial: would create, nothing on disk', async (t) => {
+  const s = setup(t, { withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  assert.deepEqual(await s.runner.tryNow(a.id), { queued: true });
+  await s.runner.idle();
+  const run = await s.lastRun();
+  assert.equal(run.trigger, 'trial');
+  assert.equal(run.createdCount, 1);
+  assert.equal(run.cards[0].created[0].path, 'Work/tickets/SUC-1/task.md');
+  assert.equal(fs.existsSync(path.join(s.vault, 'Work', 'tickets', 'SUC-1')), false);
+});
+
+test('once: prompt lists existing cards and keys', async (t) => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'prompt-')), 'p.txt');
+  process.env.FAKE_PROMPT_OUT = out;
+  t.after(() => { delete process.env.FAKE_PROMPT_OUT; });
+  const s = setup(t, { withNewCards: true });
+  const a = await s.make({ ...ONCE, prompt: 'FAKE:card:SUC-1:Reset_MFA' });
+  await runAndWait(s, a);
+  await runAndWait(s, a);
+  const second = fs.readFileSync(out, 'utf8').split('\n=====\n')[1];
+  assert.match(second, /There is no card in this run\./);
+  assert.match(second, /^- SUC-1 · Reset MFA · backlog$/m);
+  assert.match(second, /Keys already on the board \(case doesn't matter\): suc-1\./);
+});
+
+test('once: connectors are opened for the destination and revoked', async (t) => {
+  const acc = fakeAccess();
+  const s = setup(t, { withNewCards: true, agentConnectors: () => true, connectorAccess: acc.fn });
+  const a = (await s.store.create({ name: 'Q', enabled: true, agent: 'default', template: 'blank', prompt: 'FAKE:card:A-1:One', ...ONCE,
+    connectors: ['atlassian'], schedule: { repeat: 'daily', time: '08:00' }, timeLimitMin: 10 }, cctx)).value;
+  const run = await runAndWait(s, a);
+  assert.equal(run.cards[0].state, 'noted');
+  assert.deepEqual(acc.log.opened, [{ runId: run.id, cardPath: 'Work/tickets', ids: ['atlassian'] }]);
+  assert.equal(acc.log.revoked, 1);
+  assert.deepEqual(run.cards[0].lookups, { atlassian: { getIssue: 2 } });
+});
+
+test('per-card Work with newCards: follow-ups created after the note, from-line, cap across cards', async (t) => {
+  const s = setup(t, { withNewCards: true, cards: {
+    'job-1': ['in-progress', 'x: FAKE:card:A-1:One FAKE:card:A-2:Two\n'],
+    'job-2': ['in-progress', 'x: FAKE:card:B-1:Three FAKE:card:B-2:Four\n'],
+  } });
+  const run = await runAndWait(s, await s.make({ level: 'work', newCards: { board: 'work', folder: 'tickets', max: 3 } }));
+  assert.equal(run.state, 'finished');
+  assert.deepEqual(run.cards.map((c) => c.state), ['noted', 'noted']);
+  assert.equal(run.createdCount, 3);
+  assert.deepEqual(run.cards[0].created.map((c) => c.key), ['A-1', 'A-2']);
+  assert.deepEqual(run.cards[1].created.map((c) => c.key), ['B-1']);
+  assert.deepEqual(run.cards[1].notCreated, [{ title: 'Four', key: 'B-2', reason: 'not created (over the limit of 3)' }]);
+  assert.match(ticket(s, 'A-1'), /from \[\[job-1\]\]/);
+  assert.match(s.read('job-1'), /## Latest check-in/);
+});
+
+test('per-card: Work without newCards and Report list the block under Ignored', async (t) => {
+  const s = setup(t, { withNewCards: true, cards: { 'job-1': ['in-progress', 'x: FAKE:card:A-1:One\n'] } });
+  const w = await runAndWait(s, await s.make({ level: 'work' }));
+  assert.ok(w.cards[0].ignored.includes('vaultos-card block (no folder set for new cards)'));
+  assert.equal(w.createdCount, undefined);
+  const r = await runAndWait(s, await s.make({ name: 'R', level: 'report' }));
+  assert.ok(r.cards[0].ignored.includes('vaultos-card block (not a Work automation)'));
+  assert.equal(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')).length, 0);
+});
+
+test('per-card Work: destination gone → cards Ignored with the folder reason, card still noted (Review Focus 1)', async (t) => {
+  const s = setup(t, { withNewCards: true, cards: { 'job-1': ['in-progress', 'x: FAKE:card:A-1:One\n'] } });
+  const a = await s.make({ level: 'work', newCards: { board: 'work', folder: 'tickets', max: 3 } });
+  fs.rmSync(path.join(s.vault, 'Work', 'tickets'), { recursive: true });
+  const run = await runAndWait(s, a);
+  assert.equal(run.cards[0].state, 'noted');
+  assert.ok(run.cards[0].ignored.includes("vaultos-card block (new cards folder: That folder doesn't exist)"));
+});
+
+test('per-card Work trial: would create, nothing written', async (t) => {
+  const s = setup(t, { withNewCards: true, cards: { 'job-1': ['in-progress', 'x: FAKE:card:A-1:One\n'] } });
+  const a = await s.make({ level: 'work', newCards: { board: 'work', folder: 'tickets', max: 3 } });
+  await s.runner.tryNow(a.id);
+  await s.runner.idle();
+  const run = await s.lastRun();
+  assert.equal(run.createdCount, 1);
+  assert.equal(run.cards[0].created[0].key, 'A-1');
+  assert.equal(fs.readdirSync(path.join(s.vault, 'Work', 'tickets')).length, 0);
 });
