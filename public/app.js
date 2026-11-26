@@ -839,9 +839,14 @@ function render() {
   // A folded subtask doesn't open a column of its own: its parent card's status line says where it is.
   const allEmpty = !statuses.some((s) => tasks.some((t) => t.status === s));
   $('board').innerHTML = statuses.map((s) => {
+    // Oldest first in every column but Done, which is newest first so what was just finished sits on top.
+    // `updated` is a date only, so a same-day tie in Done falls back to the file's mtime.
+    const newest = s === 'done';
     const inCol = tasks
       .filter((t) => t.status === s)
-      .sort((a, b) => (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
+      .sort((a, b) => newest
+        ? (b.updated || '').localeCompare(a.updated || '') || (b.mtime || 0) - (a.mtime || 0)
+        : (a.updated || '').localeCompare(b.updated || '') || a.title.localeCompare(b.title));
     const hide = !inCol.length && !allEmpty;
     return `
       <section class="col${hide ? ' col-empty' : ''}">
